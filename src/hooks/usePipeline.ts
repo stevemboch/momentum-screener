@@ -1,4 +1,3 @@
-
 import { useCallback, useRef } from 'react'
 import { useAppState } from '../store'
 import type { Instrument } from '../types'
@@ -18,13 +17,11 @@ interface OpenFIGIResult {
   name?: string
   securityType?: string
   securityType2?: string
-  [key: string]: unknown
 }
 
 interface JustETFResult {
   aum: number | null
   ter: number | null
-  [key: string]: unknown
 }
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
@@ -120,7 +117,7 @@ export function usePipeline() {
       const figi = results[i]
       if (!figi) return inst
 
-      const longName = figi.name ?? null
+      const longName: string | undefined = figi.name || undefined
       const type = inst.source === 'xetra'
         ? inst.type  // trust Xetra type
         : resolveInstrumentType(figi.securityType, figi.securityType2, inst.isin)
