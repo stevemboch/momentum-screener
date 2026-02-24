@@ -120,7 +120,7 @@ export function usePipeline() {
       const figi = results[i]
       if (!figi) return inst
 
-      const longName = figi.name || undefined
+      const longName = figi.name ?? null
       const type = inst.source === 'xetra'
         ? inst.type  // trust Xetra type
         : resolveInstrumentType(figi.securityType, figi.securityType2, inst.isin)
