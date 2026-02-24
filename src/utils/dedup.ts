@@ -34,6 +34,10 @@ const STRIP_WORDS = new Set([
   '1C', '2C', '3C', '4C', '1D', '2D', 'A', 'B', 'C', 'D',
   'DAILY', 'MONTHLY', 'QUARTERLY', 'U.ETF', 'UETF',
   'THE', 'A', 'AN', 'OF', 'FOR', 'AND',
+  // Noise words that differ between providers for same exposure
+  'CORE', 'PRIME', 'PLUS', 'SELECT', 'OPTIMAL', 'ENHANCED', 'QUALITY',
+  'IMI', 'ALL', 'LARGE', 'MID', 'SMALL', 'CAP', 'EX',
+  'SCREENED', 'LEADERS', 'FILTERED', 'FOCUSED', 'UNIVERSAL', 'BROAD',
   // Provider names (will be detected separately)
   ...PROVIDERS.map((p) => p.prefix),
 ])
@@ -84,7 +88,7 @@ function extractExposureKey(longName: string | undefined, fallbackName: string):
   const words = stripped.split(/[\s\-\/]+/).filter((w) => {
     if (!w) return false
     if (STRIP_WORDS.has(w)) return false
-    if (/^\d+$/.test(w)) return false // pure numbers
+    if (/^\d{1,2}$/.test(w)) return false // short numbers (class ids like 1, 2)
     if (/^[A-Z]\d+$/.test(w)) return false // things like "A1", "B2"
     return true
   })
@@ -108,6 +112,11 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
   const groups = new Map<string, Instrument[]>()
 
   for (const inst of instruments) {
+    // Skip instruments with no longName and a suspiciously short display name
+    // (truncated Xetra names like "ISCORE MSCI WO" would each form unique singleton groups)
+    const nameToUse = inst.longName || inst.displayName
+    if (!inst.longName && nameToUse.length < 15) continue
+
     const key = extractExposureKey(inst.longName, inst.displayName)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(inst)
