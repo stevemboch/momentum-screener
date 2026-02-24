@@ -7,7 +7,7 @@ import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
 import { recalculateAll } from '../utils/calculations'
 
 const BATCH_SIZE_YAHOO = 10  // tickers per batch
-const BATCH_SIZE_JUSTETF = 15
+const BATCH_SIZE_JUSTETF = 10
 const BATCH_DELAY_YAHOO = 300  // ms
 const BATCH_DELAY_JUSTETF = 0  // server handles delays internally
 
