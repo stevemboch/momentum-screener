@@ -185,8 +185,8 @@ export function parseCSVFile(content: string): ParsedIdentifier[] {
 // ─── Instrument Type from OpenFIGI ───────────────────────────────────────────
 
 export function resolveInstrumentType(
-  figiSecType: string | null,
-  figiSecType2: string | null,
+  figiSecType: string | null | undefined,
+  figiSecType2: string | null | undefined,
   isin: string
 ): Instrument['type'] {
   // securityType2 = "Common Stock" is reliable
