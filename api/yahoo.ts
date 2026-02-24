@@ -26,7 +26,7 @@ async function fetchPrices(ticker: string): Promise<PriceResult> {
 
   try {
     // Fetch 6 months daily price data
-    const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=6mo&interval=1d&includePrePost=false`
+    const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`
     const chartRes = await fetch(chartUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible)',
