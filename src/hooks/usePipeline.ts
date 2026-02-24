@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 import { useAppState } from '../store'
-import type { Instrument, ParsedIdentifier } from '../types'
+import type { Instrument } from '../types'
+import type { ParsedIdentifier } from '../utils/parsers'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
 import { recalculateAll } from '../utils/calculations'
@@ -10,9 +11,24 @@ const BATCH_SIZE_JUSTETF = 30
 const BATCH_DELAY_YAHOO = 300  // ms
 const BATCH_DELAY_JUSTETF = 0  // server handles delays internally
 
+// ─── API Response Types ───────────────────────────────────────────────────────
+
+interface OpenFIGIResult {
+  name?: string
+  securityType?: string
+  securityType2?: string
+  [key: string]: unknown
+}
+
+interface JustETFResult {
+  aum: number | null
+  ter: number | null
+  [key: string]: unknown
+}
+
 // ─── API Helpers ─────────────────────────────────────────────────────────────
 
-async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]) {
+async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
   const res = await fetch('/api/openfigi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -32,7 +48,7 @@ async function apiYahoo(tickers: string[]) {
   return res.json()
 }
 
-async function apiJustETF(isins: string[]) {
+async function apiJustETF(isins: string[]): Promise<JustETFResult[]> {
   const res = await fetch('/api/justetf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
