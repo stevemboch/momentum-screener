@@ -2,7 +2,8 @@ import type { Instrument, MomentumWeights } from '../types'
 
 // ─── Return Calculation ──────────────────────────────────────────────────────
 
-const TRADING_DAYS = { r1m: 21, r3m: 63, r6m: 126 }
+// Trading days per period — use slightly fewer than exact to tolerate missing days/holidays
+const TRADING_DAYS = { r1m: 21, r3m: 63, r6m: 125 }
 
 export function calculateReturns(closes: number[]): {
   r1m: number | null
@@ -15,9 +16,9 @@ export function calculateReturns(closes: number[]): {
 
   const last = closes[n - 1]
   const calc = (days: number) => {
-    const idx = n - 1 - days
-    if (idx < 0) return null
-    const base = closes[idx]
+    const target = n - 1 - days
+    if (target < 0) return null  // not enough data
+    const base = closes[target]
     if (!base || base === 0) return null
     return (last - base) / base
   }
