@@ -76,6 +76,26 @@ async function scrapeJustETF(isin: string): Promise<JustETFResult> {
   }
 }
 
+async function runWithConcurrency<T>(
+  items: string[],
+  concurrency: number,
+  fn: (item: string) => Promise<T>
+): Promise<T[]> {
+  const results: T[] = new Array(items.length)
+  let index = 0
+
+  async function worker() {
+    while (index < items.length) {
+      const i = index++
+      results[i] = await fn(items[i])
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, worker)
+  await Promise.all(workers)
+  return results
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -84,19 +104,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'isins array required' })
   }
 
-  // Process with 1 second delay between requests to avoid rate limiting
-  // Max 30 per batch (enforced on client side, but we handle it here too)
-  const results: JustETFResult[] = []
-
-  for (let i = 0; i < Math.min(isins.length, 30); i++) {
-    const result = await scrapeJustETF(isins[i])
-    results.push(result)
-
-    // 1 second delay between requests
-    if (i < isins.length - 1) {
-      await new Promise((r) => setTimeout(r, 1100))
-    }
-  }
+  const limited = isins.slice(0, 10)
+  const results = await runWithConcurrency(limited, 5, scrapeJustETF)
 
   return res.status(200).json(results)
 }
