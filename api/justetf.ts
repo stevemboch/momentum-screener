@@ -2,12 +2,47 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 interface JustETFResult {
   isin: string
-  aum: number | null       // raw EUR value e.g. 111477000000
-  ter: number | null       // decimal percentage e.g. 0.2 = 0.20%
+  aum: number | null
+  ter: number | null
   name: string | null
   error?: string
 }
 
+async function fetchJustETF(isin: string): Promise<JustETFResult> {
+  // justETF's internal API — returns small JSON directly, much faster than HTML scraping
+  const url = `https://api.justetf.com/api/etfs/${isin}?locale=en&currency=EUR`
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible)',
+        'Referer': 'https://www.justetf.com/',
+      },
+    })
+
+    if (!response.ok) {
+      // Fallback to scraping if API blocked
+      return await scrapeJustETF(isin)
+    }
+
+    const data = await response.json()
+
+    const aum = data.aum?.value ?? data.fundSize ?? null
+    const ter = data.ter ?? data.totalExpenseRatio ?? null
+    const name = data.name ?? data.instrumentName ?? null
+
+    const validAum = typeof aum === 'number' && aum > 0 ? aum : null
+    const validTer = typeof ter === 'number' && ter >= 0 && ter <= 5 ? ter : null
+    const validName = typeof name === 'string' && name.length > 2 ? name : null
+
+    return { isin, aum: validAum, ter: validTer, name: validName }
+  } catch (err: any) {
+    return await scrapeJustETF(isin)
+  }
+}
+
+// Fallback: HTML scraping if API is blocked
 function findInObject(obj: any, keys: string[]): any {
   if (!obj || typeof obj !== 'object') return undefined
   for (const key of keys) {
@@ -26,8 +61,7 @@ async function scrapeJustETF(isin: string): Promise<JustETFResult> {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
       },
@@ -38,37 +72,25 @@ async function scrapeJustETF(isin: string): Promise<JustETFResult> {
     }
 
     const html = await response.text()
-
-    // Extract __NEXT_DATA__ JSON blob
     const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]+?)<\/script>/)
-    if (!match) {
-      return { isin, aum: null, ter: null, name: null, error: 'No __NEXT_DATA__ found' }
-    }
+    if (!match) return { isin, aum: null, ter: null, name: null, error: 'No __NEXT_DATA__' }
 
     let nextData: any
-    try {
-      nextData = JSON.parse(match[1])
-    } catch {
-      return { isin, aum: null, ter: null, name: null, error: 'JSON parse failed' }
-    }
+    try { nextData = JSON.parse(match[1]) }
+    catch { return { isin, aum: null, ter: null, name: null, error: 'JSON parse failed' } }
 
-    // Detect homepage redirect (justETF blocks some requests)
     const pageTitle = findInObject(nextData, ['title', 'pageTitle'])
     if (typeof pageTitle === 'string' && pageTitle.toLowerCase().includes('etf screener')) {
-      return { isin, aum: null, ter: null, name: null, error: 'Redirected to homepage' }
+      return { isin, aum: null, ter: null, name: null, error: 'Blocked' }
     }
 
-    // Extract fields by searching recursively
     const aum = findInObject(nextData, ['fundSize', 'aum', 'totalAssets', 'fundVolume'])
     const ter = findInObject(nextData, ['ter', 'totalExpenseRatio', 'ongoingCharges', 'managementFee'])
     const name = findInObject(nextData, ['instrumentName', 'name', 'shortName', 'longName', 'fundName'])
 
-    // Validate: AUM should be a large number (>0), TER should be small (0-5)
     const validAum = typeof aum === 'number' && aum > 0 ? aum : null
     const validTer = typeof ter === 'number' && ter >= 0 && ter <= 5 ? ter : null
-    // TER is already a percentage (0.2 = 0.20%), do NOT multiply by 100
-    const validName = typeof name === 'string' && name.length > 2 && !name.toLowerCase().includes('etf screener')
-      ? name : null
+    const validName = typeof name === 'string' && name.length > 2 && !name.toLowerCase().includes('etf screener') ? name : null
 
     return { isin, aum: validAum, ter: validTer, name: validName }
   } catch (err: any) {
@@ -91,8 +113,7 @@ async function runWithConcurrency<T>(
     }
   }
 
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, worker)
-  await Promise.all(workers)
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
   return results
 }
 
@@ -104,8 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'isins array required' })
   }
 
-  const limited = isins.slice(0, 10)
-  const results = await runWithConcurrency(limited, 5, scrapeJustETF)
-
+  const limited = isins.slice(0, 15)
+  const results = await runWithConcurrency(limited, 10, fetchJustETF)
   return res.status(200).json(results)
 }
