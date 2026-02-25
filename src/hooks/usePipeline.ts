@@ -6,7 +6,7 @@ import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
 import { recalculateAll } from '../utils/calculations'
 
 const BATCH_SIZE_YAHOO = 25
-const BATCH_SIZE_STATS = 200  // xetra-stats handles large batches fine
+const BATCH_SIZE_STATS = 200
 const BATCH_DELAY_YAHOO = 0
 
 // ─── API Response Types ───────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ interface StatsResult {
   isin: string
   name: string | null
   aum: number | null
-  ter: null  // not available from Deutsche Börse
+  ter: null
 }
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
@@ -46,7 +46,6 @@ async function apiYahoo(tickers: string[]) {
   return res.json()
 }
 
-// Deutsche Börse monthly stats – AUM for all ETFs/ETCs by ISIN
 async function apiStats(isins: string[]): Promise<StatsResult[]> {
   const res = await fetch('/api/xetra-stats', {
     method: 'POST',
@@ -85,7 +84,7 @@ async function processBatches<T, R>(
   return results
 }
 
-// ─── Apply stats results by ISIN ──────────────────────────────────────────────
+// ─── Apply stats results by ISIN ─────────────────────────────────────────────
 
 function applyStatsResults(instruments: Instrument[], statsResults: StatsResult[]): Instrument[] {
   const statsMap = new Map(statsResults.map((r) => [r.isin, r]))
@@ -97,7 +96,6 @@ function applyStatsResults(instruments: Instrument[], statsResults: StatsResult[
       aum: r.aum ?? null,
       ter: null,
       justEtfFetched: true,
-      // Use DB name as fallback if OpenFIGI gave nothing
       displayName: inst.longName ? inst.displayName : (r.name || inst.displayName),
     }
   })
@@ -187,15 +185,11 @@ export function usePipeline() {
     const etfs = instruments.filter((i) => i.type === 'ETF' || i.type === 'ETC')
     if (etfs.length === 0) return instruments
 
-    const allResults: StatsResult[] = []
-    await processBatches(
+    const allResults = await processBatches(
       etfs, BATCH_SIZE_STATS, 0,
-      async (batch) => {
-        const r = await apiStats(batch.map((e) => e.isin))
-        return r
-      },
+      (batch) => apiStats(batch.map((e) => e.isin)),
       (done, total) => setStatus(`Fetching AUM: ${done} / ${total} ETFs`, done, total)
-    ).then((r) => allResults.push(...r))
+    )
 
     return applyStatsResults(instruments, allResults)
   }, [])
@@ -234,7 +228,6 @@ export function usePipeline() {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
       const withPrices = await fetchPrices(enriched)
 
-      // Fetch AUM for any ETFs/ETCs
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
       const withStats = await fetchStats(withPrices)
 
@@ -312,39 +305,35 @@ export function usePipeline() {
       const groups = buildDedupGroups(etfs)
       const dedupedEtfs = applyDedupToInstruments(etfs, groups)
 
-      // Step 3: Fetch AUM for ALL ETFs (not just winners) – fast since it's one XLSX fetch
+      // Step 3: Fetch AUM for all ETFs in one shot
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: 'Fetching AUM data...', current: 0, total: dedupedEtfs.length } })
-      const etfISINs = dedupedEtfs.map((e) => e.isin)
-      const statsResults = await apiStats(etfISINs)
+      const statsResults = await apiStats(dedupedEtfs.map((e) => e.isin))
       const dedupedWithAUM = applyStatsResults(dedupedEtfs, statsResults)
 
       // Step 4: Re-evaluate winners using AUM floor
       const aumFloor = state.settings.aumFloor
       const updatedEtfs = dedupedWithAUM.map((inst) => {
         if (!inst.isDedupWinner) return inst
-        // If winner has AUM below floor, demote and find next candidate
         if (inst.aum != null && inst.aum < aumFloor) {
           return { ...inst, isDedupWinner: false }
         }
         return inst
       })
 
-      // For groups where winner was demoted, promote next candidate with sufficient AUM
-      const winnersByGroup = new Map<string, Instrument>()
+      // Promote next candidate where winner was demoted
+      const winnersByGroup = new Map<string, boolean>()
       updatedEtfs.forEach((inst) => {
         if (inst.isDedupWinner && inst.dedupGroup) {
-          winnersByGroup.set(inst.dedupGroup, inst)
+          winnersByGroup.set(inst.dedupGroup, true)
         }
       })
 
       const finalEtfs = updatedEtfs.map((inst) => {
-        if (!inst.dedupGroup) return inst
-        const hasWinner = winnersByGroup.has(inst.dedupGroup)
-        if (!hasWinner && !inst.isDedupWinner) {
-          // Promote first candidate with sufficient AUM
+        if (!inst.dedupGroup || inst.isDedupWinner) return inst
+        if (!winnersByGroup.has(inst.dedupGroup)) {
           const aum = inst.aum
           if (aum == null || aum >= aumFloor) {
-            winnersByGroup.set(inst.dedupGroup, inst)
+            winnersByGroup.set(inst.dedupGroup, true)
             return { ...inst, isDedupWinner: true }
           }
         }
@@ -358,7 +347,6 @@ export function usePipeline() {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: toFetch.length } })
       const withPrices = await fetchPrices(toFetch)
 
-      // Merge prices back
       const finalMap = new Map(withPrices.map((i) => [i.isin, i]))
       const final = combined.map((i) => finalMap.get(i.isin) || i)
 
