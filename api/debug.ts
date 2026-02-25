@@ -26,48 +26,44 @@ async function extractXml(buf: Buffer, entry: { offset: number, compressed: numb
   return (await inflateRaw(data)).toString('utf8')
 }
 
-function parseSharedStrings(xml: string): string[] {
-  const strings: string[] = []
-  for (const m of xml.matchAll(/<si>[\s\S]*?<\/si>/g)) {
-    const texts = [...m[0].matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map(t => t[1]).join('')
-    strings.push(texts)
-  }
-  return strings
-}
-
-function parseRows(wsXml: string, strings: string[], maxRows = 10): string[][] {
-  const rows: string[][] = []
-  for (const rowMatch of wsXml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
-    if (rows.length >= maxRows) break
-    const cells: { col: number, val: string }[] = []
-    for (const cellMatch of rowMatch[1].matchAll(/<c\b r="([A-Z]+)\d+"(?:[^>]*\bt="([^"]*)")?[^>]*>(?:<v>([^<]*)<\/v>)?/g)) {
-      const col = cellMatch[1].split('').reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1
-      const type = cellMatch[2] ?? ''
-      const raw = cellMatch[3] ?? ''
-      cells.push({ col, val: type === 's' ? (strings[parseInt(raw)] ?? '') : raw })
-    }
-    if (cells.length === 0) continue
-    const maxCol = Math.max(...cells.map(c => c.col))
-    const row = Array(maxCol + 1).fill('')
-    cells.forEach(c => { row[c.col] = c.val })
-    rows.push(row)
-  }
-  return rows
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const url = 'https://www.cashmarket.deutsche-boerse.com/resource/blob/4944224/f2d175ed4b2c4d8bae681a0bba3044d0/data/20260131-ETF-ETP-Statistic.xlsx'
-    const fetchRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)' } })
-    const buf = Buffer.from(await fetchRes.arrayBuffer())
+    // Step 1: find URL
+    const pageRes = await fetch(
+      'https://www.cashmarket.deutsche-boerse.com/cash-en/Data-Tech/statistics/etf-etp-statistics',
+      { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } }
+    )
+    const html = await pageRes.text()
+    const match = html.match(/href="(\/resource\/blob\/[^"]*ETF-ETP-Statistic\.xlsx)"/)
+    if (!match) return res.status(500).json({ error: 'URL not found', html_size: html.length })
+
+    const url = 'https://www.cashmarket.deutsche-boerse.com' + match[1]
+
+    // Step 2: fetch file
+    const fileRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)' } })
+    if (!fileRes.ok) return res.status(500).json({ error: `File HTTP ${fileRes.status}` })
+
+    const buf = Buffer.from(await fileRes.arrayBuffer())
+
+    // Step 3: parse ZIP
     const entries = findZipEntries(buf)
+    const entryNames = [...entries.keys()]
 
-    const strings = parseSharedStrings(await extractXml(buf, entries.get('xl/sharedStrings.xml')!))
-    const wsXml = await extractXml(buf, entries.get('xl/worksheets/sheet3.xml')!) // Exchange Traded Funds
-    const rows = parseRows(wsXml, strings, 10)
+    // Step 4: try extracting sharedStrings
+    const ssEntry = entries.get('xl/sharedStrings.xml')
+    if (!ssEntry) return res.status(500).json({ error: 'No sharedStrings', entryNames, buf_size: buf.length })
 
-    return res.status(200).json({ rows })
+    const ssXml = await extractXml(buf, ssEntry)
+
+    return res.status(200).json({
+      url,
+      buf_size: buf.length,
+      entry_count: entryNames.length,
+      entry_names: entryNames,
+      ss_size: ssXml.length,
+      ss_snippet: ssXml.slice(0, 500),
+    })
   } catch (err: any) {
-    return res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: err.message, stack: err.stack?.slice(0, 500) })
   }
 }
