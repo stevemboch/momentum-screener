@@ -63,25 +63,6 @@ async function scrapeJustETF(isin: string): Promise<JustETFResult> {
   }
 }
 
-async function runWithConcurrency<T>(
-  items: string[],
-  concurrency: number,
-  fn: (item: string) => Promise<T>
-): Promise<T[]> {
-  const results: T[] = new Array(items.length)
-  let index = 0
-
-  async function worker() {
-    while (index < items.length) {
-      const i = index++
-      results[i] = await fn(items[i])
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
-  return results
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -91,6 +72,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const limited = isins.slice(0, 15)
-  const results = await runWithConcurrency(limited, 5, scrapeJustETF)
+  const results: JustETFResult[] = []
+
+  for (const isin of limited) {
+    results.push(await scrapeJustETF(isin))
+  }
+
   return res.status(200).json(results)
 }
