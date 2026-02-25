@@ -1,32 +1,18 @@
 import { useCallback, useRef } from 'react'
 import { useAppState } from '../store'
-import type { Instrument } from '../types'
-import type { ParsedIdentifier } from '../utils/parsers'
+import type { Instrument, ParsedIdentifier } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
 import { recalculateAll } from '../utils/calculations'
 
-const BATCH_SIZE_YAHOO = 25  // tickers per batch
-const BATCH_SIZE_JUSTETF = 10
-const BATCH_DELAY_YAHOO = 0  // ms
+const BATCH_SIZE_YAHOO = 10  // tickers per batch
+const BATCH_SIZE_JUSTETF = 100
+const BATCH_DELAY_YAHOO = 300  // ms
 const BATCH_DELAY_JUSTETF = 0  // server handles delays internally
-
-// ─── API Response Types ───────────────────────────────────────────────────────
-
-interface OpenFIGIResult {
-  name?: string
-  securityType?: string
-  securityType2?: string
-}
-
-interface JustETFResult {
-  aum: number | null
-  ter: number | null
-}
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
 
-async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
+async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]) {
   const res = await fetch('/api/openfigi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -46,8 +32,8 @@ async function apiYahoo(tickers: string[]) {
   return res.json()
 }
 
-async function apiJustETF(isins: string[]): Promise<JustETFResult[]> {
-  const res = await fetch('/api/justetf', {
+async function apiJustETF(isins: string[]) {
+  const res = await fetch('/api/xetra-stats', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ isins }),
@@ -117,7 +103,7 @@ export function usePipeline() {
       const figi = results[i]
       if (!figi) return inst
 
-      const longName: string | undefined = figi.name || undefined
+      const longName = figi.name || undefined
       const type = inst.source === 'xetra'
         ? inst.type  // trust Xetra type
         : resolveInstrumentType(figi.securityType, figi.securityType2, inst.isin)
