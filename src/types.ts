@@ -7,43 +7,59 @@ export interface Instrument {
   // Identity
   isin: string
   wkn?: string
-  mnemonic?: string          // Xetra ticker (e.g. EUNL)
-  yahooTicker: string        // e.g. EUNL.DE
+  mnemonic?: string
+  yahooTicker: string
   type: InstrumentType
   source: InputSource
   currency?: string
   firstTradingDate?: string
-  xetraGroup?: string        // Product Assignment Group Description
+  xetraGroup?: string
 
   // Names
-  xetraName?: string         // Abbreviated Xetra name
-  longName?: string          // OpenFIGI name (ALL CAPS)
-  displayName: string        // Best available name for display
+  xetraName?: string
+  longName?: string
+  displayName: string
 
   // Dedup
-  dedupGroup?: string        // Exposure key
+  dedupGroup?: string
   isDedupWinner?: boolean
-  dedupCandidates?: string[] // ISINs of other candidates in group
+  dedupCandidates?: string[]
 
-  // justETF data
-  aum?: number | null        // Raw EUR value
-  ter?: number | null        // Decimal percentage (0.2 = 0.20%)
+  // AUM / TER
+  aum?: number | null
+  ter?: number | null
   justEtfFetched?: boolean
   justEtfError?: string
 
   // Price / momentum data
   closes?: number[]
+  highs?: number[]
+  lows?: number[]
   timestamps?: number[]
   r1m?: number | null
   r3m?: number | null
   r6m?: number | null
-  vola?: number | null       // Annualised 6M volatility
+  vola?: number | null
   momentumScore?: number | null
   sharpeScore?: number | null
   momentumRank?: number
   sharpeRank?: number
   priceFetched?: boolean
   priceError?: string
+
+  // Moving averages
+  ma10?: number | null
+  ma50?: number | null
+  ma100?: number | null
+  ma200?: number | null
+  aboveMa10?: boolean | null
+  aboveMa50?: boolean | null
+  aboveMa100?: boolean | null
+  aboveMa200?: boolean | null
+
+  // ATR & Selling Threshold
+  atr20?: number | null
+  sellingThreshold?: number | null
 
   // Fundamentals
   pe?: number | null
@@ -70,7 +86,9 @@ export interface MomentumWeights {
 
 export interface AppSettings {
   weights: MomentumWeights
-  aumFloor: number           // EUR value, default 100_000_000
+  aumFloor: number
+  atrMultiplier: number   // 3–5, default 4
+  riskFreeRate: number    // annualised, default 0.035 (3.5%)
 }
 
 export type SortColumn =
@@ -81,9 +99,9 @@ export type SortColumn =
   | 'aum' | 'ter'
   | 'pe' | 'pb' | 'earningsYield'
   | 'valueScore'
+  | 'sellingThreshold'
 
 export type SortDirection = 'asc' | 'desc'
-
 export type TypeFilter = 'all' | 'etf' | 'stock'
 
 export interface TableState {
@@ -92,6 +110,7 @@ export interface TableState {
   typeFilter: TypeFilter
   showDeduped: boolean
   aumFloor: number
+  filterBelowRiskFree: boolean
 }
 
 // ─── Xetra CSV Row ──────────────────────────────────────────────────────────
@@ -110,14 +129,7 @@ export interface XetraRow {
 // ─── Fetch Status ───────────────────────────────────────────────────────────
 
 export type FetchPhase =
-  | 'idle'
-  | 'parsing'
-  | 'openfigi'
-  | 'dedup'
-  | 'justetf'
-  | 'prices'
-  | 'done'
-  | 'error'
+  | 'idle' | 'parsing' | 'openfigi' | 'dedup' | 'justetf' | 'prices' | 'done' | 'error'
 
 export interface FetchStatus {
   phase: FetchPhase
@@ -130,7 +142,7 @@ export interface FetchStatus {
 
 export interface ETFGroup {
   label: string
-  groupKey: string          // matches Product Assignment Group Description
+  groupKey: string
   count: number
   enabled: boolean
 }
@@ -145,20 +157,20 @@ export const ETF_GROUPS: Omit<ETFGroup, 'count' | 'enabled'>[] = [
 ]
 
 export const STOCK_GROUPS: Omit<ETFGroup, 'count' | 'enabled'>[] = [
-  { label: 'DAX',                groupKey: 'DAX' },
-  { label: 'MDAX',               groupKey: 'MDAX' },
-  { label: 'SDAX',               groupKey: 'SDAX' },
-  { label: 'Deutschland',        groupKey: 'DEUTSCHLAND' },
-  { label: 'Nordamerika',        groupKey: 'NORDAMERIKA' },
-  { label: 'Frankreich',         groupKey: 'FRANKREICH' },
-  { label: 'Großbritannien',     groupKey: 'GROSSBRITANNIEN' },
-  { label: 'Skandinavien',       groupKey: 'SKANDINAVIEN' },
-  { label: 'Schweiz',            groupKey: 'SCHWEIZ LIECHTENSTEIN' },
-  { label: 'Benelux',            groupKey: 'BELGIEN NIEDERLANDE LUXEMBURG' },
+  { label: 'DAX',                  groupKey: 'DAX' },
+  { label: 'MDAX',                 groupKey: 'MDAX' },
+  { label: 'SDAX',                 groupKey: 'SDAX' },
+  { label: 'Deutschland',          groupKey: 'DEUTSCHLAND' },
+  { label: 'Nordamerika',          groupKey: 'NORDAMERIKA' },
+  { label: 'Frankreich',           groupKey: 'FRANKREICH' },
+  { label: 'Großbritannien',       groupKey: 'GROSSBRITANNIEN' },
+  { label: 'Skandinavien',         groupKey: 'SKANDINAVIEN' },
+  { label: 'Schweiz',              groupKey: 'SCHWEIZ LIECHTENSTEIN' },
+  { label: 'Benelux',              groupKey: 'BELGIEN NIEDERLANDE LUXEMBURG' },
   { label: 'Italien/Griechenland', groupKey: 'ITALIEN GRIECHENLAND' },
-  { label: 'Österreich',         groupKey: 'OESTERREICH' },
-  { label: 'Spanien/Portugal',   groupKey: 'SPANIEN PORTUGAL' },
-  { label: 'Others',             groupKey: '__OTHER_STOCKS__' },
+  { label: 'Österreich',           groupKey: 'OESTERREICH' },
+  { label: 'Spanien/Portugal',     groupKey: 'SPANIEN PORTUGAL' },
+  { label: 'Others',               groupKey: '__OTHER_STOCKS__' },
 ]
 
 export const DEFAULT_ETF_GROUPS = ['EXCHANGE TRADED FUNDS - PASSIV', 'EXCHANGE TRADED COMMODITIES']
