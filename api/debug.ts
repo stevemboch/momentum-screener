@@ -1,29 +1,33 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const pageRes = await fetch(
-    'https://www.cashmarket.deutsche-boerse.com/cash-en/Data-Tech/statistics/etf-etp-statistics',
-    { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } }
-  )
+  const url = 'https://www.cashmarket.deutsche-boerse.com/resource/blob/4944224/f2d175ed4b2c4d8bae681a0bba3044d0/data/20260131-ETF-ETP-Statistic.xlsx'
 
-  const html = await pageRes.text()
+  const res2 = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': '*/*' }
+  })
 
-  // Find all download links
-  const links = [...html.matchAll(/href="([^"]*\.(csv|xlsx|xls|zip)[^"]*)"/gi)]
-    .map(m => m[1])
+  if (!res2.ok) {
+    return res.status(502).json({ error: `HTTP ${res2.status}` })
+  }
 
-  // Also find any links mentioning AUM, TER, Fondsvermögen, Kennzahlen
-  const relevantLinks = [...html.matchAll(/href="([^"]+)"[^>]*>[^<]*(?:aum|ter|fonds|kennzahl|statistic|etf|etp)[^<]*/gi)]
-    .map(m => ({ href: m[1], text: m[0].slice(-50) }))
+  // Read first 2000 bytes as text to see if it's readable or binary
+  const buffer = await res2.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  const size = bytes.length
 
-  // Raw text snippets around key terms
-  const snippets = [...html.matchAll(/.{0,100}(?:fondsverm|ter|expense ratio|aum|kennzahl|\.csv|\.xlsx).{0,100}/gi)]
-    .map(m => m[0]).slice(0, 15)
+  // Check magic bytes - XLSX is a ZIP file starting with PK
+  const magic = String.fromCharCode(bytes[0], bytes[1])
+  
+  // Try to find any readable strings in first 5000 bytes (column headers often readable in xlsx)
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 5000))
+  const readable = text.replace(/[^\x20-\x7E\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500)
 
   return res.status(200).json({
-    status: pageRes.status,
-    download_links: links.slice(0, 20),
-    relevant_links: relevantLinks.slice(0, 20),
-    snippets,
+    status: res2.status,
+    size_bytes: size,
+    magic,
+    is_zip: magic === 'PK',
+    readable_snippet: readable,
   })
 }
