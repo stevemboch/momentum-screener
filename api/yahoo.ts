@@ -3,6 +3,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 interface PriceResult {
   ticker: string
   closes: number[]
+  highs: number[]
+  lows: number[]
   timestamps: number[]
   pe: number | null
   pb: number | null
@@ -12,22 +14,13 @@ interface PriceResult {
   aum: number | null
   ter: number | null
   error?: string
-  // Debug: raw fields so we can inspect what Yahoo returns
-  _debug?: any
 }
 
-async function fetchOneTicker(ticker: string, debug = false): Promise<PriceResult> {
+async function fetchOneTicker(ticker: string): Promise<PriceResult> {
   const base: PriceResult = {
-    ticker,
-    closes: [],
-    timestamps: [],
-    pe: null,
-    pb: null,
-    ebitda: null,
-    enterpriseValue: null,
-    returnOnAssets: null,
-    aum: null,
-    ter: null,
+    ticker, closes: [], highs: [], lows: [], timestamps: [],
+    pe: null, pb: null, ebitda: null, enterpriseValue: null,
+    returnOnAssets: null, aum: null, ter: null,
   }
 
   try {
@@ -47,12 +40,20 @@ async function fetchOneTicker(ticker: string, debug = false): Promise<PriceResul
       const result = chartData?.chart?.result?.[0]
       if (result) {
         const timestamps: number[] = result.timestamp || []
-        const closes: number[] = result.indicators?.quote?.[0]?.close || []
-        const validPairs = timestamps
-          .map((t: number, i: number) => ({ t, c: closes[i] }))
-          .filter((p) => p.c != null && !isNaN(p.c))
-        base.timestamps = validPairs.map((p) => p.t)
-        base.closes = validPairs.map((p) => p.c)
+        const quote = result.indicators?.quote?.[0] || {}
+        const closesRaw: (number | null)[] = quote.close || []
+        const highsRaw: (number | null)[]  = quote.high  || []
+        const lowsRaw: (number | null)[]   = quote.low   || []
+
+        // Filter to rows where close is valid
+        const validIdxs = timestamps
+          .map((t: number, i: number) => ({ t, i }))
+          .filter(({ i }) => closesRaw[i] != null && !isNaN(closesRaw[i]!))
+
+        base.timestamps = validIdxs.map(({ t }) => t)
+        base.closes     = validIdxs.map(({ i }) => closesRaw[i]!)
+        base.highs      = validIdxs.map(({ i }) => highsRaw[i] ?? closesRaw[i]!)
+        base.lows       = validIdxs.map(({ i }) => lowsRaw[i]  ?? closesRaw[i]!)
       }
     }
 
@@ -64,27 +65,13 @@ async function fetchOneTicker(ticker: string, debug = false): Promise<PriceResul
         const fd = summary.financialData || {}
         const sd = summary.summaryDetail || {}
         const fp = summary.fundProfile || {}
-
         base.pe = sd.trailingPE?.raw ?? ks.trailingPE?.raw ?? null
         base.pb = ks.priceToBook?.raw ?? null
         base.ebitda = fd.ebitda?.raw ?? null
         base.enterpriseValue = ks.enterpriseValue?.raw ?? null
         base.returnOnAssets = fd.returnOnAssets?.raw ?? null
-
-        // AUM: totalAssets is the standard field for ETFs
         base.aum = sd.totalAssets?.raw ?? ks.totalAssets?.raw ?? null
-
-        // TER: annualReportExpenseRatio from fundProfile
         base.ter = fp.annualReportExpenseRatio?.raw ?? null
-
-        // Debug: expose raw modules so we can inspect
-        if (debug) {
-          base._debug = {
-            defaultKeyStatistics: ks,
-            summaryDetail: sd,
-            fundProfile: fp,
-          }
-        }
       }
     }
   } catch (err: any) {
@@ -95,36 +82,26 @@ async function fetchOneTicker(ticker: string, debug = false): Promise<PriceResul
 }
 
 async function runWithConcurrency<T>(
-  items: string[],
-  concurrency: number,
-  fn: (item: string) => Promise<T>
+  items: string[], concurrency: number, fn: (item: string) => Promise<T>
 ): Promise<T[]> {
   const results: T[] = new Array(items.length)
   let index = 0
-
   async function worker() {
     while (index < items.length) {
       const i = index++
       results[i] = await fn(items[i])
     }
   }
-
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
   return results
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-
   const tickers: string[] = req.body?.tickers
-  if (!Array.isArray(tickers) || tickers.length === 0) {
+  if (!Array.isArray(tickers) || tickers.length === 0)
     return res.status(400).json({ error: 'tickers array required' })
-  }
 
-  // Pass debug=true for first ticker only so we can inspect the raw Yahoo structure
-  const results = await runWithConcurrency(tickers, 5, (ticker) =>
-    fetchOneTicker(ticker, ticker === tickers[0])
-  )
-
+  const results = await runWithConcurrency(tickers, 5, fetchOneTicker)
   return res.status(200).json(results)
 }
