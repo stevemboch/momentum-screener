@@ -1,15 +1,13 @@
 import { useCallback, useRef } from 'react'
 import { useAppState } from '../store'
 import type { Instrument } from '../types'
-import type { ParsedIdentifier } from '../utils/parsers'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
 import { recalculateAll } from '../utils/calculations'
 
-const BATCH_SIZE_YAHOO = 25  // tickers per batch
-const BATCH_SIZE_JUSTETF = 100
-const BATCH_DELAY_YAHOO = 0  // ms
-const BATCH_DELAY_JUSTETF = 0  // server handles delays internally
+const BATCH_SIZE_YAHOO = 25
+const BATCH_SIZE_STATS = 200  // xetra-stats handles large batches fine
+const BATCH_DELAY_YAHOO = 0
 
 // ─── API Response Types ───────────────────────────────────────────────────────
 
@@ -19,9 +17,11 @@ interface OpenFIGIResult {
   securityType2?: string
 }
 
-interface JustETFResult {
+interface StatsResult {
+  isin: string
+  name: string | null
   aum: number | null
-  ter: number | null
+  ter: null  // not available from Deutsche Börse
 }
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
@@ -46,13 +46,14 @@ async function apiYahoo(tickers: string[]) {
   return res.json()
 }
 
-async function apiJustETF(isins: string[]): Promise<JustETFResult[]> {
+// Deutsche Börse monthly stats – AUM for all ETFs/ETCs by ISIN
+async function apiStats(isins: string[]): Promise<StatsResult[]> {
   const res = await fetch('/api/xetra-stats', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ isins }),
   })
-  if (!res.ok) throw new Error(`justETF API error: ${res.status}`)
+  if (!res.ok) throw new Error(`Stats API error: ${res.status}`)
   return res.json()
 }
 
@@ -84,6 +85,24 @@ async function processBatches<T, R>(
   return results
 }
 
+// ─── Apply stats results by ISIN ──────────────────────────────────────────────
+
+function applyStatsResults(instruments: Instrument[], statsResults: StatsResult[]): Instrument[] {
+  const statsMap = new Map(statsResults.map((r) => [r.isin, r]))
+  return instruments.map((inst) => {
+    const r = statsMap.get(inst.isin)
+    if (!r) return inst
+    return {
+      ...inst,
+      aum: r.aum ?? null,
+      ter: null,
+      justEtfFetched: true,
+      // Use DB name as fallback if OpenFIGI gave nothing
+      displayName: inst.longName ? inst.displayName : (r.name || inst.displayName),
+    }
+  })
+}
+
 // ─── Main Pipeline Hook ───────────────────────────────────────────────────────
 
 export function usePipeline() {
@@ -104,7 +123,7 @@ export function usePipeline() {
       if (inst.wkn && inst.wkn.length === 6) {
         return { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
       }
-      return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker, exchCode: 'GS' }
+      return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker }
     })
 
     const results = await processBatches(
@@ -116,12 +135,10 @@ export function usePipeline() {
     return instruments.map((inst, i) => {
       const figi = results[i]
       if (!figi) return inst
-
       const longName: string | undefined = figi.name || undefined
       const type = inst.source === 'xetra'
-        ? inst.type  // trust Xetra type
-        : resolveInstrumentType(figi.securityType, figi.securityType2, inst.isin)
-
+        ? inst.type
+        : resolveInstrumentType(figi.securityType ?? null, figi.securityType2 ?? null, inst.isin)
       return {
         ...inst,
         longName,
@@ -131,7 +148,7 @@ export function usePipeline() {
     })
   }, [])
 
-  // ── Step 2: Yahoo Finance prices ──────────────────────────────────────────
+  // ── Step 2: Yahoo Finance prices + fundamentals ──────────────────────────
 
   const fetchPrices = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const tickers = instruments.map((i) => i.yahooTicker).filter(Boolean)
@@ -164,37 +181,23 @@ export function usePipeline() {
     return updated
   }, [])
 
-  // ── Step 3: justETF TER + AUM ─────────────────────────────────────────────
+  // ── Step 3: Deutsche Börse AUM stats ────────────────────────────────────
 
-  const fetchJustETF = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
-    const etfs = instruments.filter(
-      (i) => (i.type === 'ETF' || i.type === 'ETC') && !i.justEtfFetched
-    )
-    const updated = [...instruments]
+  const fetchStats = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
+    const etfs = instruments.filter((i) => i.type === 'ETF' || i.type === 'ETC')
+    if (etfs.length === 0) return instruments
 
-    const results = await processBatches(
-      etfs, BATCH_SIZE_JUSTETF, BATCH_DELAY_JUSTETF,
-      (batch) => apiJustETF(batch.map((e) => e.isin)),
-      (done, total) => setStatus(`Fetching ETF data: ${done} / ${total} ETFs`, done, total)
-    )
+    const allResults: StatsResult[] = []
+    await processBatches(
+      etfs, BATCH_SIZE_STATS, 0,
+      async (batch) => {
+        const r = await apiStats(batch.map((e) => e.isin))
+        return r
+      },
+      (done, total) => setStatus(`Fetching AUM: ${done} / ${total} ETFs`, done, total)
+    ).then((r) => allResults.push(...r))
 
-    results.forEach((r: any) => {
-      const idx = updated.findIndex((i) => i.isin === r.isin)
-      if (idx < 0) return
-      updated[idx] = {
-        ...updated[idx],
-        aum: r.aum ?? null,
-        ter: r.ter ?? null,
-        justEtfFetched: true,
-        justEtfError: r.error,
-        // Update display name if justETF has a better one and OpenFIGI didn't provide one
-        displayName: updated[idx].longName
-          ? updated[idx].displayName
-          : (r.name || updated[idx].displayName),
-      }
-    })
-
-    return updated
+    return applyStatsResults(instruments, allResults)
   }, [])
 
   // ── Manual input pipeline ─────────────────────────────────────────────────
@@ -209,7 +212,6 @@ export function usePipeline() {
       return
     }
 
-    // Build stub instruments
     const stubs: Instrument[] = parsed.map((p) => {
       const yahooTicker = p.type === 'Ticker'
         ? (p.normalized.includes('.') ? p.normalized : `${p.normalized}.DE`)
@@ -226,32 +228,25 @@ export function usePipeline() {
     })
 
     try {
-      // Enrich with OpenFIGI
       setStatus('Looking up names...', 0, stubs.length)
       const enriched = await enrichWithOpenFIGI(stubs)
 
-      // Fetch prices + fundamentals
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
       const withPrices = await fetchPrices(enriched)
 
-      // For ETFs, fetch justETF
-      const etfs = withPrices.filter((i) => i.type === 'ETF' || i.type === 'ETC')
-      let final = withPrices
-      if (etfs.length > 0) {
-        dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
-        final = await fetchJustETF(withPrices)
-      }
+      // Fetch AUM for any ETFs/ETCs
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
+      const withStats = await fetchStats(withPrices)
 
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(final, state.settings.weights) })
-      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Added ${final.length} instruments`, current: final.length, total: final.length } })
+      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(withStats, state.settings.weights) })
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Added ${withStats.length} instruments`, current: withStats.length, total: withStats.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, fetchPrices, fetchJustETF, state.settings.weights])
+  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, state.settings.weights])
 
   // ── Xetra background load ─────────────────────────────────────────────────
 
-  // Stored Xetra instruments before activation
   const xetraBuffer = useRef<Instrument[]>([])
 
   const loadXetraBackground = useCallback(async () => {
@@ -261,7 +256,6 @@ export function usePipeline() {
       const rows = parseXetraCSV(csvText)
       const instruments = rows.map(xetraRowToInstrument)
 
-      // Build group counts
       const etfCounts: Record<string, number> = {}
       const stockCounts: Record<string, number> = {}
       instruments.forEach((inst) => {
@@ -275,7 +269,6 @@ export function usePipeline() {
 
       dispatch({ type: 'SET_GROUP_COUNTS', etf: etfCounts, stock: stockCounts })
       xetraBuffer.current = instruments
-
       dispatch({ type: 'SET_XETRA_READY', ready: true })
       dispatch({ type: 'SET_XETRA_LOADING', loading: false })
     } catch (err) {
@@ -290,11 +283,9 @@ export function usePipeline() {
     const enabledETFGroups = state.etfGroups.filter((g) => g.enabled).map((g) => g.groupKey)
     const enabledStockGroups = state.stockGroups.filter((g) => g.enabled).map((g) => g.groupKey)
 
-    // Filter instruments by selected groups
-    let instruments = xetraBuffer.current.filter((inst) => {
+    const instruments = xetraBuffer.current.filter((inst) => {
       if (inst.type === 'Stock') {
         if (enabledStockGroups.includes('__OTHER_STOCKS__')) {
-          // Include stocks not in any named group
           const inNamedGroup = ['DAX','MDAX','SDAX','DEUTSCHLAND','NORDAMERIKA','FRANKREICH',
             'GROSSBRITANNIEN','SKANDINAVIEN','SCHWEIZ LIECHTENSTEIN','BELGIEN NIEDERLANDE LUXEMBURG',
             'ITALIEN GRIECHENLAND','OESTERREICH','SPANIEN PORTUGAL'].includes(inst.xetraGroup || '')
@@ -309,11 +300,11 @@ export function usePipeline() {
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: '', current: 0, total: instruments.length } })
 
     try {
-      // Enrich all with OpenFIGI (names)
+      // Step 1: OpenFIGI names for all
       setStatus(`Enriching names: 0 / ${instruments.length}`, 0, instruments.length)
       const enriched = await enrichWithOpenFIGI(instruments)
 
-      // Dedup ETFs
+      // Step 2: Dedup ETFs
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'dedup', message: 'Deduplicating...', current: 0, total: 0 } })
       const etfs = enriched.filter((i) => i.type === 'ETF' || i.type === 'ETC')
       const stocks = enriched.filter((i) => i.type === 'Stock')
@@ -321,52 +312,63 @@ export function usePipeline() {
       const groups = buildDedupGroups(etfs)
       const dedupedEtfs = applyDedupToInstruments(etfs, groups)
 
-      // Fetch justETF only for dedup winners
-      const winners = dedupedEtfs.filter((i) => i.isDedupWinner)
-      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: winners.length } })
+      // Step 3: Fetch AUM for ALL ETFs (not just winners) – fast since it's one XLSX fetch
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: 'Fetching AUM data...', current: 0, total: dedupedEtfs.length } })
+      const etfISINs = dedupedEtfs.map((e) => e.isin)
+      const statsResults = await apiStats(etfISINs)
+      const dedupedWithAUM = applyStatsResults(dedupedEtfs, statsResults)
 
-      const justEtfResults = await processBatches(
-        winners, BATCH_SIZE_JUSTETF, BATCH_DELAY_JUSTETF,
-        async (batch) => {
-          const r = await apiJustETF(batch.map((e) => e.isin))
-          return r
-        },
-        (done, total) => setStatus(`Verifying ETF data: ${done} / ${total} groups`, done, total)
-      )
-
-      // Apply justETF results + handle fallback logic
+      // Step 4: Re-evaluate winners using AUM floor
       const aumFloor = state.settings.aumFloor
-      const updatedWinners = winners.map((inst, i) => {
-        const r = justEtfResults[i]
-        if (!r) return inst
-        const needsFallback = r.aum !== null && r.aum < aumFloor
-        return { ...inst, aum: r.aum, ter: r.ter, justEtfFetched: true,
-          isDedupWinner: !needsFallback }
+      const updatedEtfs = dedupedWithAUM.map((inst) => {
+        if (!inst.isDedupWinner) return inst
+        // If winner has AUM below floor, demote and find next candidate
+        if (inst.aum !== null && inst.aum < aumFloor) {
+          return { ...inst, isDedupWinner: false }
+        }
+        return inst
       })
 
-      // Recombine
-      const allEtfs = dedupedEtfs.map((inst) => {
-        const updated = updatedWinners.find((w) => w.isin === inst.isin)
-        return updated || inst
+      // For groups where winner was demoted, promote next candidate with sufficient AUM
+      const winnersByGroup = new Map<string, Instrument>()
+      updatedEtfs.forEach((inst) => {
+        if (inst.isDedupWinner && inst.dedupGroup) {
+          winnersByGroup.set(inst.dedupGroup, inst)
+        }
       })
 
-      const combined = [...allEtfs, ...stocks]
+      const finalEtfs = updatedEtfs.map((inst) => {
+        if (!inst.dedupGroup) return inst
+        const hasWinner = winnersByGroup.has(inst.dedupGroup)
+        if (!hasWinner && !inst.isDedupWinner) {
+          // Promote first candidate with sufficient AUM
+          const aum = inst.aum
+          if (aum === null || aum >= aumFloor) {
+            winnersByGroup.set(inst.dedupGroup, inst)
+            return { ...inst, isDedupWinner: true }
+          }
+        }
+        return inst
+      })
 
-      // Fetch prices for winners + stocks
+      const combined = [...finalEtfs, ...stocks]
+
+      // Step 5: Fetch prices for winners + stocks only
       const toFetch = combined.filter((i) => i.isDedupWinner !== false || i.type === 'Stock')
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: toFetch.length } })
       const withPrices = await fetchPrices(toFetch)
 
-      // Merge back
+      // Merge prices back
       const finalMap = new Map(withPrices.map((i) => [i.isin, i]))
       const final = combined.map((i) => finalMap.get(i.isin) || i)
 
+      const winners = final.filter((i) => i.isDedupWinner)
       dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(final, state.settings.weights) })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: final.length, total: final.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, enrichWithOpenFIGI, fetchPrices, fetchJustETF])
+  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, enrichWithOpenFIGI, fetchPrices, fetchStats])
 
   return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer }
 }
