@@ -27,170 +27,153 @@ const PROVIDERS: { prefix: string; priority: number }[] = [
   { prefix: 'GLOBALX', priority: 20 },
   { prefix: 'FRANKLIN', priority: 21 },
   { prefix: 'LGIM', priority: 22 },
-  { prefix: 'LEGAL', priority: 22 },
   { prefix: 'ABRDN', priority: 23 },
   { prefix: 'NOMURA', priority: 24 },
   { prefix: 'TABULA', priority: 25 },
 ]
 
-// Xetra short-name provider aliases → canonical provider prefix
-const PROVIDER_ALIASES: Record<string, string> = {
-  'ISH': 'ISHARES',
-  'ISHS': 'ISHARES',
-  'IS': 'ISHARES',       // "IS Core MSCI..."
-  'SS': 'SPDR',          // State Street SPDR
-  'SSGA': 'SPDR',
-  'XTR': 'XTRACKERS',
-  'XTRK': 'XTRACKERS',
-  'XTRAC': 'XTRACKERS',
-  'LYX': 'LYXOR',
-  'LYXR': 'LYXOR',
-  'VANECK': 'VANECK',
-  'VE': 'VANECK',
-  'GLX': 'GLOBALX',
-  'FT': 'FRANKLIN',
-}
+// Xetra short-name provider aliases → canonical provider prefix for priority lookup
+const PROVIDER_ALIASES: [string, string][] = [
+  ['ISHARES', 'ISHARES'],
+  ['ISHS', 'ISHARES'],
+  ['ISH', 'ISHARES'],
+  ['IS ', 'ISHARES'],   // "IS Core MSCI..." – note trailing space
+  ['SS SPDR', 'SPDR'],
+  ['SS ', 'SPDR'],
+  ['SSGA', 'SPDR'],
+  ['XTRACKERS', 'XTRACKERS'],
+  ['XTRK', 'XTRACKERS'],
+  ['XTRAC', 'XTRACKERS'],
+  ['XTR', 'XTRACKERS'],
+  ['X ', 'XTRACKERS'],  // "X MSCI Korea" – Xtrackers
+  ['LYXOR', 'LYXOR'],
+  ['LYX', 'LYXOR'],
+  ['AMUNDI', 'AMUNDI'],
+  ['VANECK', 'VANECK'],
+  ['WISDOMTREE', 'WISDOMTREE'],
+  ['WT ', 'WISDOMTREE'],
+  ['FRANKLIN', 'FRANKLIN'],
+  ['FRK', 'FRANKLIN'],  // "Frk FTSE Korea"
+  ['FTGF', 'FRANKLIN'],
+  ['INVESCO', 'INVESCO'],
+  ['INV', 'INVESCO'],
+  ['GLX', 'GLOBALX'],
+  ['VANGUARD', 'VANGUARD'],
+  ['VAN', 'VANGUARD'],
+  ['SPDR', 'SPDR'],
+  ['UBS', 'UBS'],
+  ['DEKA', 'DEKA'],
+  ['HSBC', 'HSBC'],
+  ['PIMCO', 'PIMCO'],
+  ['LGIM', 'LGIM'],
+]
 
 // ─── Abbreviation Expansion ───────────────────────────────────────────────────
-// Xetra names are truncated to ~35 chars. Map short forms to canonical terms.
 
-const ABBREV: Record<string, string> = {
-  // Indices
-  'STX': 'STOXX',
-  'STX600': 'STOXX600',
-  'STXX': 'STOXX',
-  'EURSTX': 'EURO STOXX',
-  'EURSTX50': 'EURO STOXX50',
-  'EURSTX600': 'EURO STOXX600',
-  'EUR600': 'EURO STOXX600',
-  'EX600': 'EURO STOXX600',
-  'ESTX': 'EURO STOXX',
-  'ESTX50': 'EURO STOXX50',
+const ABBREV: [string, string][] = [
+  // Indices – sorted longest first to avoid partial matches
+  ['EURSTX600', 'EUROSTOXX600'],
+  ['EURSTX50', 'EUROSTOXX50'],
+  ['EURSTX', 'EUROSTOXX'],
+  ['EUR600', 'EUROSTOXX600'],
+  ['EX600', 'EUROSTOXX600'],
+  ['ESTX600', 'EUROSTOXX600'],
+  ['ESTX50', 'EUROSTOXX50'],
+  ['ESTX', 'EUROSTOXX'],
+  ['STX600', 'STOXX600'],
+  ['STX50', 'STOXX50'],
+  ['STX', 'STOXX'],
+  ['STXX', 'STOXX'],
 
-  // Sectors & asset classes
-  'RSRCES': 'RESOURCES',
-  'RSRC': 'RESOURCES',
-  'RSCR': 'RESOURCES',
-  'BASICRESOURCE': 'BASIC RESOURCES',
-  'BASICRES': 'BASIC RESOURCES',
-  'BASRES': 'BASIC RESOURCES',
-  'SEMICNDCT': 'SEMICONDUCTOR',
-  'SEMICOND': 'SEMICONDUCTOR',
-  'SEMIC': 'SEMICONDUCTOR',
-  'SEMCNDCT': 'SEMICONDUCTOR',
-  'UTILITIE': 'UTILITIES',
-  'UTILIT': 'UTILITIES',
-  'UTIL': 'UTILITIES',
-  'HLTHCARE': 'HEALTHCARE',
-  'HLTHCR': 'HEALTHCARE',
-  'HLTH': 'HEALTH',
-  'HELTHCR': 'HEALTHCARE',
-  'FINANCI': 'FINANCIALS',
-  'FINAN': 'FINANCIALS',
-  'FINANC': 'FINANCIALS',
-  'CONSMR': 'CONSUMER',
-  'CONSM': 'CONSUMER',
-  'DISCRET': 'DISCRETIONARY',
-  'DISCR': 'DISCRETIONARY',
-  'STAPLE': 'STAPLES',
-  'INDUST': 'INDUSTRIALS',
-  'INDUS': 'INDUSTRIALS',
-  'TELECOM': 'COMMUNICATIONS',
-  'TELECO': 'COMMUNICATIONS',
-  'COMMUN': 'COMMUNICATIONS',
-  'COMM': 'COMMUNICATIONS',
-  'INFTECH': 'INFORMATION TECHNOLOGY',
-  'INFOTECH': 'INFORMATION TECHNOLOGY',
-  'INFTEC': 'INFORMATION TECHNOLOGY',
-  'TECH': 'TECHNOLOGY',
-  'REALEST': 'REAL ESTATE',
-  'REALES': 'REAL ESTATE',
-  'REALET': 'REAL ESTATE',
+  // Sectors
+  ['BASICRESOURCE', 'BASICRESOURCES'],
+  ['BASICRESOURCES', 'BASICRESOURCES'],
+  ['BASICRES', 'BASICRESOURCES'],
+  ['BASRES', 'BASICRESOURCES'],
+  ['RSRCES', 'BASICRESOURCES'],
+  ['RSRC', 'RESOURCES'],
+  ['RSCR', 'RESOURCES'],
+  ['SEMICNDCT', 'SEMICONDUCTOR'],
+  ['SEMICOND', 'SEMICONDUCTOR'],
+  ['SEMCNDCT', 'SEMICONDUCTOR'],
+  ['SEMIC', 'SEMICONDUCTOR'],
+  ['UTILITIE', 'UTILITIES'],
+  ['UTILIT', 'UTILITIES'],
+  ['UTIL', 'UTILITIES'],
+  ['HLTHCARE', 'HEALTHCARE'],
+  ['HLTHCR', 'HEALTHCARE'],
+  ['HELTHCR', 'HEALTHCARE'],
+  ['HLTH', 'HEALTH'],
+  ['FINANCIALS', 'FINANCIALS'],
+  ['FINANCI', 'FINANCIALS'],
+  ['FINANC', 'FINANCIALS'],
+  ['FINAN', 'FINANCIALS'],
+  ['CONSMR', 'CONSUMER'],
+  ['DISCRET', 'DISCRETIONARY'],
+  ['DISCR', 'DISCRETIONARY'],
+  ['INDUST', 'INDUSTRIALS'],
+  ['INFTECH', 'TECHNOLOGY'],
+  ['INFOTECH', 'TECHNOLOGY'],
+  ['INFTEC', 'TECHNOLOGY'],
+  ['REALEST', 'REALESTATE'],
+  ['REALES', 'REALESTATE'],
+  ['REALET', 'REALESTATE'],
+  ['TELECOM', 'COMMUNICATIONS'],
+  ['TELECO', 'COMMUNICATIONS'],
+  ['COMMUN', 'COMMUNICATIONS'],
 
   // Geographic
-  'GLB': 'GLOBAL',
-  'GLBL': 'GLOBAL',
-  'GLBSCT': 'GLOBAL SELECT',
-  'WRLD': 'WORLD',
-  'WRL': 'WORLD',
-  'INTL': 'INTERNATIONAL',
-  'INTRNTNL': 'INTERNATIONAL',
-  'EM': 'EMERGING MARKETS',
-  'EMG': 'EMERGING MARKETS',
-  'EMRG': 'EMERGING MARKETS',
-  'DM': 'DEVELOPED MARKETS',
-  'ACWI': 'ALL COUNTRY WORLD',
-  'ACWI EX': 'ALL COUNTRY WORLD EX',
-  'APAC': 'ASIA PACIFIC',
-  'APACD': 'ASIA PACIFIC DEVELOPED',
-  'LATAM': 'LATIN AMERICA',
+  ['GLB', 'GLOBAL'],
+  ['GLBL', 'GLOBAL'],
+  ['WRLD', 'WORLD'],
+  ['WRL', 'WORLD'],
+  ['INTL', 'INTERNATIONAL'],
+  ['INTRNTNL', 'INTERNATIONAL'],
+  ['LATAM', 'LATINAMERICA'],
+  ['APAC', 'ASIAPACIFIC'],
 
   // Modifiers
-  'PHYS': 'PHYSICAL',
-  'PHY': 'PHYSICAL',
-  'PRVDR': 'PROVIDER',
-  'EX-FIN': 'EX FINANCIALS',
-  'EXFIN': 'EX FINANCIALS',
-  'HEDG': 'HEDGED',
-  'HDGD': 'HEDGED',
+  ['PHYS', 'PHYSICAL'],
+  ['MINERS', 'MINERS'],
+  ['MINING', 'MINERS'],
+  ['GOLDMIN', 'GOLDMINERS'],
+  ['GOLDMINE', 'GOLDMINERS'],
+  ['SILVMINE', 'SILVERMINERS'],
 
-  // Mining / metals specific
-  'MINERS': 'MINERS',
-  'MINING': 'MINERS',
-  'MINE': 'MINERS',
-  'GOLDMINE': 'GOLD MINERS',
-  'GOLDMIN': 'GOLD MINERS',
-  'SILVMINE': 'SILVER MINERS',
+  // Misc
+  ['MINVOL', 'MINIMUMVOLATILITY'],
+  ['MINVAR', 'MINIMUMVARIANCE'],
+  ['LOWVOL', 'LOWVOLATILITY'],
+  ['EQWT', 'EQUALWEIGHT'],
+  ['GOVT', 'GOVERNMENT'],
+  ['GOVNT', 'GOVERNMENT'],
+  ['CORP', 'CORPORATE'],
+]
 
-  // Miscellaneous
-  'DIV': 'DIVIDEND',
-  'DIVID': 'DIVIDEND',
-  'MOMEN': 'MOMENTUM',
-  'MOMNTM': 'MOMENTUM',
-  'QUALI': 'QUALITY',
-  'QUAL': 'QUALITY',
-  'MINVOL': 'MINIMUM VOLATILITY',
-  'MINVAR': 'MINIMUM VARIANCE',
-  'LOWVOL': 'LOW VOLATILITY',
-  'LOWVLT': 'LOW VOLATILITY',
-  'EQWT': 'EQUAL WEIGHT',
-  'EQW': 'EQUAL WEIGHT',
-  'MKT': 'MARKET',
-  'GOVNT': 'GOVERNMENT',
-  'GOVT': 'GOVERNMENT',
-  'CORP': 'CORPORATE',
-  'HY': 'HIGH YIELD',
-  'IG': 'INVESTMENT GRADE',
-  'AGGR': 'AGGREGATE',
-  'AGG': 'AGGREGATE',
-}
-
-// Words/tokens to strip entirely after expansion
 const STRIP_WORDS = new Set([
   'UCITS', 'ETF', 'ETC', 'ETP', 'SWAP', 'DR', 'ACC', 'DIST', 'DISTRIBUTING',
-  'ACCUMULATING', 'CLASS', 'SHARE', 'SHARES', 'FUND',
-  '1C', '2C', '3C', '4C', '1D', '2D',
+  'ACCUMULATING', 'CLASS', 'SHARE', 'SHARES', 'FUND', 'TRUST',
+  '1C', '2C', '3C', '4C', '5C', '1D', '2D', '3D', 'A', 'B', 'C', 'D',
   'DAILY', 'MONTHLY', 'QUARTERLY',
-  'U.ETF', 'UETF', 'IE', 'DE', 'LU', 'FR',  // country suffixes
-  'THE', 'AN', 'OF', 'FOR', 'AND',
-  // Strip currency when used as standalone word (not as part of index name)
-  // Note: EUR in "EURO STOXX" is handled by ABBREV expansion
-  'GBP', 'CHF', 'JPY', 'SEK', 'NOK',
-  // Noise quality words that differ across providers for same exposure
-  'CORE', 'PRIME', 'PLUS', 'SELECT', 'OPTIMAL', 'ENHANCED',
-  'IMI', 'LARGE', 'MID', 'SMALL', 'CAP',
+  'THE', 'AN', 'OF', 'FOR', 'AND', 'WITH',
+  // Strip index family names – we do NOT use them as dedup dimensions
+  // (MSCI Korea = FTSE Korea for our purposes)
+  'MSCI', 'FTSE', 'SP', 'STOXX', 'BLOOMBERG', 'SOLACTIVE',
+  'RUSSELL', 'NASDAQ', 'DJ', 'NIKKEI', 'CSI', 'TOPIX', 'HANGSENG',
+  // Noise quality words
+  'CORE', 'PRIME', 'PLUS', 'SELECT', 'OPTIMAL', 'ENHANCED', 'QUALITY',
+  'IMI', 'LARGE', 'MID', 'SMALL', 'CAP', 'MEGA',
   'SCREENED', 'LEADERS', 'FILTERED', 'FOCUSED', 'UNIVERSAL', 'BROAD',
-  'NET', 'TOTAL', 'RETURN', 'TR', 'NR', 'GR',
-  // Provider names (resolved separately)
+  'NET', 'TOTAL', 'RETURN', 'TR', 'NR', 'GR', 'PR',
+  'MARKET', 'INDEX', 'IDX',
+  // Provider names
   ...PROVIDERS.map((p) => p.prefix),
-  ...Object.keys(PROVIDER_ALIASES),
 ])
 
 // ─── Commodity Detection ──────────────────────────────────────────────────────
-// ETCs tracking a single physical commodity → key is just the commodity
 
 const COMMODITIES: { commodity: string; terms: string[] }[] = [
-  { commodity: 'GOLD',      terms: ['GOLD', 'XAU', 'XAUUSD', 'GOLD ETC', 'GOLDBARREN'] },
+  { commodity: 'GOLD',      terms: ['GOLD', 'XAU', 'GOLDBARREN'] },
   { commodity: 'SILVER',    terms: ['SILVER', 'XAG', 'SILBER'] },
   { commodity: 'PLATINUM',  terms: ['PLATINUM', 'XPT', 'PLATIN'] },
   { commodity: 'PALLADIUM', terms: ['PALLADIUM', 'XPD'] },
@@ -201,175 +184,142 @@ const COMMODITIES: { commodity: string; terms: string[] }[] = [
   { commodity: 'ALUMINIUM', terms: ['ALUMINIUM', 'ALUMINUM'] },
   { commodity: 'COBALT',    terms: ['COBALT'] },
   { commodity: 'LITHIUM',   terms: ['LITHIUM'] },
-  { commodity: 'OIL',       terms: ['CRUDE OIL', 'BRENT', 'WTI', 'OIL ETC', 'PETROLEUM'] },
-  { commodity: 'GAS',       terms: ['NATURAL GAS', 'NATURAL GS', 'NAT GAS'] },
+  { commodity: 'OIL',       terms: ['CRUDE OIL', 'BRENT', 'WTI', 'PETROLEUM'] },
+  { commodity: 'GAS',       terms: ['NATURAL GAS', 'NAT GAS'] },
   { commodity: 'WHEAT',     terms: ['WHEAT', 'WEIZEN'] },
   { commodity: 'CORN',      terms: ['CORN', 'MAIS'] },
-  { commodity: 'SOYBEANS',  terms: ['SOYBEAN', 'SOYA', 'SOY'] },
-  { commodity: 'CARBON',    terms: ['CARBON', 'CO2', 'CARBON CREDIT', 'EMISSION'] },
+  { commodity: 'SOYBEANS',  terms: ['SOYBEAN', 'SOYA'] },
+  { commodity: 'CARBON',    terms: ['CARBON', 'CO2', 'EMISSION'] },
+  { commodity: 'PRECIOUS',  terms: ['PRECIOUS METALS', 'PRECIOUS MET'] },
+  { commodity: 'BASKET',    terms: ['BLOOMBERG COMMODITY', 'BROAD COMMODITY', 'DIVERSIFIED COMMODITY', 'RICI'] },
 ]
 
-// Sub-dimensions for commodities (create separate groups)
-const COMMODITY_DIMS: { key: string; terms: string[] }[] = [
-  { key: 'HEDGED',   terms: ['HEDGED', 'HDG', 'HDGD'] },
-  { key: 'DAILY',    terms: ['DAILY HEDGED', 'DAILY HDG'] },
-  { key: '2X',       terms: ['2X', '2EX', 'DAILY 2X', 'DOUBLE'] },
-  { key: 'SHORT',    terms: ['SHORT', '-1X', 'INVERSE'] },
-  { key: 'BASKET',   terms: ['BASKET', 'DIVERSIFIED', 'BROAD COMMODITY', 'BLOOMBERG COMMODITY', 'RICI'] },
-  { key: 'PRECIOUS', terms: ['PRECIOUS METALS', 'PRECIOUS MET'] },
+const COMMODITY_MODS: { key: string; terms: string[] }[] = [
+  { key: 'HEDGED', terms: ['HEDGED', 'HDG', 'HDGD', 'CURRENCY HEDGED'] },
+  { key: '2X',     terms: ['2X', '2EX', 'DOUBLE LONG', 'DAILY 2X'] },
+  { key: 'SHORT',  terms: ['SHORT', 'INVERSE', '-1X', 'DAILY SHORT'] },
+  { key: 'MINERS', terms: ['MINERS', 'MINING', 'MINE'] },
 ]
 
-function detectCommodity(name: string): string | null {
-  const upper = name.toUpperCase()
-  // Baskets / diversified first
-  for (const dim of COMMODITY_DIMS) {
-    if (dim.key === 'BASKET' || dim.key === 'PRECIOUS') {
-      for (const term of dim.terms) {
-        if (upper.includes(term)) return dim.key
-      }
-    }
-  }
-  // Then single commodities
+function detectCommodity(upper: string): { commodity: string; mods: string } | null {
+  let found: string | null = null
   for (const { commodity, terms } of COMMODITIES) {
     for (const term of terms) {
-      if (upper.includes(term)) return commodity
+      if (upper.includes(term)) { found = commodity; break }
+    }
+    if (found) break
+  }
+  if (!found) return null
+
+  const mods: string[] = []
+  for (const { key, terms } of COMMODITY_MODS) {
+    for (const term of terms) {
+      if (upper.includes(term)) { mods.push(key); break }
     }
   }
-  return null
+
+  return { commodity: found, mods: mods.join('|') }
 }
 
-function detectCommodityDimensions(name: string): string {
+// ─── Provider Strip & Detection ──────────────────────────────────────────────
+
+function stripAndDetectProvider(name: string): { stripped: string; priority: number } {
   const upper = name.toUpperCase()
-  const dims: string[] = []
-  for (const dim of COMMODITY_DIMS) {
-    if (dim.key === 'BASKET' || dim.key === 'PRECIOUS') continue
-    for (const term of dim.terms) {
-      if (upper.includes(term)) { dims.push(dim.key); break }
+  for (const [alias, canonical] of PROVIDER_ALIASES) {
+    if (upper.startsWith(alias)) {
+      const stripped = name.slice(alias.length).trim().replace(/^[-\s]+/, '')
+      const prov = PROVIDERS.find((p) => p.prefix === canonical)
+      return { stripped, priority: prov?.priority ?? 99 }
     }
   }
-  return dims.join('|')
+  return { stripped: name, priority: 99 }
 }
 
-// ─── Name Normalization ───────────────────────────────────────────────────────
+// ─── Abbreviation Expansion ───────────────────────────────────────────────────
 
 function expandAbbreviations(name: string): string {
-  // First try multi-word replacements (longest match first)
-  let result = name
-
-  // Sort by length descending so longer matches take priority
-  const sortedAbbrev = Object.entries(ABBREV).sort((a, b) => b[0].length - a[0].length)
-  for (const [abbr, expansion] of sortedAbbrev) {
-    const regex = new RegExp(`\\b${abbr}\\b`, 'gi')
+  let result = name.toUpperCase()
+  for (const [abbr, expansion] of ABBREV) {
+    // Word-boundary match
+    const regex = new RegExp(`(?<![A-Z])${abbr}(?![A-Z])`, 'g')
     result = result.replace(regex, expansion)
   }
-
   return result
 }
 
-function stripProviderPrefix(name: string): string {
-  const upper = name.toUpperCase()
+// ─── Overlay Detection ────────────────────────────────────────────────────────
 
-  // Check provider aliases first (Xetra short names)
-  for (const [alias, canonical] of Object.entries(PROVIDER_ALIASES)) {
-    if (upper.startsWith(alias + ' ') || upper === alias) {
-      return name.slice(alias.length).trim()
-    }
-  }
+const ESG_TERMS = ['ESG', 'SRI', 'PAB', 'CTB', 'CLIMATE', 'SUSTAINABLE',
+  'RESPONSIBLE', 'GREEN', 'IMPACT', 'LOW CARBON', 'NET ZERO', 'PARIS ALIGNED']
+const HEDGED_TERMS = ['HEDGED', 'HDG', 'HDGD', 'CURRENCY HEDGED', 'EUR HEDGED', 'USD HEDGED']
 
-  // Then canonical providers
-  for (const p of PROVIDERS) {
-    if (upper.startsWith(p.prefix + ' ') || upper.startsWith(p.prefix + '-')) {
-      return name.slice(p.prefix.length).trim()
-    }
-  }
-  return name
-}
-
-function detectProvider(name: string): { priority: number } {
-  const upper = name.toUpperCase()
-
-  // Check aliases first
-  for (const [alias, canonical] of Object.entries(PROVIDER_ALIASES)) {
-    if (upper.startsWith(alias + ' ') || upper === alias) {
-      const prov = PROVIDERS.find((p) => p.prefix === canonical)
-      return prov ?? { priority: 99 }
-    }
-  }
-
-  for (const p of PROVIDERS) {
-    if (upper.startsWith(p.prefix)) return p
-  }
-  return { priority: 99 }
-}
-
-// ─── Exposure Key Extraction ─────────────────────────────────────────────────
-
-const ESG_TERMS = ['ESG', 'SRI', 'PAB', 'CTB', 'CLIMATE', 'SUSTAINABLE', 'RESPONSIBLE',
-  'GREEN', 'IMPACT', 'LOW CARBON', 'NET ZERO', 'PARIS']
-const HEDGED_TERMS = ['HEDGED', 'HDG', 'HDGD', 'CURRENCY HEDGED']
-const INDEX_FAMILIES = ['MSCI', 'FTSE', 'S&P', 'SP', 'STOXX', 'BLOOMBERG', 'SOLACTIVE',
-  'RUSSELL', 'NASDAQ', 'DJ', 'EURO STOXX', 'NIKKEI', 'HANG SENG', 'CSI', 'TOPIX']
+// ─── Exposure Key ────────────────────────────────────────────────────────────
 
 function extractExposureKey(longName: string | undefined, fallbackName: string): string {
-  const rawName = (longName || fallbackName || '')
+  const rawName = longName || fallbackName || ''
 
-  // Step 1: Strip provider prefix
-  const withoutProvider = stripProviderPrefix(rawName)
+  // 1. Strip provider prefix, get priority
+  const { stripped } = stripAndDetectProvider(rawName)
 
-  // Step 2: Expand abbreviations
-  const expanded = expandAbbreviations(withoutProvider)
+  // 2. Expand abbreviations
+  const expanded = expandAbbreviations(stripped)
 
-  const upper = expanded.toUpperCase()
-
-  // Step 3: Check for commodity ETC
-  const commodity = detectCommodity(upper)
+  // 3. Check for commodity ETC
+  const commodity = detectCommodity(expanded)
   if (commodity) {
-    const dims = detectCommodityDimensions(upper)
-    return dims ? `COMMODITY|${commodity}|${dims}` : `COMMODITY|${commodity}`
+    return commodity.mods
+      ? `COMMODITY|${commodity.commodity}|${commodity.mods}`
+      : `COMMODITY|${commodity.commodity}`
   }
 
-  // Step 4: Detect overlay dimensions
+  // 4. Detect overlays (ESG, Hedged)
   let esg = ''
-  for (const t of ESG_TERMS) { if (upper.includes(t)) { esg = 'ESG'; break } }
+  for (const t of ESG_TERMS) { if (expanded.includes(t)) { esg = 'ESG'; break } }
 
   let hedged = ''
-  for (const t of HEDGED_TERMS) { if (upper.includes(t)) { hedged = 'HEDGED'; break } }
+  for (const t of HEDGED_TERMS) { if (expanded.includes(t)) { hedged = 'HEDGED'; break } }
 
-  let indexFamily = ''
-  for (const fam of INDEX_FAMILIES) { if (upper.includes(fam)) { indexFamily = fam; break } }
-
-  // Step 5: Strip noise words and build core
-  const words = upper.split(/[\s\-\/\(\)]+/).filter((w) => {
-    if (!w) return false
+  // 5. Tokenize and strip noise
+  const words = expanded.split(/[\s\-\/\(\),\.]+/).map(w => w.trim()).filter((w) => {
+    if (!w || w.length < 2) return false
     if (STRIP_WORDS.has(w)) return false
-    if (/^\d{1,2}$/.test(w)) return false       // class numbers
-    if (/^[A-Z]\d+$/.test(w)) return false       // A1, B2 etc
-    if (/^\d+(MO|YR|Y)$/.test(w)) return false  // maturity codes
-    if (w === 'USD' || w === 'EUR' || w === 'GBP') return false // standalone currency
+    if (/^\d{1,2}$/.test(w)) return false
+    if (/^[A-Z]\d+$/.test(w)) return false
+    if (/^\d+(MO|YR|Y|M)$/.test(w)) return false
+    if (['USD', 'EUR', 'GBP', 'CHF', 'JPY', 'SEK'].includes(w)) return false
     return true
   })
 
-  // Step 6: Normalize common word variants
+  // 6. Normalize synonyms
   const normalized = words.map((w) => {
-    if (w === 'WORLD' || w === 'WLD') return 'WORLD'
-    if (w === 'EUROPE' || w === 'EUROPEAN' || w === 'EURO') return 'EUROPE'
-    if (w === 'AMERICA' || w === 'AMERICAN' || w === 'US' || w === 'USA') return 'USA'
-    if (w === 'EMERGING' || w === 'EMERGINGMARKETS') return 'EMERGING MARKETS'
-    if (w === 'GOVERNMENT' || w === 'GOVT' || w === 'GOV') return 'GOVERNMENT'
-    if (w === 'CORPORATE' || w === 'CORP') return 'CORPORATE'
-    if (w === 'AGGREGATE' || w === 'AGG') return 'AGGREGATE'
-    if (w === 'BOND' || w === 'BONDS') return 'BOND'
-    if (w === 'EQUITY' || w === 'EQUITIES' || w === 'STOCKS') return 'EQUITY'
-    if (w === 'MINERS' || w === 'MINING' || w === 'MINE') return 'MINERS'
+    if (['WORLD', 'WLD', 'WORLDWIDE'].includes(w)) return 'WORLD'
+    if (['EUROPE', 'EUROPEAN', 'EUR', 'EURO'].includes(w)) return 'EUROPE'
+    if (['AMERICA', 'AMERICAN', 'AMERICAS'].includes(w)) return 'AMERICA'
+    if (['EMERGINGMARKETS', 'EMERGING', 'EMG'].includes(w)) return 'EMERGINGMARKETS'
+    if (['GOVERNMENT', 'GOVT', 'GOV'].includes(w)) return 'GOVERNMENT'
+    if (['CORPORATE', 'CORP'].includes(w)) return 'CORPORATE'
+    if (['AGGREGATE', 'AGG'].includes(w)) return 'AGGREGATE'
+    if (['BOND', 'BONDS'].includes(w)) return 'BOND'
+    if (['EQUITY', 'EQUITIES', 'STOCKS', 'STOCK'].includes(w)) return 'EQUITY'
+    if (['MINERS', 'MINING', 'MINE'].includes(w)) return 'MINERS'
+    if (['REALESTATE', 'REIT', 'REITS'].includes(w)) return 'REALESTATE'
+    if (['HEALTHCARE', 'HEALTH'].includes(w)) return 'HEALTH'
+    if (['TECHNOLOGY', 'TECH'].includes(w)) return 'TECHNOLOGY'
+    if (['COMMUNICATIONS', 'TELECOM', 'COMM'].includes(w)) return 'COMMUNICATIONS'
+    if (['BASICRESOURCES', 'BASICRESOURCE', 'RESOURCES', 'RESOURCE'].includes(w)) return 'BASICRESOURCES'
+    if (['SEMICONDUCTOR', 'SEMICONDUCTORS'].includes(w)) return 'SEMICONDUCTOR'
+    if (['UTILITIES'].includes(w)) return 'UTILITIES'
+    if (['FINANCIALS', 'FINANCIAL'].includes(w)) return 'FINANCIALS'
+    if (['INDUSTRIALS', 'INDUSTRIAL'].includes(w)) return 'INDUSTRIALS'
+    if (['DISCRETIONARY'].includes(w)) return 'DISCRETIONARY'
     return w
   })
 
-  // Sort words alphabetically to make order-independent comparison work
-  // Exception: keep "GOLD MINERS" together by joining first, then the full key
-  const core = normalized.sort().join(' ').trim()
+  // 7. Sort alphabetically → order-independent matching
+  const core = [...new Set(normalized)].sort().join(' ').trim()
 
-  const parts = [core, indexFamily, esg, hedged].filter(Boolean)
-  return parts.join('|')
+  const parts = [core, esg, hedged].filter(Boolean)
+  return parts.join('|') || rawName.toUpperCase()
 }
 
 // ─── Group ETFs/ETCs by Exposure ─────────────────────────────────────────────
@@ -384,7 +334,6 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
   const groups = new Map<string, Instrument[]>()
 
   for (const inst of instruments) {
-    const nameToUse = inst.longName || inst.displayName
     const key = extractExposureKey(inst.longName, inst.displayName)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(inst)
@@ -394,9 +343,9 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
 
   for (const [key, candidates] of groups) {
     const sorted = [...candidates].sort((a, b) => {
-      const pa = detectProvider(a.longName || a.displayName)
-      const pb = detectProvider(b.longName || b.displayName)
-      if (pa.priority !== pb.priority) return pa.priority - pb.priority
+      const pa = stripAndDetectProvider(a.longName || a.displayName).priority
+      const pb = stripAndDetectProvider(b.longName || b.displayName).priority
+      if (pa !== pb) return pa - pb
       // Tiebreaker: EUR over USD
       if (a.currency === 'EUR' && b.currency !== 'EUR') return -1
       if (b.currency === 'EUR' && a.currency !== 'EUR') return 1
@@ -432,15 +381,4 @@ export function applyDedupToInstruments(
       dedupCandidates: group?.candidateISINs.filter((isin) => isin !== inst.isin),
     }
   })
-}
-
-// ─── Debug helper (call from browser console) ────────────────────────────────
-// Usage: window.__dedupKey("iShares Core MSCI World UCITS ETF")
-
-if (typeof window !== 'undefined') {
-  (window as any).__dedupKey = (name: string) => {
-    const key = extractExposureKey(name, name)
-    console.log(`Key: "${key}"`)
-    return key
-  }
 }
