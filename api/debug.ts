@@ -1,35 +1,29 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Deutsche Börse publishes ETF statistics including AUM and TER
-  // Check what's available on their downloads page
-  const pageUrl = 'https://www.cashmarket.deutsche-boerse.com/cash-en/trading/Tradable-Instruments-Xetra/Downloads'
-  
-  const pageRes = await fetch(pageUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' }
-  })
-
-  if (!pageRes.ok) {
-    return res.status(502).json({ error: `Downloads page returned ${pageRes.status}` })
-  }
+  const pageRes = await fetch(
+    'https://www.cashmarket.deutsche-boerse.com/cash-en/Data-Tech/statistics/etf-etp-statistics',
+    { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } }
+  )
 
   const html = await pageRes.text()
 
-  // Find all CSV/Excel download links
-  const links = [...html.matchAll(/href="([^"]*\.(csv|xlsx|xls)[^"]*)"/gi)]
+  // Find all download links
+  const links = [...html.matchAll(/href="([^"]*\.(csv|xlsx|xls|zip)[^"]*)"/gi)]
     .map(m => m[1])
-    .filter(l => l.toLowerCase().includes('xetr') || l.toLowerCase().includes('etf') || l.toLowerCase().includes('stat'))
 
-  // Also look for any "statistics" or "kennzahlen" links
-  const statLinks = [...html.matchAll(/href="([^"]*(?:statistic|kennzahl|etf-data|etf_data|fund)[^"]*)"/gi)]
-    .map(m => m[1])
+  // Also find any links mentioning AUM, TER, Fondsvermögen, Kennzahlen
+  const relevantLinks = [...html.matchAll(/href="([^"]+)"[^>]*>[^<]*(?:aum|ter|fonds|kennzahl|statistic|etf|etp)[^<]*/gi)]
+    .map(m => ({ href: m[1], text: m[0].slice(-50) }))
+
+  // Raw text snippets around key terms
+  const snippets = [...html.matchAll(/.{0,100}(?:fondsverm|ter|expense ratio|aum|kennzahl|\.csv|\.xlsx).{0,100}/gi)]
+    .map(m => m[0]).slice(0, 15)
 
   return res.status(200).json({
-    page_status: pageRes.status,
-    csv_links: links.slice(0, 20),
-    stat_links: statLinks.slice(0, 20),
-    // Show raw snippet around "statistic" or "AUM" mentions
-    aum_mentions: [...html.matchAll(/.{0,80}(?:aum|ter|expense|kennzahl|statistic).{0,80}/gi)]
-      .map(m => m[0]).slice(0, 10),
+    status: pageRes.status,
+    download_links: links.slice(0, 20),
+    relevant_links: relevantLinks.slice(0, 20),
+    snippets,
   })
 }
