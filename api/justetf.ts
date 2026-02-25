@@ -8,41 +8,6 @@ interface JustETFResult {
   error?: string
 }
 
-async function fetchJustETF(isin: string): Promise<JustETFResult> {
-  // justETF's internal API — returns small JSON directly, much faster than HTML scraping
-  const url = `https://api.justetf.com/api/etfs/${isin}?locale=en&currency=EUR`
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (compatible)',
-        'Referer': 'https://www.justetf.com/',
-      },
-    })
-
-    if (!response.ok) {
-      // Fallback to scraping if API blocked
-      return await scrapeJustETF(isin)
-    }
-
-    const data = await response.json()
-
-    const aum = data.aum?.value ?? data.fundSize ?? null
-    const ter = data.ter ?? data.totalExpenseRatio ?? null
-    const name = data.name ?? data.instrumentName ?? null
-
-    const validAum = typeof aum === 'number' && aum > 0 ? aum : null
-    const validTer = typeof ter === 'number' && ter >= 0 && ter <= 5 ? ter : null
-    const validName = typeof name === 'string' && name.length > 2 ? name : null
-
-    return { isin, aum: validAum, ter: validTer, name: validName }
-  } catch (err: any) {
-    return await scrapeJustETF(isin)
-  }
-}
-
-// Fallback: HTML scraping if API is blocked
 function findInObject(obj: any, keys: string[]): any {
   if (!obj || typeof obj !== 'object') return undefined
   for (const key of keys) {
@@ -126,6 +91,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const limited = isins.slice(0, 15)
-  const results = await runWithConcurrency(limited, 10, fetchJustETF)
+  const results = await runWithConcurrency(limited, 5, scrapeJustETF)
   return res.status(200).json(results)
 }
