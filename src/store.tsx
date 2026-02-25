@@ -232,12 +232,14 @@ export function useDisplayedInstruments() {
     })
   }
 
-  // AUM floor (only xetra ETFs)
-  filtered = filtered.filter((i) => {
-    if (i.type === 'Stock' || i.source === 'manual') return true
-    if (i.aum === null || i.aum === undefined) return true // show if unknown
-    return i.aum >= settings.aumFloor
-  })
+  // AUM floor — only applied when dedup is ON (when OFF user wants to see all)
+  if (tableState.showDeduped) {
+    filtered = filtered.filter((i) => {
+      if (i.type === 'Stock' || i.source === 'manual') return true
+      if (i.aum === null || i.aum === undefined) return true // show if unknown
+      return i.aum >= settings.aumFloor
+    })
+  }
 
   // Sort
   const col = tableState.sortColumn
