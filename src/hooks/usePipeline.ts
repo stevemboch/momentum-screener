@@ -323,7 +323,7 @@ export function usePipeline() {
       const updatedEtfs = dedupedWithAUM.map((inst) => {
         if (!inst.isDedupWinner) return inst
         // If winner has AUM below floor, demote and find next candidate
-        if (inst.aum !== null && inst.aum < aumFloor) {
+        if (inst.aum != null && inst.aum < aumFloor) {
           return { ...inst, isDedupWinner: false }
         }
         return inst
@@ -343,7 +343,7 @@ export function usePipeline() {
         if (!hasWinner && !inst.isDedupWinner) {
           // Promote first candidate with sufficient AUM
           const aum = inst.aum
-          if (aum === null || aum >= aumFloor) {
+          if (aum == null || aum >= aumFloor) {
             winnersByGroup.set(inst.dedupGroup, inst)
             return { ...inst, isDedupWinner: true }
           }
