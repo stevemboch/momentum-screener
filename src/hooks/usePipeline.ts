@@ -340,27 +340,36 @@ export function usePipeline() {
       const dedupedWithAUM = applyStatsResults(dedupedEtfs, statsResults)
 
       // Step 3: Re-evaluate winners using AUM floor
+      // Walk candidates in priority order — first meeting AUM floor wins.
+      // If none meet the floor, the one with highest AUM wins.
       const aumFloor = state.settings.aumFloor
-      const updatedEtfs = dedupedWithAUM.map((inst) => {
-        if (!inst.isDedupWinner) return inst
-        if (inst.aum != null && inst.aum < aumFloor) return { ...inst, isDedupWinner: false }
-        return inst
-      })
+      const instByISIN = new Map(dedupedWithAUM.map((i) => [i.isin, i]))
+      const promotedWinners = new Set<string>()
+      const demotedWinners = new Set<string>()
 
-      const winnersByGroup = new Map<string, boolean>()
-      updatedEtfs.forEach((inst) => {
-        if (inst.isDedupWinner && inst.dedupGroup) winnersByGroup.set(inst.dedupGroup, true)
-      })
+      for (const inst of dedupedWithAUM) {
+        if (!inst.isDedupWinner) continue
+        if (inst.aum != null && inst.aum < aumFloor) {
+          demotedWinners.add(inst.isin)
+          const candidates = (inst.dedupCandidates ?? [])
+            .map((isin) => instByISIN.get(isin))
+            .filter(Boolean) as typeof inst[]
 
-      const finalEtfs = updatedEtfs.map((inst) => {
-        if (!inst.dedupGroup || inst.isDedupWinner) return inst
-        if (!winnersByGroup.has(inst.dedupGroup)) {
-          const aum = inst.aum
-          if (aum == null || aum >= aumFloor) {
-            winnersByGroup.set(inst.dedupGroup, true)
-            return { ...inst, isDedupWinner: true }
+          // First candidate meeting AUM floor (candidates are in provider-priority order)
+          const meetsFloor = candidates.find((c) => c.aum == null || c.aum >= aumFloor)
+          if (meetsFloor) {
+            promotedWinners.add(meetsFloor.isin)
+          } else {
+            // No candidate meets floor — promote highest AUM
+            const best = [...candidates].sort((a, b) => (b.aum ?? 0) - (a.aum ?? 0))[0]
+            if (best) promotedWinners.add(best.isin)
           }
         }
+      }
+
+      const finalEtfs = dedupedWithAUM.map((inst) => {
+        if (demotedWinners.has(inst.isin)) return { ...inst, isDedupWinner: false }
+        if (promotedWinners.has(inst.isin)) return { ...inst, isDedupWinner: true }
         return inst
       })
 
