@@ -4,13 +4,31 @@ import type { TypeFilter } from '../types'
 export function FilterBar() {
   const { state, dispatch } = useAppState()
   const displayed = useDisplayedInstruments()
-  const { typeFilter, showDeduped } = state.tableState
-  const { fetchStatus } = state
+  const { typeFilter, showDeduped, filterBelowRiskFree } = state.tableState
+  const { fetchStatus, settings } = state
 
   const setTypeFilter = (f: TypeFilter) =>
     dispatch({ type: 'SET_TABLE_STATE', updates: { typeFilter: f } })
 
   const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
+
+  const toggleSwitch = (active: boolean, onClick: () => void, label: string, title?: string) => (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded border transition-colors ${
+        active
+          ? 'bg-green-400/10 text-green-400 border-green-400/30'
+          : 'text-muted border-border hover:text-gray-300'
+      }`}
+    >
+      {/* Toggle pill */}
+      <span className={`relative inline-flex w-7 h-3.5 rounded-full transition-colors ${active ? 'bg-green-400' : 'bg-surface2 border border-border'}`}>
+        <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${active ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+      </span>
+      {label}
+    </button>
+  )
 
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -32,26 +50,26 @@ export function FilterBar() {
       </div>
 
       {/* Dedup toggle */}
-      <button
-        onClick={() =>
-          dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } })
-        }
-        className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded border transition-colors ${
-          showDeduped
-            ? 'bg-green-400/10 text-green-400 border-green-400/30'
-            : 'text-muted border-border hover:text-gray-300'
-        }`}
-      >
-        <span className={`w-2 h-2 rounded-full ${showDeduped ? 'bg-green-400' : 'bg-muted'}`} />
-        Deduplicated
-      </button>
+      {toggleSwitch(
+        showDeduped,
+        () => dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } }),
+        'Deduplicated'
+      )}
+
+      {/* Risk-free filter toggle */}
+      {toggleSwitch(
+        filterBelowRiskFree,
+        () => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowRiskFree: !filterBelowRiskFree } }),
+        `> Risk-Free (${(settings.riskFreeRate * 100).toFixed(1)}%)`,
+        `Hide instruments whose annualised return is below the risk-free rate (${(settings.riskFreeRate * 100).toFixed(1)}% p.a.)`
+      )}
 
       {/* Instrument count */}
       <span className="text-xs font-mono text-muted ml-1">
         {displayed.length.toLocaleString()} instruments
       </span>
 
-      {/* Fetch status */}
+      {/* Fetch progress */}
       {isActive && (
         <div className="flex items-center gap-2 ml-auto text-xs font-mono text-muted">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -71,15 +89,10 @@ export function FilterBar() {
       )}
 
       {fetchStatus.phase === 'done' && (
-        <span className="ml-auto text-xs font-mono text-green-400">
-          ✓ {fetchStatus.message}
-        </span>
+        <span className="ml-auto text-xs font-mono text-green-400">✓ {fetchStatus.message}</span>
       )}
-
       {fetchStatus.phase === 'error' && (
-        <span className="ml-auto text-xs font-mono text-red-400">
-          ✗ {fetchStatus.message}
-        </span>
+        <span className="ml-auto text-xs font-mono text-red-400">✗ {fetchStatus.message}</span>
       )}
     </div>
   )
