@@ -9,10 +9,14 @@ interface PriceResult {
   ebitda: number | null
   enterpriseValue: number | null
   returnOnAssets: number | null
+  aum: number | null
+  ter: number | null
   error?: string
+  // Debug: raw fields so we can inspect what Yahoo returns
+  _debug?: any
 }
 
-async function fetchOneTicker(ticker: string): Promise<PriceResult> {
+async function fetchOneTicker(ticker: string, debug = false): Promise<PriceResult> {
   const base: PriceResult = {
     ticker,
     closes: [],
@@ -22,17 +26,18 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
     ebitda: null,
     enterpriseValue: null,
     returnOnAssets: null,
+    aum: null,
+    ter: null,
   }
 
   try {
-    // Fetch chart + fundamentals in parallel
     const [chartRes, quoteRes] = await Promise.all([
       fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
       fetch(
-        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics,financialData,summaryDetail`,
+        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics,financialData,summaryDetail,fundProfile`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
     ])
@@ -58,11 +63,28 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
         const ks = summary.defaultKeyStatistics || {}
         const fd = summary.financialData || {}
         const sd = summary.summaryDetail || {}
+        const fp = summary.fundProfile || {}
+
         base.pe = sd.trailingPE?.raw ?? ks.trailingPE?.raw ?? null
         base.pb = ks.priceToBook?.raw ?? null
         base.ebitda = fd.ebitda?.raw ?? null
         base.enterpriseValue = ks.enterpriseValue?.raw ?? null
         base.returnOnAssets = fd.returnOnAssets?.raw ?? null
+
+        // AUM: totalAssets is the standard field for ETFs
+        base.aum = sd.totalAssets?.raw ?? ks.totalAssets?.raw ?? null
+
+        // TER: annualReportExpenseRatio from fundProfile
+        base.ter = fp.annualReportExpenseRatio?.raw ?? null
+
+        // Debug: expose raw modules so we can inspect
+        if (debug) {
+          base._debug = {
+            defaultKeyStatistics: ks,
+            summaryDetail: sd,
+            fundProfile: fp,
+          }
+        }
       }
     }
   } catch (err: any) {
@@ -87,8 +109,7 @@ async function runWithConcurrency<T>(
     }
   }
 
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, worker)
-  await Promise.all(workers)
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
   return results
 }
 
@@ -100,7 +121,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'tickers array required' })
   }
 
-  // 5 concurrent tickers, each doing 2 parallel HTTP calls
-  const results = await runWithConcurrency(tickers, 5, fetchOneTicker)
+  // Pass debug=true for first ticker only so we can inspect the raw Yahoo structure
+  const results = await runWithConcurrency(tickers, 5, (ticker) =>
+    fetchOneTicker(ticker, ticker === tickers[0])
+  )
+
   return res.status(200).json(results)
 }
