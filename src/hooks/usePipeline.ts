@@ -5,57 +5,28 @@ import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, re
 import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
 import { recalculateAll } from '../utils/calculations'
 
-// ─── Tuning ───────────────────────────────────────────────────────────────────
-// Yahoo: parallel requests, max N in-flight at once
 const YAHOO_CONCURRENCY = 10
-// OpenFIGI: 100 per batch (API max), minimal delay
 const OPENFIGI_BATCH = 100
-const OPENFIGI_DELAY = 200  // ms between batches
+const OPENFIGI_DELAY = 200
 
-// ─── API Response Types ───────────────────────────────────────────────────────
-
-interface OpenFIGIResult {
-  name?: string
-  securityType?: string
-  securityType2?: string
-}
-
-interface StatsResult {
-  isin: string
-  name: string | null
-  aum: number | null
-  ter: null
-}
-
-// ─── API Helpers ─────────────────────────────────────────────────────────────
+interface OpenFIGIResult { name?: string; securityType?: string; securityType2?: string }
+interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
-  const res = await fetch('/api/openfigi', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(jobs),
-  })
+  const res = await fetch('/api/openfigi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(jobs) })
   if (!res.ok) throw new Error(`OpenFIGI API error: ${res.status}`)
   return res.json()
 }
 
 async function apiYahooSingle(ticker: string): Promise<any> {
-  const res = await fetch('/api/yahoo', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tickers: [ticker] }),
-  })
+  const res = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: [ticker] }) })
   if (!res.ok) throw new Error(`Yahoo API error: ${res.status}`)
   const data = await res.json()
   return data[0] ?? null
 }
 
 async function apiStats(isins: string[]): Promise<StatsResult[]> {
-  const res = await fetch('/api/xetra-stats', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ isins }),
-  })
+  const res = await fetch('/api/xetra-stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isins }) })
   if (!res.ok) throw new Error(`Stats API error: ${res.status}`)
   return res.json()
 }
@@ -66,18 +37,9 @@ async function apiXetra() {
   return res.text()
 }
 
-// ─── Concurrency helpers ──────────────────────────────────────────────────────
-
-// Run tasks with max N in-flight at once, return results in original order
-async function parallelLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number,
-  onProgress?: (done: number, total: number) => void
-): Promise<T[]> {
+async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number, onProgress?: (done: number, total: number) => void): Promise<T[]> {
   const results: T[] = new Array(tasks.length)
-  let nextIdx = 0
-  let done = 0
-
+  let nextIdx = 0, done = 0
   async function worker() {
     while (nextIdx < tasks.length) {
       const idx = nextIdx++
@@ -86,102 +48,59 @@ async function parallelLimit<T>(
       onProgress?.(done, tasks.length)
     }
   }
-
-  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => worker())
-  await Promise.all(workers)
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()))
   return results
 }
 
-// Sequential batches (for APIs with strict rate limits like OpenFIGI)
-async function processBatches<T, R>(
-  items: T[],
-  batchSize: number,
-  delay: number,
-  processor: (batch: T[]) => Promise<R[]>,
-  onProgress?: (done: number, total: number) => void
-): Promise<R[]> {
+async function processBatches<T, R>(items: T[], batchSize: number, delay: number, processor: (batch: T[]) => Promise<R[]>, onProgress?: (done: number, total: number) => void): Promise<R[]> {
   const results: R[] = []
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize)
-    const batchResults = await processor(batch)
-    results.push(...batchResults)
+    results.push(...await processor(batch))
     onProgress?.(Math.min(i + batchSize, items.length), items.length)
-    if (delay > 0 && i + batchSize < items.length) {
-      await new Promise((r) => setTimeout(r, delay))
-    }
+    if (delay > 0 && i + batchSize < items.length) await new Promise((r) => setTimeout(r, delay))
   }
   return results
 }
-
-// ─── Apply stats results by ISIN ─────────────────────────────────────────────
 
 function applyStatsResults(instruments: Instrument[], statsResults: StatsResult[]): Instrument[] {
   const statsMap = new Map(statsResults.map((r) => [r.isin, r]))
   return instruments.map((inst) => {
     const r = statsMap.get(inst.isin)
     if (!r) return inst
-    return {
-      ...inst,
-      aum: r.aum ?? null,
-      ter: null,
-      justEtfFetched: true,
-      displayName: inst.longName ? inst.displayName : (r.name || inst.displayName),
-    }
+    return { ...inst, aum: r.aum ?? null, ter: null, justEtfFetched: true, displayName: inst.longName ? inst.displayName : (r.name || inst.displayName) }
   })
 }
-
-// ─── Main Pipeline Hook ───────────────────────────────────────────────────────
 
 export function usePipeline() {
   const { state, dispatch } = useAppState()
   const abortRef = useRef(false)
+  const xetraBuffer = useRef<Instrument[]>([])
 
-  const setStatus = (message: string, current = 0, total = 0) => {
+  const setStatus = (message: string, current = 0, total = 0) =>
     dispatch({ type: 'SET_FETCH_STATUS', status: { message, current, total } })
-  }
-
-  // ── Step 1: OpenFIGI name enrichment ────────────────────────────────────
-  // Sequential batches of 100 (API limit), 200ms between batches
 
   const enrichWithOpenFIGI = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const jobs = instruments.map((inst) => {
-      if (inst.isin && inst.isin.length === 12) return { idType: 'ID_ISIN', idValue: inst.isin }
-      if (inst.wkn && inst.wkn.length === 6) return { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
+      if (inst.isin?.length === 12) return { idType: 'ID_ISIN', idValue: inst.isin }
+      if (inst.wkn?.length === 6) return { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
       return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker }
     })
-
-    const results = await processBatches(
-      jobs, OPENFIGI_BATCH, OPENFIGI_DELAY,
-      (batch) => apiOpenFIGI(batch),
-      (done, total) => setStatus(`Enriching names: ${done} / ${total}`, done, total)
-    )
-
+    const results = await processBatches(jobs, OPENFIGI_BATCH, OPENFIGI_DELAY, (batch) => apiOpenFIGI(batch), (done, total) => setStatus(`Enriching names: ${done} / ${total}`, done, total))
     return instruments.map((inst, i) => {
       const figi = results[i]
       if (!figi) return inst
       const longName: string | undefined = figi.name || undefined
-      const type = inst.source === 'xetra'
-        ? inst.type
-        : resolveInstrumentType(figi.securityType ?? null, figi.securityType2 ?? null, inst.isin)
+      const type = inst.source === 'xetra' ? inst.type : resolveInstrumentType(figi.securityType ?? null, figi.securityType2 ?? null, inst.isin)
       return { ...inst, longName, type, displayName: toDisplayName(longName, inst.displayName) }
     })
   }, [])
 
-  // ── Step 2: Yahoo Finance prices – fully parallel ────────────────────────
-  // All tickers fire at once with max YAHOO_CONCURRENCY in-flight
-
   const fetchPrices = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const withTickers = instruments.filter((i) => i.yahooTicker)
     if (withTickers.length === 0) return instruments
-
     const tasks = withTickers.map((inst) => () => apiYahooSingle(inst.yahooTicker))
-
-    const results = await parallelLimit(
-      tasks,
-      YAHOO_CONCURRENCY,
-      (done, total) => setStatus(`Fetching prices: ${done} / ${total}`, done, total)
-    )
-
+    const results = await parallelLimit(tasks, YAHOO_CONCURRENCY, (done, total) => setStatus(`Fetching prices: ${done} / ${total}`, done, total))
     const updated = [...instruments]
     results.forEach((r: any, i) => {
       if (!r) return
@@ -190,83 +109,50 @@ export function usePipeline() {
       updated[idx] = {
         ...updated[idx],
         closes: r.closes || [],
+        highs: r.highs || [],
+        lows: r.lows || [],
         timestamps: r.timestamps || [],
-        pe: r.pe ?? null,
-        pb: r.pb ?? null,
-        ebitda: r.ebitda ?? null,
-        enterpriseValue: r.enterpriseValue ?? null,
+        pe: r.pe ?? null, pb: r.pb ?? null,
+        ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
         returnOnAssets: r.returnOnAssets ?? null,
-        priceFetched: true,
-        priceError: r.error,
-        fundamentalsFetched: true,
+        priceFetched: true, priceError: r.error, fundamentalsFetched: true,
       }
     })
-
     return updated
   }, [])
-
-  // ── Step 3: Deutsche Börse AUM stats ────────────────────────────────────
 
   const fetchStats = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const etfs = instruments.filter((i) => i.type === 'ETF' || i.type === 'ETC')
     if (etfs.length === 0) return instruments
-
-    const allResults = await processBatches(
-      etfs, 200, 0,
-      (batch) => apiStats(batch.map((e) => e.isin)),
-      (done, total) => setStatus(`Fetching AUM: ${done} / ${total} ETFs`, done, total)
-    )
-
+    const allResults = await processBatches(etfs, 200, 0, (batch) => apiStats(batch.map((e) => e.isin)), (done, total) => setStatus(`Fetching AUM: ${done} / ${total} ETFs`, done, total))
     return applyStatsResults(instruments, allResults)
   }, [])
-
-  // ── Manual input pipeline ─────────────────────────────────────────────────
 
   const processManualInput = useCallback(async (text: string, isCSV = false) => {
     abortRef.current = false
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: 'Parsing input...', current: 0, total: 0 } })
-
     const parsed = isCSV ? parseCSVFile(text) : parseManualInput(text)
     if (parsed.length === 0) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'idle', message: 'No valid identifiers found', current: 0, total: 0 } })
       return
     }
-
     const stubs: Instrument[] = parsed.map((p) => {
-      const yahooTicker = p.type === 'Ticker'
-        ? (p.normalized.includes('.') ? p.normalized : `${p.normalized}.DE`)
-        : ''
-      return {
-        isin: p.type === 'ISIN' ? p.normalized : p.raw,
-        wkn: p.type === 'WKN' ? p.normalized : undefined,
-        mnemonic: p.type === 'Ticker' ? p.normalized : undefined,
-        yahooTicker,
-        type: 'Unknown' as const,
-        source: 'manual' as const,
-        displayName: p.raw,
-      }
+      const yahooTicker = p.type === 'Ticker' ? (p.normalized.includes('.') ? p.normalized : `${p.normalized}.DE`) : ''
+      return { isin: p.type === 'ISIN' ? p.normalized : p.raw, wkn: p.type === 'WKN' ? p.normalized : undefined, mnemonic: p.type === 'Ticker' ? p.normalized : undefined, yahooTicker, type: 'Unknown' as const, source: 'manual' as const, displayName: p.raw }
     })
-
     try {
       setStatus('Looking up names...', 0, stubs.length)
       const enriched = await enrichWithOpenFIGI(stubs)
-
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
       const withPrices = await fetchPrices(enriched)
-
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
       const withStats = await fetchStats(withPrices)
-
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(withStats, state.settings.weights) })
+      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(withStats, state.settings.weights, state.settings.atrMultiplier) })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Added ${withStats.length} instruments`, current: withStats.length, total: withStats.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, state.settings.weights])
-
-  // ── Xetra background load ─────────────────────────────────────────────────
-
-  const xetraBuffer = useRef<Instrument[]>([])
+  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, state.settings.weights, state.settings.atrMultiplier])
 
   const loadXetraBackground = useCallback(async () => {
     dispatch({ type: 'SET_XETRA_LOADING', loading: true })
@@ -274,7 +160,6 @@ export function usePipeline() {
       const csvText = await apiXetra()
       const rows = parseXetraCSV(csvText)
       const instruments = rows.map(xetraRowToInstrument)
-
       const etfCounts: Record<string, number> = {}
       const stockCounts: Record<string, number> = {}
       instruments.forEach((inst) => {
@@ -282,7 +167,6 @@ export function usePipeline() {
         if (inst.type === 'Stock') stockCounts[g] = (stockCounts[g] || 0) + 1
         else etfCounts[g] = (etfCounts[g] || 0) + 1
       })
-
       dispatch({ type: 'SET_GROUP_COUNTS', etf: etfCounts, stock: stockCounts })
       xetraBuffer.current = instruments
       dispatch({ type: 'SET_XETRA_READY', ready: true })
@@ -292,104 +176,64 @@ export function usePipeline() {
     }
   }, [])
 
-  // ── Activate Xetra universe ───────────────────────────────────────────────
-
   const activateXetra = useCallback(async () => {
     abortRef.current = false
     const enabledETFGroups = state.etfGroups.filter((g) => g.enabled).map((g) => g.groupKey)
     const enabledStockGroups = state.stockGroups.filter((g) => g.enabled).map((g) => g.groupKey)
-
     const instruments = xetraBuffer.current.filter((inst) => {
       if (inst.type === 'Stock') {
         if (enabledStockGroups.includes('__OTHER_STOCKS__')) {
-          const inNamedGroup = ['DAX','MDAX','SDAX','DEUTSCHLAND','NORDAMERIKA','FRANKREICH',
-            'GROSSBRITANNIEN','SKANDINAVIEN','SCHWEIZ LIECHTENSTEIN','BELGIEN NIEDERLANDE LUXEMBURG',
-            'ITALIEN GRIECHENLAND','OESTERREICH','SPANIEN PORTUGAL'].includes(inst.xetraGroup || '')
+          const inNamedGroup = ['DAX','MDAX','SDAX','DEUTSCHLAND','NORDAMERIKA','FRANKREICH','GROSSBRITANNIEN','SKANDINAVIEN','SCHWEIZ LIECHTENSTEIN','BELGIEN NIEDERLANDE LUXEMBURG','ITALIEN GRIECHENLAND','OESTERREICH','SPANIEN PORTUGAL'].includes(inst.xetraGroup || '')
           return enabledStockGroups.some(g => g === inst.xetraGroup) || !inNamedGroup
         }
         return enabledStockGroups.includes(inst.xetraGroup || '')
       }
       return enabledETFGroups.includes(inst.xetraGroup || '')
     })
-
     dispatch({ type: 'SET_XETRA_ACTIVE', active: true })
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: '', current: 0, total: instruments.length } })
-
     try {
-      // Step 1+3 in parallel: OpenFIGI names AND xetra-stats AUM at the same time
-      // xetra-stats doesn't depend on OpenFIGI results
       setStatus(`Enriching names & fetching AUM...`, 0, instruments.length)
-      const etfISINs = instruments
-        .filter((i) => i.type === 'ETF' || i.type === 'ETC')
-        .map((i) => i.isin)
-
+      const etfISINs = instruments.filter((i) => i.type === 'ETF' || i.type === 'ETC').map((i) => i.isin)
       const [enriched, statsResults] = await Promise.all([
         enrichWithOpenFIGI(instruments),
         etfISINs.length > 0 ? apiStats(etfISINs) : Promise.resolve([] as StatsResult[]),
       ])
-
-      // Step 2: Dedup ETFs
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'dedup', message: 'Deduplicating...', current: 0, total: 0 } })
       const etfs = enriched.filter((i) => i.type === 'ETF' || i.type === 'ETC')
       const stocks = enriched.filter((i) => i.type === 'Stock')
-
       const groups = buildDedupGroups(etfs)
       const dedupedEtfs = applyDedupToInstruments(etfs, groups)
-
-      // Apply AUM (already fetched in parallel above)
       const dedupedWithAUM = applyStatsResults(dedupedEtfs, statsResults)
-
-      // Step 3: Re-evaluate winners using AUM floor
-      // Walk candidates in priority order — first meeting AUM floor wins.
-      // If none meet the floor, the one with highest AUM wins.
       const aumFloor = state.settings.aumFloor
-      const instByISIN = new Map(dedupedWithAUM.map((i) => [i.isin, i]))
-      const promotedWinners = new Set<string>()
-      const demotedWinners = new Set<string>()
-
-      for (const inst of dedupedWithAUM) {
-        if (!inst.isDedupWinner) continue
-        if (inst.aum != null && inst.aum < aumFloor) {
-          demotedWinners.add(inst.isin)
-          const candidates = (inst.dedupCandidates ?? [])
-            .map((isin) => instByISIN.get(isin))
-            .filter(Boolean) as typeof inst[]
-
-          // First candidate meeting AUM floor (candidates are in provider-priority order)
-          const meetsFloor = candidates.find((c) => c.aum == null || c.aum >= aumFloor)
-          if (meetsFloor) {
-            promotedWinners.add(meetsFloor.isin)
-          } else {
-            // No candidate meets floor — promote highest AUM
-            const best = [...candidates].sort((a, b) => (b.aum ?? 0) - (a.aum ?? 0))[0]
-            if (best) promotedWinners.add(best.isin)
-          }
-        }
-      }
-
-      const finalEtfs = dedupedWithAUM.map((inst) => {
-        if (demotedWinners.has(inst.isin)) return { ...inst, isDedupWinner: false }
-        if (promotedWinners.has(inst.isin)) return { ...inst, isDedupWinner: true }
+      const updatedEtfs = dedupedWithAUM.map((inst) => {
+        if (!inst.isDedupWinner) return inst
+        if (inst.aum != null && inst.aum < aumFloor) return { ...inst, isDedupWinner: false }
         return inst
       })
-
+      const winnersByGroup = new Map<string, boolean>()
+      updatedEtfs.forEach((inst) => { if (inst.isDedupWinner && inst.dedupGroup) winnersByGroup.set(inst.dedupGroup, true) })
+      const finalEtfs = updatedEtfs.map((inst) => {
+        if (!inst.dedupGroup || inst.isDedupWinner) return inst
+        if (!winnersByGroup.has(inst.dedupGroup)) {
+          const aum = inst.aum
+          if (aum == null || aum >= aumFloor) { winnersByGroup.set(inst.dedupGroup, true); return { ...inst, isDedupWinner: true } }
+        }
+        return inst
+      })
       const combined = [...finalEtfs, ...stocks]
-
-      // Step 4: Fetch prices in parallel for winners + stocks
       const toFetch = combined.filter((i) => i.isDedupWinner !== false || i.type === 'Stock')
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: toFetch.length } })
       const withPrices = await fetchPrices(toFetch)
-
       const finalMap = new Map(withPrices.map((i) => [i.isin, i]))
       const final = combined.map((i) => finalMap.get(i.isin) || i)
       const winners = final.filter((i) => i.isDedupWinner)
-
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(final, state.settings.weights) })
+      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(final, state.settings.weights, state.settings.atrMultiplier) })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: final.length, total: final.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, enrichWithOpenFIGI, fetchPrices, fetchStats])
+  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, enrichWithOpenFIGI, fetchPrices, fetchStats])
 
   return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer }
 }
