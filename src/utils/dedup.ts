@@ -72,14 +72,15 @@ const PROVIDER_ALIASES: [string, string][] = [
 
 const ABBREV: [string, string][] = [
   // Indices – sorted longest first to avoid partial matches
-  ['EURSTX600', 'EUROSTOXX600'],
-  ['EURSTX50', 'EUROSTOXX50'],
-  ['EURSTX', 'EUROSTOXX'],
-  ['EUR600', 'EUROSTOXX600'],
-  ['EX600', 'EUROSTOXX600'],
-  ['ESTX600', 'EUROSTOXX600'],
-  ['ESTX50', 'EUROSTOXX50'],
-  ['ESTX', 'EUROSTOXX'],
+  // All STOXX600/EUROSTOXX600 variants → same canonical key
+  ['EURSTX600', 'STOXX600'],
+  ['EURSTX50', 'STOXX50'],
+  ['EURSTX', 'STOXX'],
+  ['EUR600', 'STOXX600'],
+  ['EX600', 'STOXX600'],
+  ['ESTX600', 'STOXX600'],
+  ['ESTX50', 'STOXX50'],
+  ['ESTX', 'STOXX'],
   ['STX600', 'STOXX600'],
   ['STX50', 'STOXX50'],
   ['STX', 'STOXX'],
@@ -160,6 +161,10 @@ const STRIP_WORDS = new Set([
   // (MSCI Korea = FTSE Korea for our purposes)
   'MSCI', 'FTSE', 'SP', 'STOXX', 'BLOOMBERG', 'SOLACTIVE',
   'RUSSELL', 'NASDAQ', 'DJ', 'NIKKEI', 'CSI', 'TOPIX', 'HANGSENG',
+  // Domicile suffixes (appear in fund names like iShares STOXX Europe 600 Basic Resources (DE))
+  'DE', 'IE', 'LU', 'FR', 'CH', 'AT', 'NL', 'BE',
+  // EUROPE/EUROPEAN redundant when STOXX is present
+  'EUROPE', 'EUROPEAN',
   // Noise quality words
   'CORE', 'PRIME', 'PLUS', 'SELECT', 'OPTIMAL', 'ENHANCED', 'QUALITY',
   'IMI', 'LARGE', 'MID', 'SMALL', 'CAP', 'MEGA',
@@ -306,7 +311,7 @@ function extractExposureKey(longName: string | undefined, fallbackName: string):
     if (['HEALTHCARE', 'HEALTH'].includes(w)) return 'HEALTH'
     if (['TECHNOLOGY', 'TECH'].includes(w)) return 'TECHNOLOGY'
     if (['COMMUNICATIONS', 'TELECOM', 'COMM'].includes(w)) return 'COMMUNICATIONS'
-    if (['BASICRESOURCES', 'BASICRESOURCE', 'RESOURCES', 'RESOURCE'].includes(w)) return 'BASICRESOURCES'
+    if (['BASICRESOURCES', 'BASICRESOURCE', 'RESOURCES', 'RESOURCE', 'BASIC'].includes(w)) return 'BASICRESOURCES'
     if (['SEMICONDUCTOR', 'SEMICONDUCTORS'].includes(w)) return 'SEMICONDUCTOR'
     if (['UTILITIES'].includes(w)) return 'UTILITIES'
     if (['FINANCIALS', 'FINANCIAL'].includes(w)) return 'FINANCIALS'
