@@ -1,28 +1,21 @@
 import type { Instrument, MomentumWeights } from '../types'
 
-// ─── Return Calculation ──────────────────────────────────────────────────────
-
-// Trading days per period — use slightly fewer than exact to tolerate missing days/holidays
 const TRADING_DAYS = { r1m: 21, r3m: 63, r6m: 125 }
 
-export function calculateReturns(closes: number[]): {
-  r1m: number | null
-  r3m: number | null
-  r6m: number | null
-} {
+// ─── Returns ─────────────────────────────────────────────────────────────────
+
+export function calculateReturns(closes: number[]) {
   const n = closes.length
   const result = { r1m: null as number | null, r3m: null as number | null, r6m: null as number | null }
   if (n < 2) return result
-
   const last = closes[n - 1]
   const calc = (days: number) => {
     const target = n - 1 - days
-    if (target < 0) return null  // not enough data
+    if (target < 0) return null
     const base = closes[target]
     if (!base || base === 0) return null
     return (last - base) / base
   }
-
   result.r1m = calc(TRADING_DAYS.r1m)
   result.r3m = calc(TRADING_DAYS.r3m)
   result.r6m = calc(TRADING_DAYS.r6m)
@@ -33,92 +26,153 @@ export function calculateReturns(closes: number[]): {
 
 export function calculateVola(closes: number[]): number | null {
   const n = closes.length
-  if (n < 22) return null // need at least 1 month
-
-  // Use last 126 trading days (6 months)
+  if (n < 22) return null
   const slice = closes.slice(Math.max(0, n - 127))
   const dailyReturns: number[] = []
   for (let i = 1; i < slice.length; i++) {
-    if (slice[i - 1] > 0) {
-      dailyReturns.push((slice[i] - slice[i - 1]) / slice[i - 1])
-    }
+    if (slice[i - 1] > 0) dailyReturns.push((slice[i] - slice[i - 1]) / slice[i - 1])
   }
   if (dailyReturns.length < 10) return null
-
   const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length
-  const variance =
-    dailyReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (dailyReturns.length - 1)
-
-  return Math.sqrt(variance) * Math.sqrt(252) // annualised
+  const variance = dailyReturns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / (dailyReturns.length - 1)
+  return Math.sqrt(variance) * Math.sqrt(252)
 }
 
-// ─── Momentum Score ──────────────────────────────────────────────────────────
+// ─── Moving Averages ─────────────────────────────────────────────────────────
+
+export function calculateMA(closes: number[], period: number): number | null {
+  if (closes.length < period) return null
+  const slice = closes.slice(closes.length - period)
+  return slice.reduce((a, b) => a + b, 0) / period
+}
+
+export function calculateMAs(closes: number[]): {
+  ma10: number | null
+  ma50: number | null
+  ma100: number | null
+  ma200: number | null
+  aboveMa10: boolean | null
+  aboveMa50: boolean | null
+  aboveMa100: boolean | null
+  aboveMa200: boolean | null
+} {
+  if (!closes || closes.length === 0) {
+    return { ma10: null, ma50: null, ma100: null, ma200: null,
+             aboveMa10: null, aboveMa50: null, aboveMa100: null, aboveMa200: null }
+  }
+  const last = closes[closes.length - 1]
+  const ma10 = calculateMA(closes, 10)
+  const ma50 = calculateMA(closes, 50)
+  const ma100 = calculateMA(closes, 100)
+  const ma200 = calculateMA(closes, 200)
+  return {
+    ma10, ma50, ma100, ma200,
+    aboveMa10:  ma10  !== null ? last > ma10  : null,
+    aboveMa50:  ma50  !== null ? last > ma50  : null,
+    aboveMa100: ma100 !== null ? last > ma100 : null,
+    aboveMa200: ma200 !== null ? last > ma200 : null,
+  }
+}
+
+// ─── ATR(20) ─────────────────────────────────────────────────────────────────
+// True Range uses high/low when available, falls back to close-only approximation
+
+export function calculateATR(
+  closes: number[],
+  highs?: number[],
+  lows?: number[],
+  period = 20
+): number | null {
+  const n = closes.length
+  if (n < period + 1) return null
+
+  const hasHL = highs && lows && highs.length === n && lows.length === n
+
+  const trValues: number[] = []
+  for (let i = 1; i < n; i++) {
+    const prevClose = closes[i - 1]
+    if (hasHL) {
+      const h = highs![i]
+      const l = lows![i]
+      const tr = Math.max(h - l, Math.abs(h - prevClose), Math.abs(l - prevClose))
+      trValues.push(tr)
+    } else {
+      // Close-only approximation: TR ≈ |ΔClose|
+      trValues.push(Math.abs(closes[i] - prevClose))
+    }
+  }
+
+  // Wilder smoothing (EMA with alpha = 1/period)
+  const alpha = 1 / period
+  let atr = trValues.slice(0, period).reduce((a, b) => a + b, 0) / period
+  for (let i = period; i < trValues.length; i++) {
+    atr = atr * (1 - alpha) + trValues[i] * alpha
+  }
+  return atr
+}
+
+// ─── Selling Threshold ───────────────────────────────────────────────────────
+
+export function calculateSellingThreshold(
+  closes: number[],
+  atrMultiplier: number,
+  highs?: number[],
+  lows?: number[]
+): { atr20: number | null; sellingThreshold: number | null } {
+  const atr20 = calculateATR(closes, highs, lows, 20)
+  if (atr20 === null || closes.length === 0) return { atr20: null, sellingThreshold: null }
+  const lastPrice = closes[closes.length - 1]
+  return { atr20, sellingThreshold: lastPrice - atrMultiplier * atr20 }
+}
+
+// ─── Momentum Score ───────────────────────────────────────────────────────────
 
 export function calculateMomentumScore(
-  r1m: number | null,
-  r3m: number | null,
-  r6m: number | null,
+  r1m: number | null, r3m: number | null, r6m: number | null,
   weights: MomentumWeights
 ): number | null {
   const available: { val: number; w: number }[] = []
   if (r1m !== null) available.push({ val: r1m, w: weights.w1m })
   if (r3m !== null) available.push({ val: r3m, w: weights.w3m })
   if (r6m !== null) available.push({ val: r6m, w: weights.w6m })
-
   if (available.length === 0) return null
-
-  // Re-normalise weights to available periods
   const totalW = available.reduce((s, a) => s + a.w, 0)
   if (totalW === 0) return null
-
   return available.reduce((sum, a) => sum + a.val * (a.w / totalW), 0)
 }
 
-// ─── Sharpe Score ─────────────────────────────────────────────────────────────
-
-export function calculateSharpeScore(
-  momentumScore: number | null,
-  vola: number | null
-): number | null {
+export function calculateSharpeScore(momentumScore: number | null, vola: number | null): number | null {
   if (momentumScore === null || vola === null || vola === 0) return null
   return momentumScore / vola
 }
 
-// ─── Rank All Instruments ────────────────────────────────────────────────────
+// ─── Ranks ───────────────────────────────────────────────────────────────────
 
 export function applyRanks(instruments: Instrument[]): Instrument[] {
-  const withMomentum = instruments
-    .map((inst, i) => ({ inst, i }))
-    .filter(({ inst }) => inst.momentumScore !== null && inst.momentumScore !== undefined)
-    .sort((a, b) => (b.inst.momentumScore ?? 0) - (a.inst.momentumScore ?? 0))
-
-  const withSharpe = instruments
-    .map((inst, i) => ({ inst, i }))
-    .filter(({ inst }) => inst.sharpeScore !== null && inst.sharpeScore !== undefined)
-    .sort((a, b) => (b.inst.sharpeScore ?? 0) - (a.inst.sharpeScore ?? 0))
-
-  const withValue = instruments
-    .map((inst, i) => ({ inst, i }))
-    .filter(({ inst }) => inst.valueScore !== null && inst.valueScore !== undefined)
-    .sort((a, b) => (a.inst.valueScore ?? 999) - (b.inst.valueScore ?? 999)) // lower = better
-
-  // Clone all instruments
   const result = instruments.map((inst) => ({ ...inst }))
 
-  withMomentum.forEach(({ inst }, rank) => {
-    const idx = result.findIndex((r) => r.isin === inst.isin)
-    if (idx >= 0) result[idx].momentumRank = rank + 1
-  })
+  const rank = (
+    arr: { inst: Instrument; i: number }[],
+    field: keyof Instrument,
+    desc: boolean
+  ) => {
+    arr
+      .filter(({ inst }) => inst[field] !== null && inst[field] !== undefined)
+      .sort((a, b) => {
+        const av = (a.inst[field] as number)
+        const bv = (b.inst[field] as number)
+        return desc ? bv - av : av - bv
+      })
+      .forEach(({ inst }, rank) => {
+        const idx = result.findIndex((r) => r.isin === inst.isin)
+        if (idx >= 0) (result[idx] as any)[`${String(field)}Rank`] = rank + 1
+      })
+  }
 
-  withSharpe.forEach(({ inst }, rank) => {
-    const idx = result.findIndex((r) => r.isin === inst.isin)
-    if (idx >= 0) result[idx].sharpeRank = rank + 1
-  })
-
-  withValue.forEach(({ inst }, rank) => {
-    const idx = result.findIndex((r) => r.isin === inst.isin)
-    if (idx >= 0) result[idx].valueRank = rank + 1
-  })
+  const indexed = instruments.map((inst, i) => ({ inst, i }))
+  rank(indexed, 'momentumScore', true)
+  rank(indexed, 'sharpeScore', true)
+  rank(indexed, 'valueScore', false) // lower = better
 
   return result
 }
@@ -126,104 +180,56 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
 // ─── Value Score ─────────────────────────────────────────────────────────────
 
 export function calculateValueScores(instruments: Instrument[]): Instrument[] {
-  // For stocks: Magic Formula
-  // Earnings Yield = ebitda / enterpriseValue
-  // Return on Capital = returnOnAssets
-
-  // For ETFs: simplified P/E + P/B score
-  // Earnings Yield = 1 / PE
-  // Book Yield = 1 / PB
-
-  // Lower rank = better value
-  // Rank each metric separately, then sum ranks
-
   const etfs = instruments.filter((i) => i.type === 'ETF' || i.type === 'ETC')
   const stocks = instruments.filter((i) => i.type === 'Stock')
 
-  // ETF value scoring
-  const etfEY = etfs
-    .filter((e) => e.pe !== null && e.pe !== undefined && e.pe > 0)
-    .map((e) => ({ isin: e.isin, ey: 1 / (e.pe as number) }))
-    .sort((a, b) => b.ey - a.ey)
-
-  const etfBY = etfs
-    .filter((e) => e.pb !== null && e.pb !== undefined && e.pb > 0)
-    .map((e) => ({ isin: e.isin, by: 1 / (e.pb as number) }))
-    .sort((a, b) => b.by - a.by)
+  const etfEY = etfs.filter((e) => e.pe != null && e.pe! > 0)
+    .map((e) => ({ isin: e.isin, ey: 1 / e.pe! })).sort((a, b) => b.ey - a.ey)
+  const etfBY = etfs.filter((e) => e.pb != null && e.pb! > 0)
+    .map((e) => ({ isin: e.isin, by: 1 / e.pb! })).sort((a, b) => b.by - a.by)
 
   const etfEYRanks = new Map(etfEY.map((e, i) => [e.isin, i + 1]))
   const etfBYRanks = new Map(etfBY.map((e, i) => [e.isin, i + 1]))
 
-  // Stock value scoring (Magic Formula)
   const stockEY = stocks
-    .filter(
-      (s) =>
-        s.ebitda !== null &&
-        s.ebitda !== undefined &&
-        s.enterpriseValue !== null &&
-        s.enterpriseValue !== undefined &&
-        (s.enterpriseValue as number) > 0
-    )
-    .map((s) => ({ isin: s.isin, ey: (s.ebitda as number) / (s.enterpriseValue as number) }))
+    .filter((s) => s.ebitda != null && s.enterpriseValue != null && s.enterpriseValue! > 0)
+    .map((s) => ({ isin: s.isin, ey: s.ebitda! / s.enterpriseValue! }))
     .sort((a, b) => b.ey - a.ey)
-
-  const stockROC = stocks
-    .filter((s) => s.returnOnAssets !== null && s.returnOnAssets !== undefined)
-    .map((s) => ({ isin: s.isin, roc: s.returnOnAssets as number }))
-    .sort((a, b) => b.roc - a.roc)
+  const stockROC = stocks.filter((s) => s.returnOnAssets != null)
+    .map((s) => ({ isin: s.isin, roc: s.returnOnAssets! })).sort((a, b) => b.roc - a.roc)
 
   const stockEYRanks = new Map(stockEY.map((s, i) => [s.isin, i + 1]))
   const stockROCRanks = new Map(stockROC.map((s, i) => [s.isin, i + 1]))
 
   return instruments.map((inst) => {
     const updated = { ...inst }
-
     if (inst.type === 'ETF' || inst.type === 'ETC') {
-      const eyRank = etfEYRanks.get(inst.isin)
-      const byRank = etfBYRanks.get(inst.isin)
-      if (eyRank !== undefined && byRank !== undefined) {
-        updated.valueScore = eyRank + byRank
-        updated.valueScoreModel = 'etf'
-      } else if (eyRank !== undefined) {
-        updated.valueScore = eyRank * 2 // normalise to comparable scale
-        updated.valueScoreModel = 'etf'
-      } else if (byRank !== undefined) {
-        updated.valueScore = byRank * 2
-        updated.valueScoreModel = 'etf'
-      } else {
-        updated.valueScore = null
-      }
+      const eyR = etfEYRanks.get(inst.isin)
+      const byR = etfBYRanks.get(inst.isin)
+      if (eyR !== undefined && byR !== undefined) { updated.valueScore = eyR + byR; updated.valueScoreModel = 'etf' }
+      else if (eyR !== undefined) { updated.valueScore = eyR * 2; updated.valueScoreModel = 'etf' }
+      else if (byR !== undefined) { updated.valueScore = byR * 2; updated.valueScoreModel = 'etf' }
+      else updated.valueScore = null
     }
-
     if (inst.type === 'Stock') {
-      const eyRank = stockEYRanks.get(inst.isin)
-      const rocRank = stockROCRanks.get(inst.isin)
-      if (eyRank !== undefined && rocRank !== undefined) {
-        updated.valueScore = eyRank + rocRank
-        updated.valueScoreModel = 'magic-formula'
-      } else if (inst.pe !== null && inst.pe !== undefined && inst.pb !== null && inst.pb !== undefined) {
-        // Fallback to ETF-style scoring
-        const feyRank = etfEYRanks.get(inst.isin)
-        const fbyRank = etfBYRanks.get(inst.isin)
-        if (feyRank !== undefined || fbyRank !== undefined) {
-          updated.valueScore = (feyRank ?? 0) + (fbyRank ?? 0)
-          updated.valueScoreModel = 'fallback'
-        }
-      } else {
-        updated.valueScore = null
-      }
+      const eyR = stockEYRanks.get(inst.isin)
+      const rocR = stockROCRanks.get(inst.isin)
+      if (eyR !== undefined && rocR !== undefined) { updated.valueScore = eyR + rocR; updated.valueScoreModel = 'magic-formula' }
+      else updated.valueScore = null
     }
-
     return updated
   })
 }
 
-// ─── Recalculate All Scores ───────────────────────────────────────────────────
+// ─── Recalculate All ──────────────────────────────────────────────────────────
 
-export function recalculateAll(instruments: Instrument[], weights: MomentumWeights): Instrument[] {
+export function recalculateAll(
+  instruments: Instrument[],
+  weights: MomentumWeights,
+  atrMultiplier = 4
+): Instrument[] {
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
-
     if (inst.closes && inst.closes.length > 0) {
       const { r1m, r3m, r6m } = calculateReturns(inst.closes)
       updated.r1m = r1m
@@ -232,13 +238,26 @@ export function recalculateAll(instruments: Instrument[], weights: MomentumWeigh
       updated.vola = calculateVola(inst.closes)
       updated.momentumScore = calculateMomentumScore(r1m, r3m, r6m, weights)
       updated.sharpeScore = calculateSharpeScore(updated.momentumScore, updated.vola)
-    }
 
-    // Derived fundamentals
-    if (inst.pe !== null && inst.pe !== undefined && inst.pe > 0) {
-      updated.earningsYield = 1 / inst.pe
-    }
+      // Moving averages
+      const mas = calculateMAs(inst.closes)
+      updated.ma10 = mas.ma10
+      updated.ma50 = mas.ma50
+      updated.ma100 = mas.ma100
+      updated.ma200 = mas.ma200
+      updated.aboveMa10 = mas.aboveMa10
+      updated.aboveMa50 = mas.aboveMa50
+      updated.aboveMa100 = mas.aboveMa100
+      updated.aboveMa200 = mas.aboveMa200
 
+      // ATR + Selling Threshold
+      const { atr20, sellingThreshold } = calculateSellingThreshold(
+        inst.closes, atrMultiplier, inst.highs, inst.lows
+      )
+      updated.atr20 = atr20
+      updated.sellingThreshold = sellingThreshold
+    }
+    if (inst.pe != null && inst.pe > 0) updated.earningsYield = 1 / inst.pe
     return updated
   })
 
