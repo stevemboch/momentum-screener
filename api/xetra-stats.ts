@@ -6,8 +6,8 @@ const inflateRaw = promisify(zlib.inflateRaw)
 export interface ETFStats {
   isin: string
   name: string | null
-  aum: number | null   // raw EUR (converted from € millions)
-  ter: number | null   // not available from Deutsche Börse – always null
+  aum: number | null
+  ter: null
 }
 
 function findZipEntries(buf: Buffer) {
@@ -45,18 +45,10 @@ function colIndex(ref: string): number {
   return ref.split('').reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1
 }
 
-async function fetchXlsxSheet(url: string, sheetFile: string): Promise<string[][]> {
-  const fetchRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)' } })
-  if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status} fetching XLSX`)
-  const buf = Buffer.from(await fetchRes.arrayBuffer())
+async function fetchXlsxSheet(buf: Buffer, sheetFile: string, strings: string[]): Promise<string[][]> {
   const entries = findZipEntries(buf)
-
-  const ssEntry = entries.get('xl/sharedStrings.xml')
-  if (!ssEntry) throw new Error('No sharedStrings.xml in XLSX')
-  const strings = parseSharedStrings(await extractXml(buf, ssEntry))
-
   const wsEntry = entries.get(sheetFile)
-  if (!wsEntry) throw new Error(`Sheet ${sheetFile} not found in XLSX`)
+  if (!wsEntry) throw new Error(`Sheet ${sheetFile} not found`)
   const wsXml = await extractXml(buf, wsEntry)
 
   const rows: string[][] = []
@@ -75,21 +67,30 @@ async function fetchXlsxSheet(url: string, sheetFile: string): Promise<string[][
   return rows
 }
 
-// Row structure (0-indexed):
-// col 0: ""
-// col 1: row number
-// col 2: Product Name
-// col 3: ISIN
-// col 4: Xetra Ticker
-// col 12: AUM (€ millions, current month)
-function parseStatsSheet(rows: string[][]): Map<string, { name: string | null; aum: number | null }> {
+// ETF sheet (sheet3):
+// col 2 = Name, col 3 = ISIN, col 12 = AUM (€m, current month)
+function parseETFSheet(rows: string[][]): Map<string, { name: string | null; aum: number | null }> {
   const map = new Map<string, { name: string | null; aum: number | null }>()
   for (const row of rows) {
     const isin = row[3]?.trim()
     if (!isin || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
     const name = row[2]?.trim() || null
     const aumRaw = parseFloat(row[12])
-    // AUM is in € millions → convert to raw €
+    const aum = isFinite(aumRaw) && aumRaw > 0 ? Math.round(aumRaw * 1_000_000) : null
+    map.set(isin, { name, aum })
+  }
+  return map
+}
+
+// ETC sheet (sheet4):
+// col 2 = Name, col 3 = ISIN, col 9 = AUM (€m, current month)
+function parseETCSheet(rows: string[][]): Map<string, { name: string | null; aum: number | null }> {
+  const map = new Map<string, { name: string | null; aum: number | null }>()
+  for (const row of rows) {
+    const isin = row[3]?.trim()
+    if (!isin || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
+    const name = row[2]?.trim() || null
+    const aumRaw = parseFloat(row[9])
     const aum = isFinite(aumRaw) && aumRaw > 0 ? Math.round(aumRaw * 1_000_000) : null
     map.set(isin, { name, aum })
   }
@@ -104,16 +105,12 @@ async function findLatestStatsUrl(): Promise<string> {
   if (!pageRes.ok) throw new Error(`Stats page HTTP ${pageRes.status}`)
   const html = await pageRes.text()
 
-  // Try multiple regex patterns – Deutsche Börse changes URL format occasionally
   const patterns = [
     /href="(\/resource\/blob\/[^"]*ETF-ETP-Statistic[^"]*\.xlsx)"/i,
     /href="(\/resource\/blob\/[^"]*Statistic[^"]*\.xlsx)"/i,
     /href="(\/resource\/blob\/[^"]*ETF[^"]*\.xlsx)"/i,
-    /"(https?:\/\/[^"]*ETF-ETP-Statistic[^"]*\.xlsx)"/i,
-    /href="([^"]*ETF-ETP-Statistic[^"]*\.xlsx)"/i,
     /href="([^"]*blob[^"]*\.xlsx)"/i,
   ]
-
   for (const pattern of patterns) {
     const match = html.match(pattern)
     if (match) {
@@ -121,8 +118,7 @@ async function findLatestStatsUrl(): Promise<string> {
       return href.startsWith('http') ? href : 'https://www.cashmarket.deutsche-boerse.com' + href
     }
   }
-
-  throw new Error(`No XLSX URL found on stats page (html size: ${html.length})`)
+  throw new Error(`No XLSX URL found (html size: ${html.length})`)
 }
 
 // Module-level cache shared across warm Vercel invocations
@@ -133,14 +129,23 @@ async function getStatsMap(): Promise<Map<string, { name: string | null; aum: nu
   if (cache && Date.now() - cache.ts < CACHE_TTL) return cache.data
 
   const url = await findLatestStatsUrl()
+  const fileRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)' } })
+  if (!fileRes.ok) throw new Error(`XLSX HTTP ${fileRes.status}`)
 
-  // Sheet3 = ETFs, Sheet4 = ETCs
+  const buf = Buffer.from(await fileRes.arrayBuffer())
+  const entries = findZipEntries(buf)
+  const strings = parseSharedStrings(await extractXml(buf, entries.get('xl/sharedStrings.xml')!))
+
   const [etfRows, etcRows] = await Promise.all([
-    fetchXlsxSheet(url, 'xl/worksheets/sheet3.xml'),
-    fetchXlsxSheet(url, 'xl/worksheets/sheet4.xml'),
+    fetchXlsxSheet(buf, 'xl/worksheets/sheet3.xml', strings),
+    fetchXlsxSheet(buf, 'xl/worksheets/sheet4.xml', strings),
   ])
 
-  const data = new Map([...parseStatsSheet(etfRows), ...parseStatsSheet(etcRows)])
+  const data = new Map([
+    ...parseETFSheet(etfRows),
+    ...parseETCSheet(etcRows),
+  ])
+
   cache = { ts: Date.now(), data }
   return data
 }
