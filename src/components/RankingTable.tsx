@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
+
 import { useAppState, useDisplayedInstruments } from '../store'
+import { PriceSparkline } from './PriceSparkline'
 import type { SortColumn } from '../types'
 import {
   fmtAUM, fmtTER, fmtPct, fmtRatio, fmtScore, fmtVola, fmtPE, fmtEY, returnColor, scoreColor
@@ -9,6 +11,7 @@ type Col = { key: string; label: string; title?: string; align?: 'right' | 'left
 
 const COLUMNS: Col[] = [
   { key: 'displayName',      label: 'Name',     align: 'left' },
+  { key: 'trend',            label: 'Trend (6M)', align: 'left' },
   { key: 'type',             label: 'Type',     align: 'left' },
   { key: 'momentumScore',    label: 'Momentum', title: 'Weighted return score (rank)' },
   { key: 'sharpeScore',      label: 'Sharpe',   title: 'Momentum ÷ annualised volatility (rank)' },
@@ -63,7 +66,7 @@ export function RankingTable() {
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
 
   const handleSort = (col: string) => {
-    if (['displayName', 'type', 'ma'].includes(col)) return
+    if (['displayName', 'type', 'ma', 'trend'].includes(col)) return
     const newCol = col as SortColumn
     if (sortColumn === newCol) {
       dispatch({ type: 'SET_TABLE_STATE', updates: { sortDirection: sortDirection === 'desc' ? 'asc' : 'desc' } })
@@ -73,7 +76,7 @@ export function RankingTable() {
   }
 
   const sortIcon = (col: string) => {
-    if (['displayName', 'type', 'ma'].includes(col)) return ''
+    if (['displayName', 'type', 'ma', 'trend'].includes(col)) return ''
     if (sortColumn !== col) return <span className="text-muted ml-1">↕</span>
     return <span className="text-accent ml-1">{sortDirection === 'desc' ? '↓' : '↑'}</span>
   }
@@ -98,7 +101,7 @@ export function RankingTable() {
                 onClick={() => handleSort(col.key)}
                 className={`px-3 py-2 font-semibold text-muted whitespace-nowrap
                   ${col.align === 'left' ? 'text-left' : 'text-right'}
-                  ${!['displayName','type','ma'].includes(col.key) ? 'cursor-pointer hover:text-gray-300' : ''}
+                  ${!['displayName', 'type', 'ma', 'trend'].includes(col.key) ? 'cursor-pointer hover:text-gray-300' : ''}
                   select-none`}
               >
                 {col.label}{sortIcon(col.key)}
@@ -111,9 +114,8 @@ export function RankingTable() {
             const isExpanded = expandedISIN === inst.isin
             const rowBg = idx % 2 === 0 ? 'bg-bg' : 'bg-surface'
             return (
-              <>
+              <React.Fragment key={inst.isin}>
                 <tr
-                  key={inst.isin}
                   className={`${rowBg} hover:bg-surface2 border-b border-border/30 cursor-pointer`}
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                 >
@@ -121,6 +123,11 @@ export function RankingTable() {
                   <td className="px-3 py-2 text-left max-w-[220px]">
                     <div className="truncate text-gray-200" title={inst.displayName}>{inst.displayName}</div>
                     <div className="text-muted text-[10px] mt-0.5">{inst.isin}{inst.currency && ` · ${inst.currency}`}</div>
+                  </td>
+
+                  {/* Trend */}
+                  <td className="px-3 py-2 text-left min-w-[100px]">
+                    <PriceSparkline closes={inst.closes} />
                   </td>
 
                   {/* Type */}
@@ -193,7 +200,7 @@ export function RankingTable() {
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             )
           })}
         </tbody>
