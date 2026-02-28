@@ -164,7 +164,7 @@ export function useDisplayedInstruments() {
     filtered = filtered.filter((i) => i.type === 'Stock')
   }
 
-  // Dedup filter
+  // Dedup filter — hides non-winners when enabled
   if (tableState.showDeduped) {
     filtered = filtered.filter((i) => {
       if (i.type === 'Stock') return true
@@ -173,14 +173,12 @@ export function useDisplayedInstruments() {
     })
   }
 
-  // AUM floor
-  if (tableState.showDeduped) {
-    filtered = filtered.filter((i) => {
-      if (i.type === 'Stock' || i.source === 'manual') return true
-      if (i.aum == null) return true
-      return i.aum >= settings.aumFloor
-    })
-  }
+  // AUM floor — always applied (independent of dedup toggle)
+  filtered = filtered.filter((i) => {
+    if (i.type === 'Stock' || i.source === 'manual') return true
+    if (i.aum == null) return true
+    return i.aum >= settings.aumFloor
+  })
 
   // Risk-free rate filter
   // Compares 6M return (annualised × 2) against risk-free rate.
