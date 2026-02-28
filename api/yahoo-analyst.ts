@@ -45,7 +45,39 @@ async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<Ana
   }
 }
 
-async function fetchAnalyst(ticker: string): Promise<AnalystResult> {
+async function fetchFromMarketScreener(query: string): Promise<Partial<AnalystResult>> {
+  const searchUrl = `https://www.marketscreener.com/search/?q=${encodeURIComponent(query)}`
+  const searchRes = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
+  if (!searchRes.ok) throw new Error(`MarketScreener search error: ${searchRes.status}`)
+  const searchHtml = await searchRes.text()
+
+  const linkMatch = searchHtml.match(/href="(\/quote\/stock\/[^"]+?)"/i)
+  if (!linkMatch) throw new Error('MarketScreener: no quote link')
+  const quotePath = linkMatch[1]
+
+  const consensusUrl = `https://www.marketscreener.com${quotePath}consensus/`
+  const consensusRes = await fetch(consensusUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
+  if (!consensusRes.ok) throw new Error(`MarketScreener consensus error: ${consensusRes.status}`)
+  const html = await consensusRes.text()
+
+  const avgMatch = html.match(/Average target price<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
+  const highMatch = html.match(/High target price<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
+  const lowMatch = html.match(/Low target price<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
+  const lastMatch = html.match(/Last Close<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
+  const consensusMatch = html.match(/Consensus<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
+  const analystMatch = html.match(/Number of analysts<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
+
+  return {
+    recommendationKey: consensusMatch ? consensusMatch[1].trim().toLowerCase() : null,
+    numberOfAnalystOpinions: analystMatch ? parseMoney(analystMatch[1]) : null,
+    targetMeanPrice: parseMoney(avgMatch?.[1]?.trim() ?? null),
+    targetHighPrice: parseMoney(highMatch?.[1]?.trim() ?? null),
+    targetLowPrice: parseMoney(lowMatch?.[1]?.trim() ?? null),
+    currentPrice: parseMoney(lastMatch?.[1]?.trim() ?? null),
+  }
+}
+
+async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResult> {
   const base: AnalystResult = {
     ticker,
     recommendationMean: null,
@@ -89,7 +121,7 @@ async function fetchAnalyst(ticker: string): Promise<AnalystResult> {
     base.targetHighPrice = fd.targetHighPrice?.raw ?? null
     base.currentPrice = fd.currentPrice?.raw ?? null
   } catch (err: any) {
-    // Fallback: scrape optionsanalysissuite.com (public HTML)
+    // Fallback 1: scrape optionsanalysissuite.com (public HTML)
     try {
       const fallback = await fetchFromOptionAnalysisSuite(ticker)
       return {
@@ -100,7 +132,22 @@ async function fetchAnalyst(ticker: string): Promise<AnalystResult> {
         targetHighPrice: fallback.targetHighPrice ?? null,
       }
     } catch (fallbackErr: any) {
-      base.error = err?.message || fallbackErr?.message
+      // Fallback 2: MarketScreener (search by ISIN or ticker)
+      try {
+        const query = isin || ticker
+        const ms = await fetchFromMarketScreener(query)
+        return {
+          ...base,
+          recommendationKey: ms.recommendationKey ?? null,
+          numberOfAnalystOpinions: ms.numberOfAnalystOpinions ?? null,
+          targetMeanPrice: ms.targetMeanPrice ?? null,
+          targetLowPrice: ms.targetLowPrice ?? null,
+          targetHighPrice: ms.targetHighPrice ?? null,
+          currentPrice: ms.currentPrice ?? null,
+        }
+      } catch (msErr: any) {
+        base.error = err?.message || fallbackErr?.message || msErr?.message
+      }
     }
   }
 
@@ -110,7 +157,8 @@ async function fetchAnalyst(ticker: string): Promise<AnalystResult> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const ticker: string | undefined = req.body?.ticker
+  const isin: string | undefined = req.body?.isin
   if (!ticker) return res.status(400).json({ error: 'ticker required' })
-  const result = await fetchAnalyst(ticker)
+  const result = await fetchAnalyst(ticker, isin)
   return res.status(200).json(result)
 }

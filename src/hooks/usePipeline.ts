@@ -270,7 +270,14 @@ export function usePipeline() {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
     try {
-      const r = await apiYahooAnalyst(inst.yahooTicker)
+      const r = await fetch('/api/yahoo-analyst', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: inst.yahooTicker, isin: inst.isin }),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`Yahoo Analyst API error: ${res.status}`)
+        return res.json()
+      })
       if (!r) return
       dispatch({
         type: 'UPDATE_INSTRUMENT',
