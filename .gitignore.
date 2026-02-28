@@ -1,1 +1,26 @@
+# Dependencies
 node_modules/
+
+# Build
+dist/
+build/
+
+# Environment (NIEMALS committen!)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase
+supabase/.temp/

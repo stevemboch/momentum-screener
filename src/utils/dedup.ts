@@ -32,12 +32,11 @@ const PROVIDERS: { prefix: string; priority: number }[] = [
   { prefix: 'TABULA', priority: 25 },
 ]
 
-// Xetra short-name provider aliases → canonical provider prefix for priority lookup
 const PROVIDER_ALIASES: [string, string][] = [
   ['ISHARES', 'ISHARES'],
   ['ISHS', 'ISHARES'],
   ['ISH', 'ISHARES'],
-  ['IS ', 'ISHARES'],   // "IS Core MSCI..." – note trailing space
+  ['IS ', 'ISHARES'],
   ['SS SPDR', 'SPDR'],
   ['SS ', 'SPDR'],
   ['SSGA', 'SPDR'],
@@ -45,7 +44,7 @@ const PROVIDER_ALIASES: [string, string][] = [
   ['XTRK', 'XTRACKERS'],
   ['XTRAC', 'XTRACKERS'],
   ['XTR', 'XTRACKERS'],
-  ['X ', 'XTRACKERS'],  // "X MSCI Korea" – Xtrackers
+  ['X ', 'XTRACKERS'],
   ['LYXOR', 'LYXOR'],
   ['LYX', 'LYXOR'],
   ['AMUNDI', 'AMUNDI'],
@@ -53,7 +52,7 @@ const PROVIDER_ALIASES: [string, string][] = [
   ['WISDOMTREE', 'WISDOMTREE'],
   ['WT ', 'WISDOMTREE'],
   ['FRANKLIN', 'FRANKLIN'],
-  ['FRK', 'FRANKLIN'],  // "Frk FTSE Korea"
+  ['FRK', 'FRANKLIN'],
   ['FTGF', 'FRANKLIN'],
   ['INVESCO', 'INVESCO'],
   ['INV', 'INVESCO'],
@@ -68,322 +67,432 @@ const PROVIDER_ALIASES: [string, string][] = [
   ['LGIM', 'LGIM'],
 ]
 
+// ─── Constants for Classification ───────────────────────────────────────────
+
+const SECTOR_TERMS = new Set([
+  'BASICRESOURCES', 'SEMICONDUCTOR', 'UTILITIES', 'HEALTHCARE', 'FINANCIALS',
+  'CONSUMER', 'DISCRETIONARY', 'INDUSTRIALS', 'TECHNOLOGY', 'REALESTATE',
+  'COMMUNICATIONS', 'ENERGY', 'MATERIALS', 'CYBERSECURITY', 'ROBOTICS',
+  'WATER', 'CLEANENERGY', 'FUTUREMOBILITY', 'CLOUDCOMPUTING', 'BIOTECHNOLOGY',
+  'PHARMACEUTICALS'
+]);
+
+const GEOGRAPHIC_TERMS = new Set([
+  'GLOBAL', 'WORLD', 'INTERNATIONAL', 'EUROPE', 'AMERICA', 'ASIAPACIFIC', 'LATINAMERICA',
+  'EMERGINGMARKETS', 'FRANCE', 'GERMANY', 'USA', 'UK', 'JAPAN', 'CHINA', 'INDIA',
+  'CANADA', 'SWITZERLAND', 'IRELAND', 'FRONTIERMARKETS', 'EMERGINGASIA', 'ASIAEXJAPAN',
+  'EUROPEEXUK', 'NORTHAMERICA', 'WORLDEXUS', 'PACIFICEXJAPAN', 'SOUTHEASTASIA',
+  'EUROZONE', 'NORDIC'
+]);
+
+const STRATEGY_TERMS = new Set([
+  'MINIMUMVOLATILITY', 'MINIMUMVARIANCE', 'LOWVOLATILITY', 'EQUALWEIGHT', 'GOVERNMENTBOND',
+  'CORPORATEBOND', 'AGGREGATEBOND', 'BOND', 'EQUITY', 'MINERS', 'GOLDMINERS',
+  'SILVERMINERS', 'HIGHYIELD', 'SHORTTERM', 'MIDTERM', 'LONGTERM', 'CONVERTIBLEBOND',
+  'INFLATIONLINKED', 'SUSTAINABLEBOND', 'DEVELOPED', 'DIVIDEND', 'GROWTH', 'VALUE',
+  'SMALLCAP', 'MIDCAP', 'LARGECAP', 'MEGACAP'
+]);
+
+const INDEX_IDENTIFIERS = new Set([
+  'SP500', 'EUROSTOXX50', 'STOXX600', 'TECDAX', 'DAX', 'MDAX', 'SDAX', 'UST', 'SPTSX',
+  'FTSEMIB', 'CAC40', 'IBEX35', 'ASX200', 'NIKKEI225', 'HANGSENGCHINA', 'CSI300',
+  'KOSPI', 'SENSEX', 'MOEX', 'XETRA', 'RUSSELL2000', 'RUSSELL1000', 'NASDAQ100', 'DOWJONES'
+]);
+
 // ─── Abbreviation Expansion ───────────────────────────────────────────────────
 
 const ABBREV: [string, string][] = [
-  // Indices – sorted longest first to avoid partial matches
-  // All STOXX600/EUROSTOXX600 variants → same canonical key
-  ['EURSTX600', 'STOXX600'],
-  ['EURSTX50', 'STOXX50'],
-  ['EURSTX', 'STOXX'],
-  ['EUR600', 'STOXX600'],
-  ['EX600', 'STOXX600'],
-  ['ESTX600', 'STOXX600'],
-  ['ESTX50', 'STOXX50'],
-  ['ESTX', 'STOXX'],
-  ['STX600', 'STOXX600'],
-  ['STX50', 'STOXX50'],
-  ['STX', 'STOXX'],
-  ['STXX', 'STOXX'],
-
-  // Sectors
-  ['BASICRESOURCE', 'BASICRESOURCES'],
-  ['BASICRESOURCES', 'BASICRESOURCES'],
-  ['BASICRES', 'BASICRESOURCES'],
-  ['BASRES', 'BASICRESOURCES'],
-  ['RSRCES', 'BASICRESOURCES'],
-  ['RSRC', 'RESOURCES'],
-  ['RSCR', 'RESOURCES'],
-  ['SEMICNDCT', 'SEMICONDUCTOR'],
-  ['SEMICOND', 'SEMICONDUCTOR'],
-  ['SEMCNDCT', 'SEMICONDUCTOR'],
-  ['SEMIC', 'SEMICONDUCTOR'],
-  ['UTILITIE', 'UTILITIES'],
-  ['UTILIT', 'UTILITIES'],
-  ['UTIL', 'UTILITIES'],
-  ['HLTHCARE', 'HEALTHCARE'],
-  ['HLTHCR', 'HEALTHCARE'],
-  ['HELTHCR', 'HEALTHCARE'],
-  ['HLTH', 'HEALTH'],
-  ['FINANCIALS', 'FINANCIALS'],
-  ['FINANCI', 'FINANCIALS'],
-  ['FINANC', 'FINANCIALS'],
-  ['FINAN', 'FINANCIALS'],
-  ['CONSMR', 'CONSUMER'],
-  ['DISCRET', 'DISCRETIONARY'],
-  ['DISCR', 'DISCRETIONARY'],
-  ['INDUST', 'INDUSTRIALS'],
-  ['INFTECH', 'TECHNOLOGY'],
-  ['INFOTECH', 'TECHNOLOGY'],
-  ['INFTEC', 'TECHNOLOGY'],
-  ['REALEST', 'REALESTATE'],
-  ['REALES', 'REALESTATE'],
-  ['REALET', 'REALESTATE'],
-  ['TELECOM', 'COMMUNICATIONS'],
-  ['TELECO', 'COMMUNICATIONS'],
-  ['COMMUN', 'COMMUNICATIONS'],
-
-  // Geographic
-  ['GLB', 'GLOBAL'],
-  ['GLBL', 'GLOBAL'],
-  ['WRLD', 'WORLD'],
-  ['WRL', 'WORLD'],
-  ['INTL', 'INTERNATIONAL'],
-  ['INTRNTNL', 'INTERNATIONAL'],
-  ['LATAM', 'LATINAMERICA'],
-  ['APAC', 'ASIAPACIFIC'],
-
-  // Modifiers
-  ['PHYS', 'PHYSICAL'],
-  ['MINERS', 'MINERS'],
-  ['MINING', 'MINERS'],
-  ['GOLDMIN', 'GOLDMINERS'],
-  ['GOLDMINE', 'GOLDMINERS'],
-  ['SILVMINE', 'SILVERMINERS'],
-
-  // Misc
-  ['MINVOL', 'MINIMUMVOLATILITY'],
-  ['MINVAR', 'MINIMUMVARIANCE'],
-  ['LOWVOL', 'LOWVOLATILITY'],
-  ['EQWT', 'EQUALWEIGHT'],
-  ['GOVT', 'GOVERNMENT'],
-  ['GOVNT', 'GOVERNMENT'],
-  ['CORP', 'CORPORATE'],
-]
+  ["S&P 500", "SP500"],
+  ["S&P500", "SP500"],
+  ["SPTSE", "SPTSX"],
+  ["ESTX50", "EUROSTOXX50"],
+  ["EX600", "STOXX600"],
+  ["EURSTX", "EUROSTOXX"],
+  ["USTREASURY", "UST"],
+  ["TRESURY", "UST"],
+  ["TREASURY", "UST"],
+  ["BASICRESOURCE", "BASICRESOURCES"],
+  ["SEMICNDCT", "SEMICONDUCTOR"],
+  ["HLTHCARE", "HEALTHCARE"],
+  ["FINANCIALS", "FINANCIALS"],
+  ["INDUSTRIALS", "INDUSTRIALS"],
+  ["REALESTATE", "REALESTATE"],
+  ["TECHNOLOGY", "TECHNOLOGY"],
+  ["COMMUNICATIONS", "COMMUNICATIONS"],
+  ["UTILITIES", "UTILITIES"],
+  ["CONSUMERDISCRETIONARY", "CONSUMERDISCRETIONARY"],
+  ["CONSUMERSTAPLES", "CONSUMERSTAPLES"],
+  ["ENERGY", "ENERGY"],
+  ["MATERIALS", "MATERIALS"],
+  ["CYBERSECURITY", "CYBERSECURITY"],
+  ["ROBOTICS", "ROBOTICS"],
+  ["AI", "ARTIFICIALINTELLIGENCE"],
+  ["WATER", "WATER"],
+  ["CLEANENERGY", "CLEANENERGY"],
+  ["FUTUREMOBILITY", "FUTUREMOBILITY"],
+  ["CLOUDCOMPUTING", "CLOUDCOMPUTING"],
+  ["BIOTECH", "BIOTECHNOLOGY"],
+  ["PHARMA", "PHARMACEUTICALS"],
+  ["GLOBAL", "GLOBAL"],
+  ["WORLD", "WORLD"],
+  ["EUROPE", "EUROPE"],
+  ["USA", "USA"],
+  ["US", "USA"],
+  ["AMERICA", "AMERICA"],
+  ["CANADA", "CANADA"],
+  ["JAPAN", "JAPAN"],
+  ["CHINA", "CHINA"],
+  ["INDIA", "INDIA"],
+  ["EMERGINGMARKETS", "EMERGINGMARKETS"],
+  ["LATINAMERICA", "LATINAMERICA"],
+  ["ASIAPACIFIC", "ASIAPACIFIC"],
+  ["ASIA", "ASIA"],
+  ["PACIFIC", "PACIFIC"],
+  ["GERMANY", "GERMANY"],
+  ["FRANCE", "FRANCE"],
+  ["UK", "UK"],
+  ["UNITEDKINGDOM", "UK"],
+  ["SWITZERLAND", "SWITZERLAND"],
+  ["IRELAND", "IRELAND"],
+  ["PHYSICAL", "PHYSICAL"],
+  ["MINERS", "MINERS"],
+  ["GOLDMINERS", "GOLDMINERS"],
+  ["SILVERMINERS", "SILVERMINERS"],
+  ["MINVOL", "MINIMUMVOLATILITY"],
+  ["MINVAR", "MINIMUMVARIANCE"],
+  ["LOWVOL", "LOWVOLATILITY"],
+  ["EQWT", "EQUALWEIGHT"],
+  ["GOVERNMENTBOND", "GOVERNMENTBOND"],
+  ["CORPORATEBOND", "CORPORATEBOND"],
+  ["HIGHYIELD", "HIGHYIELD"],
+  ["SHORTTERM", "SHORTTERM"],
+  ["MIDTERM", "MIDTERM"],
+  ["LONGTERM", "LONGTERM"],
+  ["AGGREGATEBOND", "AGGREGATEBOND"],
+  ["CONVERTIBLEBOND", "CONVERTIBLEBOND"],
+  ["INFLATIONLINKED", "INFLATIONLINKED"],
+  ["SUSTAINABLEBOND", "SUSTAINABLEBOND"],
+  ["DEVELOPED", "DEVELOPED"],
+  ["DIVIDEND", "DIVIDEND"],
+  ["GROWTH", "GROWTH"],
+  ["VALUE", "VALUE"],
+  ["SMALLCAP", "SMALLCAP"],
+  ["MIDCAP", "MIDCAP"],
+  ["LARGESTOCKS", "LARGECAP"],
+  ["MEGACAP", "MEGACAP"],
+  ["FRONTIERMARKETS", "FRONTIERMARKETS"],
+  ["EMERGINGASIA", "EMERGINGASIA"],
+  ["ASIAEXJAPAN", "ASIAEXJAPAN"],
+  ["EUROPEEXUK", "EUROPEEXUK"],
+  ["NORTHAMERICA", "NORTHAMERICA"],
+  ["WORLDEXUS", "WORLDEXUS"],
+  ["PACIFICEXJAPAN", "PACIFICEXJAPAN"],
+  ["SOUTHEASTASIA", "SOUTHEASTASIA"],
+  ["FRONTIER", "FRONTIERMARKETS"],
+  ["EUROZONE", "EUROZONE"],
+  ["PANEUROPE", "EUROPE"],
+  ["NORDIC", "NORDIC"],
+  ["SRI", "SRI"],
+  ["ESG", "ESG"],
+  ["RUSSELL2000", "RUSSELL2000"],
+  ["RUSSEL1000", "RUSSELL1000"],
+  ["NASDAQ100", "NASDAQ100"],
+];
 
 const STRIP_WORDS = new Set([
-  'UCITS', 'ETF', 'ETC', 'ETP', 'SWAP', 'DR', 'ACC', 'DIST', 'DISTRIBUTING',
-  'ACCUMULATING', 'CLASS', 'SHARE', 'SHARES', 'FUND', 'TRUST',
-  '1C', '2C', '3C', '4C', '5C', '1D', '2D', '3D', 'A', 'B', 'C', 'D',
-  'DAILY', 'MONTHLY', 'QUARTERLY',
-  'THE', 'AN', 'OF', 'FOR', 'AND', 'WITH',
-  // Strip index family names – we do NOT use them as dedup dimensions
-  // (MSCI Korea = FTSE Korea for our purposes)
-  'MSCI', 'FTSE', 'SP', 'STOXX', 'BLOOMBERG', 'SOLACTIVE',
-  'RUSSELL', 'NASDAQ', 'DJ', 'NIKKEI', 'CSI', 'TOPIX', 'HANGSENG',
-  // Domicile suffixes (appear in fund names like iShares STOXX Europe 600 Basic Resources (DE))
-  'DE', 'IE', 'LU', 'FR', 'CH', 'AT', 'NL', 'BE',
-  // EUROPE/EUROPEAN redundant when STOXX is present
-  'EUROPE', 'EUROPEAN',
-  // Noise quality words
-  'CORE', 'PRIME', 'PLUS', 'SELECT', 'OPTIMAL', 'ENHANCED', 'QUALITY',
-  'IMI', 'LARGE', 'MID', 'SMALL', 'CAP', 'MEGA',
-  'SCREENED', 'LEADERS', 'FILTERED', 'FOCUSED', 'UNIVERSAL', 'BROAD',
-  'NET', 'TOTAL', 'RETURN', 'TR', 'NR', 'GR', 'PR',
-  'MARKET', 'INDEX', 'IDX',
-  // Provider names
-  ...PROVIDERS.map((p) => p.prefix),
-])
+  "UCITS", "ETF", "ETC", "ETP", "SWAP", "DR", "ACC", "DIST", "DISTRIBUTING",
+  "ACCUMULATING", "CLASS", "SHARE", "SHARES", "FUND", "TRUST", "UNITS",
+  "1C", "2C", "3C", "4C", "5C", "1D", "2D", "3D", "A", "B", "C", "D", "E",
+  "DAILY", "MONTHLY", "QUARTERLY", "ANNUAL",
+  "THE", "AN", "OF", "FOR", "AND", "WITH", "IN", "ON", "AT", "BY", "TO",
+  "SICAV", "IBOXX", "JPMORGAN", "DE", "IE", "LU", "FR", "CH", "AT", "NL", "BE", "GB",
+  "US", "CA", "JP", "CN", "EUROPE", "EUROPEAN", "CORE", "PRIME", "PLUS",
+  "SELECT", "OPTIMAL", "ENHANCED", "QUALITY", "IMI", "LARGE", "MID", "SMALL",
+  "CAP", "MEGA", "MICRO", "SCREENED", "LEADERS", "FILTERED", "FOCUSED",
+  "UNIVERSAL", "BROAD", "NET", "TOTAL", "RETURN", "TR", "NR", "GR", "PR",
+  "MARKET", "INDEX", "IDX", "ORDINARY", "VIRTUS", "OPPENHEIMER", "DEUTSCHE",
+  ...PROVIDERS.map((p) => p.prefix.split(" ")[0]),
+]);
 
 // ─── Commodity Detection ──────────────────────────────────────────────────────
 
 const COMMODITIES: { commodity: string; terms: string[] }[] = [
-  { commodity: 'GOLD',      terms: ['GOLD', 'XAU', 'GOLDBARREN'] },
-  { commodity: 'SILVER',    terms: ['SILVER', 'XAG', 'SILBER'] },
-  { commodity: 'PLATINUM',  terms: ['PLATINUM', 'XPT', 'PLATIN'] },
-  { commodity: 'PALLADIUM', terms: ['PALLADIUM', 'XPD'] },
-  { commodity: 'COPPER',    terms: ['COPPER', 'KUPFER'] },
-  { commodity: 'NICKEL',    terms: ['NICKEL'] },
-  { commodity: 'ZINC',      terms: ['ZINC', 'ZINK'] },
-  { commodity: 'TIN',       terms: ['TIN', 'ZINN'] },
-  { commodity: 'ALUMINIUM', terms: ['ALUMINIUM', 'ALUMINUM'] },
-  { commodity: 'COBALT',    terms: ['COBALT'] },
-  { commodity: 'LITHIUM',   terms: ['LITHIUM'] },
-  { commodity: 'OIL',       terms: ['CRUDE OIL', 'BRENT', 'WTI', 'PETROLEUM'] },
-  { commodity: 'GAS',       terms: ['NATURAL GAS', 'NAT GAS'] },
-  { commodity: 'WHEAT',     terms: ['WHEAT', 'WEIZEN'] },
-  { commodity: 'CORN',      terms: ['CORN', 'MAIS'] },
-  { commodity: 'SOYBEANS',  terms: ['SOYBEAN', 'SOYA'] },
-  { commodity: 'CARBON',    terms: ['CARBON', 'CO2', 'EMISSION'] },
-  { commodity: 'PRECIOUS',  terms: ['PRECIOUS METALS', 'PRECIOUS MET'] },
-  { commodity: 'BASKET',    terms: ['BLOOMBERG COMMODITY', 'BROAD COMMODITY', 'DIVERSIFIED COMMODITY', 'RICI'] },
-]
+  { commodity: "GOLD", terms: ["GOLD", "XAU", "GOLDBARREN"] },
+  { commodity: "SILVER", terms: ["SILVER", "XAG", "SILBER"] },
+  { commodity: "PLATINUM", terms: ["PLATINUM", "XPT", "PLATIN"] },
+  { commodity: "PALLADIUM", terms: ["PALLADIUM", "XPD"] },
+  { commodity: "COPPER", terms: ["COPPER", "KUPFER"] },
+  { commodity: "NICKEL", terms: ["NICKEL"] },
+  { commodity: "ZINC", terms: ["ZINC", "ZINK"] },
+  { commodity: "TIN", terms: ["TIN", "ZINN"] },
+  { commodity: "ALUMINIUM", terms: ["ALUMINIUM", "ALUMINUM"] },
+  { commodity: "COBALT", terms: ["COBALT"] },
+  { commodity: "LITHIUM", terms: ["LITHIUM"] },
+  { commodity: "OIL", terms: ["CRUDE OIL", "BRENT", "WTI", "PETROLEUM"] },
+  { commodity: "GAS", terms: ["NATURAL GAS", "NAT GAS"] },
+  { commodity: "WHEAT", terms: ["WHEAT", "WEIZEN"] },
+  { commodity: "CORN", terms: ["CORN", "MAIS"] },
+  { commodity: "SOYBEANS", terms: ["SOYBEAN", "SOYA"] },
+  { commodity: "CARBON", terms: ["CARBON", "CO2", "EMISSION"] },
+  { commodity: "PRECIOUS", terms: ["PRECIOUS METALS", "PRECIOUS MET"] },
+  { commodity: "INDUSTRIALMETALS", terms: ["INDUSTRIAL METALS", "IND METALS"] },
+  { commodity: "AGRICULTURE", terms: ["AGRICULTURE", "AGRICULTURAL"] },
+  { commodity: "LIVESTOCK", terms: ["LIVESTOCK"] },
+  { commodity: "BASKET", terms: ["BLOOMBERG COMMODITY", "BROAD COMMODITY", "DIVERSIFIED COMMODITY", "RICI", "COMMODITY"] },
+];
 
 const COMMODITY_MODS: { key: string; terms: string[] }[] = [
-  { key: 'HEDGED', terms: ['HEDGED', 'HDG', 'HDGD', 'CURRENCY HEDGED'] },
-  { key: '2X',     terms: ['2X', '2EX', 'DOUBLE LONG', 'DAILY 2X'] },
-  { key: 'SHORT',  terms: ['SHORT', 'INVERSE', '-1X', 'DAILY SHORT'] },
-  { key: 'MINERS', terms: ['MINERS', 'MINING', 'MINE'] },
-]
+  { key: "HEDGED", terms: ["HEDGED", "HDG", "HDGD", "CURRENCY HEDGED"] },
+  { key: "2X", terms: ["2X", "2EX", "DOUBLE LONG", "DAILY 2X"] },
+  { key: "SHORT", terms: ["SHORT", "INVERSE", "-1X", "DAILY SHORT"] },
+  { key: "MINERS", terms: ["MINERS", "MINING", "MINE"] },
+];
 
 function detectCommodity(upper: string): { commodity: string; mods: string } | null {
-  let found: string | null = null
+  let found: string | null = null;
   for (const { commodity, terms } of COMMODITIES) {
     for (const term of terms) {
-      if (upper.includes(term)) { found = commodity; break }
+      const regex = new RegExp(`\\b${term}\\b`, "i");
+      if (regex.test(upper)) { found = commodity; break; }
     }
-    if (found) break
+    if (found) break;
   }
-  if (!found) return null
+  if (!found) return null;
 
-  const mods: string[] = []
+  const mods: string[] = [];
   for (const { key, terms } of COMMODITY_MODS) {
     for (const term of terms) {
-      if (upper.includes(term)) { mods.push(key); break }
+      const regex = new RegExp(`\\b${term}\\b`, "i");
+      if (regex.test(upper)) { mods.push(key); break; }
     }
   }
 
-  return { commodity: found, mods: mods.join('|') }
+  return { commodity: found, mods: mods.join("|") };
 }
 
 // ─── Provider Strip & Detection ──────────────────────────────────────────────
 
 function stripAndDetectProvider(name: string): { stripped: string; priority: number } {
-  const upper = name.toUpperCase()
+  const upper = name.toUpperCase();
+  let bestMatch: { alias: string; canonical: string; priority: number } | null = null;
+
   for (const [alias, canonical] of PROVIDER_ALIASES) {
-    if (upper.startsWith(alias)) {
-      const stripped = name.slice(alias.length).trim().replace(/^[-\s]+/, '')
-      const prov = PROVIDERS.find((p) => p.prefix === canonical)
-      return { stripped, priority: prov?.priority ?? 99 }
+    const regex = new RegExp(`^${alias}\\b|\\b${alias}\\b`, "g");
+    if (regex.test(upper)) {
+      const prov = PROVIDERS.find((p) => p.prefix === canonical);
+      if (prov) {
+        if (!bestMatch || alias.length > bestMatch.alias.length) {
+          bestMatch = { alias, canonical, priority: prov.priority };
+        }
+      }
     }
   }
-  return { stripped: name, priority: 99 }
+
+  if (bestMatch) {
+    const stripped = upper.replace(new RegExp(`\\b${bestMatch.alias}\\b`, 'g'), '').trim();
+    return { stripped: stripped.replace(/^[-\\s]+/, ''), priority: bestMatch.priority };
+  }
+  return { stripped: name, priority: 99 };
 }
 
 // ─── Abbreviation Expansion ───────────────────────────────────────────────────
 
 function expandAbbreviations(name: string): string {
-  let result = name.toUpperCase()
+  let result = name.toUpperCase();
   for (const [abbr, expansion] of ABBREV) {
-    // Word-boundary match
-    const regex = new RegExp(`(?<![A-Z])${abbr}(?![A-Z])`, 'g')
-    result = result.replace(regex, expansion)
+    const regex = new RegExp(`\\b${abbr}\\b`, 'g');
+    result = result.replace(regex, expansion);
   }
-  return result
+  return result;
+}
+
+// ─── Tokenization and Noise Filtering ───────────────────────────────────────
+
+const EXCLUDED_TERMS_REGEX = new RegExp([
+  "UCITS", "ETF", "ETC", "ETP", "SWAP", "DR", "ACC", "DIST", "DISTRIBUTING",
+  "ACCUMULATING", "CLASS", "SHARE", "SHARES", "FUND", "TRUST", "UNITS",
+  "1C", "2C", "3C", "4C", "5C", "1D", "2D", "3D", "A", "B", "C", "D", "E",
+  "DAILY", "MONTHLY", "QUARTERLY", "ANNUAL",
+  "THE", "AN", "OF", "FOR", "AND", "WITH", "IN", "ON", "AT", "BY", "TO",
+  "SICAV", "MSCI", "FTSE", "SP", "STOXX", "BLOOMBERG", "SOLACTIVE",
+  "RUSSELL", "NASDAQ", "DJ", "DOWJONES", "NIKKEI", "CSI", "TOPIX", "HANGSENG",
+  "IBOXX", "JPMORGAN", "DE", "IE", "LU", "FR", "CH", "AT", "NL", "BE", "GB",
+  "US", "CA", "JP", "CN", "EUROPE", "EUROPEAN", "CORE", "PRIME", "PLUS",
+  "SELECT", "OPTIMAL", "ENHANCED", "QUALITY", "IMI", "LARGE", "MID", "SMALL",
+  "CAP", "MEGA", "MICRO", "SCREENED", "LEADERS", "FILTERED", "FOCUSED",
+  "UNIVERSAL", "BROAD", "NET", "TOTAL", "RETURN", "TR", "NR", "GR", "PR",
+  "MARKET", "INDEX", "IDX", "ORDINARY", "VIRTUS", "OPPENHEIMER", "DEUTSCHE",
+  ...PROVIDERS.map((p) => p.prefix.split(" ")[0]),
+].map(t => `\\b${t}\\b`).join("|"), "i");
+
+const CURRENCY_CODES = new Set([
+  "USD", "EUR", "GBP", "CHF", "JPY", "SEK", "DKK", "NOK", "AUD", "CAD", "HKD", "SGD", "MXN",
+]);
+
+function tokenizeAndFilter(text: string): string[] {
+  return text.split(/[\\s\\-\\/\\(\\)\\,\\.]+/)
+    .map(w => w.trim().toUpperCase())
+    .filter((w) => {
+      if (!w || w.length < 2) return false;
+      if (EXCLUDED_TERMS_REGEX.test(w)) return false;
+      if (/^\\d{1,2}$/.test(w)) return false;
+      if (/^[A-Z]\\d+$/.test(w)) return false;
+      if (/^\\d+(MO|YR|Y|M)$/.test(w)) return false;
+      if (CURRENCY_CODES.has(w)) return false;
+      return true;
+    });
 }
 
 // ─── Overlay Detection ────────────────────────────────────────────────────────
 
-const ESG_TERMS = ['ESG', 'SRI', 'PAB', 'CTB', 'CLIMATE', 'SUSTAINABLE',
-  'RESPONSIBLE', 'GREEN', 'IMPACT', 'LOW CARBON', 'NET ZERO', 'PARIS ALIGNED']
-const HEDGED_TERMS = ['HEDGED', 'HDG', 'HDGD', 'CURRENCY HEDGED', 'EUR HEDGED', 'USD HEDGED']
+const ESG_TERMS = [
+  "ESG", "SRI", "PAB", "CTB", "CLIMATE", "SUSTAINABLE",
+  "RESPONSIBLE", "GREEN", "IMPACT", "LOW CARBON", "NET ZERO", "PARIS ALIGNED",
+  "FOSSIL FUEL FREE",
+];
+const HEDGED_TERMS = [
+  "HEDGED", "HDG", "HDGD", "CURRENCY HEDGED", "EUR HEDGED", "USD HEDGED",
+  "GBP HEDGED", "CHF HEDGED",
+];
 
 // ─── Exposure Key ────────────────────────────────────────────────────────────
 
-function extractExposureKey(longName: string | undefined, fallbackName: string): string {
-  const rawName = longName || fallbackName || ''
+function extractExposureKey(instrument: Instrument): string {
+  const rawName = instrument.longName || instrument.displayName || "";
+  const upperName = rawName.toUpperCase();
 
-  // 1. Strip provider prefix, get priority
-  const { stripped } = stripAndDetectProvider(rawName)
+  const { stripped } = stripAndDetectProvider(upperName);
+  const expanded = expandAbbreviations(stripped);
 
-  // 2. Expand abbreviations
-  const expanded = expandAbbreviations(stripped)
-
-  // 3. Check for commodity ETC
-  const commodity = detectCommodity(expanded)
+  const commodity = detectCommodity(expanded);
   if (commodity) {
     return commodity.mods
       ? `COMMODITY|${commodity.commodity}|${commodity.mods}`
-      : `COMMODITY|${commodity.commodity}`
+      : `COMMODITY|${commodity.commodity}`;
   }
 
-  // 4. Detect overlays (ESG, Hedged)
-  let esg = ''
-  for (const t of ESG_TERMS) { if (expanded.includes(t)) { esg = 'ESG'; break } }
+  let esg = "";
+  for (const t of ESG_TERMS) {
+    const regex = new RegExp(`\\b${t}\\b`, "i");
+    if (regex.test(expanded)) { esg = "ESG"; break; }
+  }
 
-  let hedged = ''
-  for (const t of HEDGED_TERMS) { if (expanded.includes(t)) { hedged = 'HEDGED'; break } }
+  let hedged = "";
+  for (const t of HEDGED_TERMS) {
+    const regex = new RegExp(`\\b${t}\\b`, "i");
+    if (regex.test(expanded)) { hedged = "HEDGED"; break; }
+  }
 
-  // 5. Tokenize and strip noise
-  const words = expanded.split(/[\s\-\/\(\),\.]+/).map(w => w.trim()).filter((w) => {
-    if (!w || w.length < 2) return false
-    if (STRIP_WORDS.has(w)) return false
-    if (/^\d{1,2}$/.test(w)) return false
-    if (/^[A-Z]\d+$/.test(w)) return false
-    if (/^\d+(MO|YR|Y|M)$/.test(w)) return false
-    if (['USD', 'EUR', 'GBP', 'CHF', 'JPY', 'SEK'].includes(w)) return false
-    return true
-  })
+  const words = tokenizeAndFilter(expanded);
+  const dimensions: Set<string> = new Set();
 
-  // 6. Normalize synonyms
-  const normalized = words.map((w) => {
-    if (['WORLD', 'WLD', 'WORLDWIDE'].includes(w)) return 'WORLD'
-    if (['EUROPE', 'EUROPEAN', 'EUR', 'EURO'].includes(w)) return 'EUROPE'
-    if (['AMERICA', 'AMERICAN', 'AMERICAS'].includes(w)) return 'AMERICA'
-    if (['EMERGINGMARKETS', 'EMERGING', 'EMG'].includes(w)) return 'EMERGINGMARKETS'
-    if (['GOVERNMENT', 'GOVT', 'GOV'].includes(w)) return 'GOVERNMENT'
-    if (['CORPORATE', 'CORP'].includes(w)) return 'CORPORATE'
-    if (['AGGREGATE', 'AGG'].includes(w)) return 'AGGREGATE'
-    if (['BOND', 'BONDS'].includes(w)) return 'BOND'
-    if (['EQUITY', 'EQUITIES', 'STOCKS', 'STOCK'].includes(w)) return 'EQUITY'
-    if (['MINERS', 'MINING', 'MINE'].includes(w)) return 'MINERS'
-    if (['REALESTATE', 'REIT', 'REITS'].includes(w)) return 'REALESTATE'
-    if (['HEALTHCARE', 'HEALTH'].includes(w)) return 'HEALTH'
-    if (['TECHNOLOGY', 'TECH'].includes(w)) return 'TECHNOLOGY'
-    if (['COMMUNICATIONS', 'TELECOM', 'COMM'].includes(w)) return 'COMMUNICATIONS'
-    if (['BASICRESOURCES', 'BASICRESOURCE', 'RESOURCES', 'RESOURCE', 'BASIC'].includes(w)) return 'BASICRESOURCES'
-    if (['SEMICONDUCTOR', 'SEMICONDUCTORS'].includes(w)) return 'SEMICONDUCTOR'
-    if (['UTILITIES'].includes(w)) return 'UTILITIES'
-    if (['FINANCIALS', 'FINANCIAL'].includes(w)) return 'FINANCIALS'
-    if (['INDUSTRIALS', 'INDUSTRIAL'].includes(w)) return 'INDUSTRIALS'
-    if (['DISCRETIONARY'].includes(w)) return 'DISCRETIONARY'
-    return w
-  })
+  words.forEach((w) => {
+    if (INDEX_IDENTIFIERS.has(w)) dimensions.add(w);
+    if (SECTOR_TERMS.has(w)) dimensions.add(w);
+    if (GEOGRAPHIC_TERMS.has(w)) dimensions.add(w);
+    if (STRATEGY_TERMS.has(w)) dimensions.add(w);
+    
+    const isKnownDimension = INDEX_IDENTIFIERS.has(w) || SECTOR_TERMS.has(w) || 
+                             GEOGRAPHIC_TERMS.has(w) || STRATEGY_TERMS.has(w);
+                             
+    if (!isKnownDimension && w.length > 2 && !STRIP_WORDS.has(w)) {
+      dimensions.add(w);
+    }
+  });
 
-  // 7. Sort alphabetically → order-independent matching
-  const core = [...new Set(normalized)].sort().join(' ').trim()
+  if (instrument.type === "ETF" || instrument.type === "ETN") {
+    if (expanded.includes("BOND")) {
+      if (!dimensions.has("BOND") && !dimensions.has("GOVERNMENTBOND") && !dimensions.has("CORPORATEBOND")) {
+        dimensions.add("BOND");
+      }
+    } else {
+      if (!dimensions.has("EQUITY")) dimensions.add("EQUITY");
+    }
+  } else if (instrument.type === "ETC") {
+    if (!dimensions.has("COMMODITY")) dimensions.add("COMMODITY");
+  }
 
-  const parts = [core, esg, hedged].filter(Boolean)
-  return parts.join('|') || rawName.toUpperCase()
+  const core = [...dimensions].sort().join(" ").trim();
+  const parts = [core, esg, hedged].filter(Boolean);
+  return parts.join("|") || upperName;
+}
+
+/** @internal */
+export function __test_extractExposureKey(instrument: Instrument): string {
+  return extractExposureKey(instrument);
 }
 
 // ─── Group ETFs/ETCs by Exposure ─────────────────────────────────────────────
 
 export interface DedupGroup {
-  key: string
-  candidates: Instrument[]
-  winner: Instrument
+  key: string;
+  candidates: Instrument[];
+  winner: Instrument;
 }
 
 export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
-  const groups = new Map<string, Instrument[]>()
+  const groups = new Map<string, Instrument[]>();
 
   for (const inst of instruments) {
-    const key = extractExposureKey(inst.longName, inst.displayName)
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(inst)
+    if (inst.type === "Stock") {
+      groups.set(inst.isin, [inst]);
+      continue;
+    }
+
+    const key = extractExposureKey(inst);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(inst);
   }
 
-  const result: DedupGroup[] = []
+  const result: DedupGroup[] = [];
 
   for (const [key, candidates] of groups) {
     const sorted = [...candidates].sort((a, b) => {
-      const pa = stripAndDetectProvider(a.longName || a.displayName).priority
-      const pb = stripAndDetectProvider(b.longName || b.displayName).priority
-      if (pa !== pb) return pa - pb
-      // Tiebreaker: EUR over USD
-      if (a.currency === 'EUR' && b.currency !== 'EUR') return -1
-      if (b.currency === 'EUR' && a.currency !== 'EUR') return 1
-      return 0
-    })
+      const pa = stripAndDetectProvider(a.longName || a.displayName).priority;
+      const pb = stripAndDetectProvider(b.longName || b.displayName).priority;
+      if (pa !== pb) return pa - pb;
 
-    result.push({ key, candidates: sorted, winner: sorted[0] })
+      if (a.currency === "EUR" && b.currency !== "EUR") return -1;
+      if (b.currency === "EUR" && a.currency !== "EUR") return 1;
+      
+      if (a.aum !== null && b.aum !== null) return b.aum! - a.aum!;
+      if (a.aum === null && b.aum !== null) return 1;
+      if (a.aum !== null && b.aum === null) return -1;
+      
+      if (a.ter !== null && b.ter !== null) return a.ter! - b.ter!;
+      if (a.ter === null && b.ter !== null) return 1;
+      if (a.ter !== null && b.ter === null) return -1;
+
+      return 0;
+    });
+
+    result.push({ key, candidates: sorted, winner: sorted[0] });
   }
 
-  return result
+  return result;
 }
 
 export function applyDedupToInstruments(
   instruments: Instrument[],
   groups: DedupGroup[]
 ): Instrument[] {
-  const winnerISINs = new Set(groups.map((g) => g.winner.isin))
-  const groupByISIN = new Map<string, { key: string; candidateISINs: string[] }>()
+  const winnerISINs = new Set(groups.map((g) => g.winner.isin));
+  const groupByISIN = new Map<string, { key: string; candidateISINs: string[] }>();
 
   for (const g of groups) {
-    const candidateISINs = g.candidates.map((c) => c.isin)
+    const candidateISINs = g.candidates.map((c) => c.isin);
     for (const c of g.candidates) {
-      groupByISIN.set(c.isin, { key: g.key, candidateISINs })
+      groupByISIN.set(c.isin, { key: g.key, candidateISINs });
     }
   }
 
   return instruments.map((inst) => {
-    const group = groupByISIN.get(inst.isin)
+    const group = groupByISIN.get(inst.isin);
     return {
       ...inst,
       dedupGroup: group?.key,
       isDedupWinner: winnerISINs.has(inst.isin),
       dedupCandidates: group?.candidateISINs.filter((isin) => isin !== inst.isin),
-    }
-  })
+    };
+  });
 }

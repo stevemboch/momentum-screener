@@ -1,0 +1,17 @@
+# Dependencies – nie lesen, zu groß
+node_modules/
+
+# Build-Output – nicht relevant für Cline
+dist/
+build/
+
+# Locks – Cline soll nie anfassen
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Generierte Typen
+*.d.ts
+
+# Logs
+*.log
