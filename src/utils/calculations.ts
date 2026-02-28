@@ -151,15 +151,41 @@ export function calculateSharpeScore(momentumScore: number | null, vola: number 
 // Gives a single "best of both" metric to sort by.
 
 export function calculateCombinedScore(
-  momentumScore: number | null | undefined,
-  sharpeScore: number | null | undefined,
+  momentumPercentile: number | null | undefined,
+  sharpePercentile: number | null | undefined,
 ): number | null {
-  if (momentumScore != null && sharpeScore != null) {
-    return (momentumScore + sharpeScore) / 2
+  if (momentumPercentile != null && sharpePercentile != null) {
+    return (momentumPercentile + sharpePercentile) / 2
   }
-  if (momentumScore != null) return momentumScore
-  if (sharpeScore != null) return sharpeScore
+  if (momentumPercentile != null) return momentumPercentile
+  if (sharpePercentile != null) return sharpePercentile
   return null
+}
+
+function buildPercentileMap(
+  instruments: Instrument[],
+  field: keyof Instrument
+): Map<string, number> {
+  const items = instruments
+    .map((inst) => ({ isin: inst.isin, value: inst[field] as number | null | undefined }))
+    .filter((x) => x.value != null) as { isin: string; value: number }[]
+  if (items.length === 0) return new Map()
+
+  // Higher is better
+  items.sort((a, b) => b.value - a.value)
+
+  const n = items.length
+  const map = new Map<string, number>()
+  let i = 0
+  while (i < n) {
+    let j = i + 1
+    while (j < n && items[j].value === items[i].value) j++
+    const avgRankIdx = (i + (j - 1)) / 2
+    const percentile = n === 1 ? 1 : 1 - (avgRankIdx / (n - 1))
+    for (let k = i; k < j; k++) map.set(items[k].isin, percentile)
+    i = j
+  }
+  return map
 }
 
 // ─── Ranks ───────────────────────────────────────────────────────────────────
@@ -279,6 +305,16 @@ export function recalculateAll(
     return updated
   })
 
-  const withValue = calculateValueScores(withScores)
+  const momentumPct = buildPercentileMap(withScores, 'momentumScore')
+  const sharpePct = buildPercentileMap(withScores, 'sharpeScore')
+  const withCombined = withScores.map((inst) => {
+    const combinedScore = calculateCombinedScore(
+      momentumPct.get(inst.isin),
+      sharpePct.get(inst.isin)
+    )
+    return { ...inst, combinedScore }
+  })
+
+  const withValue = calculateValueScores(withCombined)
   return applyRanks(withValue)
 }
