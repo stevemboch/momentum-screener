@@ -193,8 +193,9 @@ function ExpandedDetail({
   onLoadAnalyst: (isin: string) => void
 }) {
   const lastPrice = inst.closes?.length > 0 ? inst.closes[inst.closes.length - 1] : undefined
-  const upside = (inst.targetPrice != null && lastPrice != null)
-    ? (inst.targetPrice / lastPrice - 1)
+  const referencePrice = inst.currentPrice ?? lastPrice
+  const upside = (inst.targetPrice != null && referencePrice != null)
+    ? (inst.targetPrice / referencePrice - 1)
     : null
 
   // Resolve dedup candidates from full instrument list

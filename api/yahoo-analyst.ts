@@ -12,6 +12,39 @@ interface AnalystResult {
   error?: string
 }
 
+function stripTicker(raw: string): string {
+  return raw.split(/[.:]/)[0].toLowerCase()
+}
+
+function parseMoney(text: string | null): number | null {
+  if (!text) return null
+  const cleaned = text.replace(/[,$]/g, '').trim()
+  const val = Number(cleaned)
+  return Number.isFinite(val) ? val : null
+}
+
+async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<AnalystResult>> {
+  const sym = stripTicker(ticker)
+  const url = `https://www.optionsanalysissuite.com/stocks/${encodeURIComponent(sym)}/analyst-ratings`
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
+  if (!res.ok) throw new Error(`OptionsAnalysisSuite error: ${res.status}`)
+  const html = await res.text()
+
+  const consensusMatch = html.match(/Consensus:\s*([^<\n]+?)\s+from/i)
+  const consensus = consensusMatch ? consensusMatch[1].trim() : null
+
+  const avgMatch = html.match(/Average Target[\s\S]*?\$?([0-9,.]+)/i)
+  const highMatch = html.match(/High[\s\S]*?\$?([0-9,.]+)/i)
+  const lowMatch = html.match(/Low[\s\S]*?\$?([0-9,.]+)/i)
+
+  return {
+    recommendationKey: consensus ? consensus.toLowerCase() : null,
+    targetMeanPrice: parseMoney(avgMatch?.[1] ?? null),
+    targetHighPrice: parseMoney(highMatch?.[1] ?? null),
+    targetLowPrice: parseMoney(lowMatch?.[1] ?? null),
+  }
+}
+
 async function fetchAnalyst(ticker: string): Promise<AnalystResult> {
   const base: AnalystResult = {
     ticker,
@@ -56,7 +89,19 @@ async function fetchAnalyst(ticker: string): Promise<AnalystResult> {
     base.targetHighPrice = fd.targetHighPrice?.raw ?? null
     base.currentPrice = fd.currentPrice?.raw ?? null
   } catch (err: any) {
-    base.error = err.message
+    // Fallback: scrape optionsanalysissuite.com (public HTML)
+    try {
+      const fallback = await fetchFromOptionAnalysisSuite(ticker)
+      return {
+        ...base,
+        recommendationKey: fallback.recommendationKey ?? null,
+        targetMeanPrice: fallback.targetMeanPrice ?? null,
+        targetLowPrice: fallback.targetLowPrice ?? null,
+        targetHighPrice: fallback.targetHighPrice ?? null,
+      }
+    } catch (fallbackErr: any) {
+      base.error = err?.message || fallbackErr?.message
+    }
   }
 
   return base
