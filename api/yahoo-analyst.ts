@@ -25,10 +25,20 @@ async function fetchAnalyst(ticker: string): Promise<AnalystResult> {
   }
 
   try {
-    const res = await fetch(
-      `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=financialData,recommendationTrend`,
-      { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
-    )
+    const urlBase = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=financialData,recommendationTrend`
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (compatible)',
+      'Accept': 'application/json',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Origin': 'https://finance.yahoo.com',
+      'Referer': 'https://finance.yahoo.com/',
+    }
+
+    let res = await fetch(urlBase, { headers })
+    if (res.status === 401 || res.status === 403) {
+      // Fallback to query2 host if query1 blocks
+      res = await fetch(urlBase.replace('query1.', 'query2.'), { headers })
+    }
     if (!res.ok) throw new Error(`Yahoo API error: ${res.status}`)
     const data = await res.json()
     const summary = data?.quoteSummary?.result?.[0]
