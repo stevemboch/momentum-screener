@@ -44,6 +44,8 @@ export interface Instrument {
   sharpeScore?: number | null
   momentumRank?: number
   sharpeRank?: number
+  combinedScore?: number | null
+  combinedRank?: number
   priceFetched?: boolean
   priceError?: string
 
@@ -98,6 +100,7 @@ export type SortColumn =
   | 'vola'
   | 'aum' | 'ter'
   | 'pe' | 'pb' | 'earningsYield'
+  | 'combinedScore'
   | 'valueScore'
   | 'sellingThreshold'
 

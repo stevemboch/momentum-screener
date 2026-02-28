@@ -76,6 +76,11 @@ const ABBREV: [string, string][] = [
   ['STOXX 600',     'STOXX600'],
   ['EURO STOXX 50', 'EUROSTOXX50'],
   ['EURO STOXX',    'EUROSTOXX'],
+  ['EUR STOXX 50',  'EUROSTOXX50'],   // EUR (not EURO) variant
+  ['EUR STOXX',     'EUROSTOXX'],
+  ['STOXX EUROPE 600', 'STOXX600'],   // "STOXX Europe 600" → same as STOXX600
+  ['STOXX EUROPE',  'EUROSTOXX'],     // STOXX Europe without number
+  ['EUR 600',       'STOXX600'],      // residual after provider strip
   ['ESTX50',        'EUROSTOXX50'],
   ['ESTX 50',       'EUROSTOXX50'],
   ['EX600',         'STOXX600'],

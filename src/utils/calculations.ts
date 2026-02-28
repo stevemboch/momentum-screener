@@ -146,6 +146,22 @@ export function calculateSharpeScore(momentumScore: number | null, vola: number 
   return momentumScore / vola
 }
 
+// ─── Combined Score ──────────────────────────────────────────────────────────
+// Simple average of momentumScore and sharpeScore, both higher = better.
+// Gives a single "best of both" metric to sort by.
+
+export function calculateCombinedScore(
+  momentumScore: number | null | undefined,
+  sharpeScore: number | null | undefined,
+): number | null {
+  if (momentumScore != null && sharpeScore != null) {
+    return (momentumScore + sharpeScore) / 2
+  }
+  if (momentumScore != null) return momentumScore
+  if (sharpeScore != null) return sharpeScore
+  return null
+}
+
 // ─── Ranks ───────────────────────────────────────────────────────────────────
 
 export function applyRanks(instruments: Instrument[]): Instrument[] {
@@ -172,6 +188,7 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
   const indexed = instruments.map((inst, i) => ({ inst, i }))
   rank(indexed, 'momentumScore', true)
   rank(indexed, 'sharpeScore', true)
+  rank(indexed, 'combinedScore', true)
   rank(indexed, 'valueScore', false) // lower = better
 
   return result
@@ -238,6 +255,7 @@ export function recalculateAll(
       updated.vola = calculateVola(inst.closes)
       updated.momentumScore = calculateMomentumScore(r1m, r3m, r6m, weights)
       updated.sharpeScore = calculateSharpeScore(updated.momentumScore, updated.vola)
+      updated.combinedScore = calculateCombinedScore(updated.momentumScore, updated.sharpeScore)
 
       // Moving averages
       const mas = calculateMAs(inst.closes)

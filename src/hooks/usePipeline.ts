@@ -235,5 +235,30 @@ export function usePipeline() {
     }
   }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, enrichWithOpenFIGI, fetchPrices, fetchStats])
 
-  return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer }
+  const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
+    const inst = state.instruments.find(i => i.isin === isin)
+    if (!inst || !inst.yahooTicker) return
+    try {
+      const r = await apiYahooSingle(inst.yahooTicker)
+      if (!r) return
+      dispatch({
+        type: 'UPDATE_INSTRUMENT',
+        isin,
+        updates: {
+          closes: r.closes || [],
+          highs: r.highs || [],
+          lows: r.lows || [],
+          timestamps: r.timestamps || [],
+          pe: r.pe ?? null, pb: r.pb ?? null,
+          ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
+          returnOnAssets: r.returnOnAssets ?? null,
+          priceFetched: true, priceError: r.error, fundamentalsFetched: true,
+        },
+      })
+    } catch (err: any) {
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { priceFetched: true, priceError: err.message } })
+    }
+  }, [state.instruments])
+
+  return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer, fetchSingleInstrumentPrices }
 }
