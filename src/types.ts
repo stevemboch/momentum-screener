@@ -49,6 +49,16 @@ export interface Instrument {
   priceFetched?: boolean
   priceError?: string
 
+  // Analyst data (stocks, on-demand)
+  analystRating?: number | null
+  analystRatingKey?: string | null
+  analystOpinions?: number | null
+  targetPrice?: number | null
+  targetLow?: number | null
+  targetHigh?: number | null
+  analystFetched?: boolean
+  analystError?: string
+
   // Moving averages
   ma10?: number | null
   ma50?: number | null

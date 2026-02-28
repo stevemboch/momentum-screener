@@ -25,6 +25,12 @@ async function apiYahooSingle(ticker: string): Promise<any> {
   return data[0] ?? null
 }
 
+async function apiYahooAnalyst(ticker: string): Promise<any> {
+  const res = await fetch('/api/yahoo-analyst', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker }) })
+  if (!res.ok) throw new Error(`Yahoo Analyst API error: ${res.status}`)
+  return res.json()
+}
+
 async function apiStats(isins: string[]): Promise<StatsResult[]> {
   const res = await fetch('/api/xetra-stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isins }) })
   if (!res.ok) throw new Error(`Stats API error: ${res.status}`)
@@ -260,5 +266,30 @@ export function usePipeline() {
     }
   }, [state.instruments])
 
-  return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer, fetchSingleInstrumentPrices }
+  const fetchSingleInstrumentAnalyst = useCallback(async (isin: string) => {
+    const inst = state.instruments.find(i => i.isin === isin)
+    if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
+    try {
+      const r = await apiYahooAnalyst(inst.yahooTicker)
+      if (!r) return
+      dispatch({
+        type: 'UPDATE_INSTRUMENT',
+        isin,
+        updates: {
+          analystRating: r.recommendationMean ?? null,
+          analystRatingKey: r.recommendationKey ?? null,
+          analystOpinions: r.numberOfAnalystOpinions ?? null,
+          targetPrice: r.targetMeanPrice ?? null,
+          targetLow: r.targetLowPrice ?? null,
+          targetHigh: r.targetHighPrice ?? null,
+          analystFetched: true,
+          analystError: r.error ?? null,
+        },
+      })
+    } catch (err: any) {
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message } })
+    }
+  }, [state.instruments])
+
+  return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer, fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst }
 }

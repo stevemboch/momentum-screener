@@ -73,7 +73,7 @@ function ScoreCell({ score, rank, colorFn }: { score: number | null | undefined;
     <span className={color}>
       {score.toFixed(3)}
       {rank !== undefined && (
-        <span className="text-muted text-[10px] ml-1">#{rank}</span>
+        <span className="text-gray-400 text-[10px] ml-1">#{rank}</span>
       )}
     </span>
   )
@@ -184,13 +184,18 @@ function ExpandedDetail({
   atrMultiplier,
   allInstruments,
   onLoadPrices,
+  onLoadAnalyst,
 }: {
   inst: any
   atrMultiplier: number
   allInstruments: any[]
   onLoadPrices: (isin: string) => void
+  onLoadAnalyst: (isin: string) => void
 }) {
   const lastPrice = inst.closes?.length > 0 ? inst.closes[inst.closes.length - 1] : undefined
+  const upside = (inst.targetPrice != null && lastPrice != null)
+    ? (inst.targetPrice / lastPrice - 1)
+    : null
 
   // Resolve dedup candidates from full instrument list
   const candidates = (inst.dedupCandidates ?? [])
@@ -257,6 +262,45 @@ function ExpandedDetail({
               )}
               {inst.valueScoreModel && <div>Value model: <span className="text-amber-400">{inst.valueScoreModel}</span></div>}
               {inst.priceError && <div className="text-red-400 mt-1">Error: {inst.priceError}</div>}
+              {inst.type === 'Stock' && (
+                <div className="mt-2">
+                  <div className="text-gray-400 font-semibold mb-1">Analyst</div>
+                  {!inst.analystFetched ? (
+                    <button
+                      onClick={() => onLoadAnalyst(inst.isin)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors"
+                    >
+                      ⬇ Load
+                    </button>
+                  ) : (
+                    <>
+                      <div>Rating: <span className="text-gray-300">
+                        {inst.analystRatingKey ? String(inst.analystRatingKey).toUpperCase() : '—'}
+                        {inst.analystRating != null ? ` (${inst.analystRating.toFixed(2)})` : ''}
+                      </span>
+                        {inst.analystOpinions != null && (
+                          <span className="text-muted"> · {inst.analystOpinions} analysts</span>
+                        )}
+                      </div>
+                      <div>Target: <span className="text-gray-300">
+                        {inst.targetPrice != null ? inst.targetPrice.toFixed(2) : '—'}
+                      </span>
+                        {upside != null && (
+                          <span className={upside >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            {upside >= 0 ? ' +' : ' '}{(upside * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                      {(inst.targetLow != null || inst.targetHigh != null) && (
+                        <div className="text-muted">
+                          Range: {inst.targetLow != null ? inst.targetLow.toFixed(2) : '—'} – {inst.targetHigh != null ? inst.targetHigh.toFixed(2) : '—'}
+                        </div>
+                      )}
+                      {inst.analystError && <div className="text-red-400 mt-1">Error: {inst.analystError}</div>}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </td>
@@ -285,7 +329,7 @@ function ExpandedDetail({
 
 export function RankingTable() {
   const { state, dispatch } = useAppState()
-  const { fetchSingleInstrumentPrices } = usePipeline()
+  const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst } = usePipeline()
   const instruments = useDisplayedInstruments()
   const allInstruments = state.instruments   // full list incl. non-winners
   const { sortColumn, sortDirection } = state.tableState
@@ -437,6 +481,7 @@ export function RankingTable() {
                     atrMultiplier={state.settings.atrMultiplier}
                     allInstruments={allInstruments}
                     onLoadPrices={fetchSingleInstrumentPrices}
+                    onLoadAnalyst={fetchSingleInstrumentAnalyst}
                   />
                 )}
               </>
