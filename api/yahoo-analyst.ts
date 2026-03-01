@@ -13,6 +13,9 @@ interface AnalystResult {
   error?: string
 }
 
+const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const analystCache = new Map<string, { ts: number; data: AnalystResult }>()
+
 function stripTicker(raw: string): string {
   return raw.split(/[.:]/)[0].toLowerCase()
 }
@@ -31,7 +34,13 @@ function parseMoney(text: string | null): number | null {
 async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<AnalystResult>> {
   const sym = stripTicker(ticker)
   const url = `https://www.optionsanalysissuite.com/stocks/${encodeURIComponent(sym)}/analyst-ratings`
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (compatible)',
+    'Accept': 'text/html',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.optionsanalysissuite.com/',
+  }
+  const res = await fetch(url, { headers })
   if (!res.ok) throw new Error(`OptionsAnalysisSuite error: ${res.status}`)
   const html = await res.text()
   const tickerUpper = sym.toUpperCase()
@@ -64,7 +73,13 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     t: '',
   })
   const searchUrl = `https://www.marketscreener.com/async/search/advanced/instruments?${searchParams.toString()}`
-  const searchRes = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (compatible)',
+    'Accept': 'text/html',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.marketscreener.com/',
+  }
+  const searchRes = await fetch(searchUrl, { headers })
   if (!searchRes.ok) throw new Error(`MarketScreener search error: ${searchRes.status}`)
   const searchHtml = await searchRes.text()
 
@@ -84,7 +99,7 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
   const quotePath = best.path!
 
   const consensusUrl = `https://www.marketscreener.com${quotePath}consensus/`
-  const consensusRes = await fetch(consensusUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
+  const consensusRes = await fetch(consensusUrl, { headers })
   if (!consensusRes.ok) throw new Error(`MarketScreener consensus error: ${consensusRes.status}`)
   const html = await consensusRes.text()
 
@@ -171,6 +186,9 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     // Fallback 1: MarketScreener (search by ticker)
     try {
       const ms = await fetchFromMarketScreener(ticker)
+      const hasData = ms.recommendationKey != null || ms.numberOfAnalystOpinions != null ||
+        ms.targetMeanPrice != null || ms.targetLowPrice != null || ms.targetHighPrice != null || ms.currentPrice != null
+      if (!hasData) throw new Error('MarketScreener: empty data')
       return {
         ...base,
         recommendationKey: ms.recommendationKey ?? null,
@@ -194,7 +212,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
           source: 'optionsanalysissuite',
         }
       } catch (fallbackErr: any) {
-        base.error = err?.message || msErr?.message || fallbackErr?.message
+        base.error = [err?.message, msErr?.message, fallbackErr?.message].filter(Boolean).join(' | ')
       }
     }
   }
@@ -207,6 +225,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ticker: string | undefined = req.body?.ticker
   const isin: string | undefined = req.body?.isin
   if (!ticker) return res.status(400).json({ error: 'ticker required' })
+  const cacheKey = `${ticker}`
+  const cached = analystCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    return res.status(200).json(cached.data)
+  }
   const result = await fetchAnalyst(ticker, isin)
+  analystCache.set(cacheKey, { ts: Date.now(), data: result })
   return res.status(200).json(result)
 }
