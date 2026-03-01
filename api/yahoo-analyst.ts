@@ -155,6 +155,12 @@ async function searchMarketScreenerPage(ticker: string): Promise<string | null> 
 }
 
 async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystResult>> {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (compatible)',
+    'Accept': 'text/html',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.marketscreener.com/',
+  }
   const quotePath =
     (await searchMarketScreener(ticker, 'company')) ||
     (await searchMarketScreener(ticker, null)) ||
