@@ -157,10 +157,11 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     'Accept-Language': 'en-US,en;q=0.9',
     'Referer': 'https://www.marketscreener.com/',
   }
+  const baseTicker = stripTickerUpper(ticker)
   const quotePath =
-    (await searchMarketScreener(ticker, 'company')) ||
-    (await searchMarketScreener(ticker, null)) ||
-    (await searchMarketScreenerPage(ticker))
+    (await searchMarketScreener(baseTicker, 'company')) ||
+    (await searchMarketScreener(baseTicker, null)) ||
+    (await searchMarketScreenerPage(baseTicker))
   if (!quotePath) throw new Error('MarketScreener: no quote link')
 
   const consensusUrl = `https://www.marketscreener.com${quotePath}consensus/`
@@ -169,10 +170,9 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
   const html = await consensusRes.text()
   const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
   const title = titleMatch?.[1]?.toUpperCase() || ''
-  const targetSym = stripTickerUpper(ticker)
-  if (targetSym) {
+  if (baseTicker) {
     const titleTickerMatch = title.match(/\|\s*([A-Z0-9.\-]{1,12})\s*\|/)
-    if (titleTickerMatch && titleTickerMatch[1] && titleTickerMatch[1] !== targetSym) {
+    if (titleTickerMatch && titleTickerMatch[1] && titleTickerMatch[1] !== baseTicker) {
       throw new Error('MarketScreener: ticker mismatch')
     }
   }
@@ -206,12 +206,21 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     return null
   }
 
-  const consensusText = get('Mean consensus', 'Consensus')
-  const analystText = get('Number of Analysts', 'Number of analysts')
-  const lastText = get('Last Close Price', 'Last Close')
-  const avgText = get('Average target price', 'Average Target Price')
-  const highText = get('High Price Target', 'High target price', 'Highest target price')
-  const lowText = get('Low Price Target', 'Low target price', 'Lowest target price')
+  const getByIncludes = (needles: string[]) => {
+    const n = needles.map((s) => s.toLowerCase())
+    for (const [label, value] of pairs.entries()) {
+      const l = label.toLowerCase()
+      if (n.every((needle) => l.includes(needle))) return value
+    }
+    return null
+  }
+
+  const consensusText = get('Mean consensus', 'Consensus') || getByIncludes(['consensus'])
+  const analystText = get('Number of Analysts', 'Number of analysts') || getByIncludes(['analyst'])
+  const lastText = get('Last Close Price', 'Last Close') || getByIncludes(['last', 'close'])
+  const avgText = get('Average target price', 'Average Target Price') || getByIncludes(['average', 'target'])
+  const highText = get('High Price Target', 'High target price', 'Highest target price') || getByIncludes(['high', 'target'])
+  const lowText = get('Low Price Target', 'Low target price', 'Lowest target price') || getByIncludes(['low', 'target'])
 
   // Fetch quote page for fundamentals like P/E and P/B
   let pe: number | null = null
