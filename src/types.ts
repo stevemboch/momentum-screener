@@ -35,6 +35,7 @@ export interface Instrument {
   closes?: number[]
   highs?: number[]
   lows?: number[]
+  volumes?: number[]
   timestamps?: number[]
   r1m?: number | null
   r3m?: number | null
@@ -46,6 +47,10 @@ export interface Instrument {
   sharpeRank?: number
   combinedScore?: number | null
   combinedRank?: number
+  breakoutDate?: number
+  breakoutAgeDays?: number
+  breakoutScore?: number | null
+  breakoutConfirmed?: boolean
   priceFetched?: boolean
   priceError?: string
 
@@ -112,6 +117,7 @@ export type SortColumn =
   | 'aum' | 'ter'
   | 'pe' | 'pb' | 'earningsYield'
   | 'combinedScore'
+  | 'breakoutScore'
   | 'valueScore'
   | 'sellingThreshold'
 

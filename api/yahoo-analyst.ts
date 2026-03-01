@@ -85,6 +85,15 @@ function extractTableRowValues(html: string, labelRegex: RegExp): string[] | nul
   return null
 }
 
+function getByIncludes(map: Map<string, string>, needles: string[]) {
+  const n = needles.map((s) => s.toLowerCase())
+  for (const [label, value] of map.entries()) {
+    const l = label.toLowerCase()
+    if (n.every((needle) => l.includes(needle))) return value
+  }
+  return null
+}
+
 async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<AnalystResult>> {
   const sym = stripTicker(ticker)
   const url = `https://www.optionsanalysissuite.com/stocks/${encodeURIComponent(sym)}/analyst-ratings`
@@ -246,6 +255,7 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
   let ebitda: number | null = null
   let enterpriseValue: number | null = null
   let returnOnAssets: number | null = null
+  let evToEbitda: number | null = null
   try {
     const quoteRes = await fetch(`https://www.marketscreener.com${quotePath}`, { headers })
     if (quoteRes.ok) {
@@ -279,6 +289,10 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
         const evRow = extractTableRowValues(valuationHtml, /enterprise\s+value|EV\b/i)
         enterpriseValue = parseNumberWithSuffix(evRow?.[0] ?? null)
       }
+      if (evToEbitda == null) {
+        const evEbitdaRow = extractTableRowValues(valuationHtml, /EV\s*\/\s*EBITDA/i)
+        evToEbitda = parseRatio(evEbitdaRow?.[0] ?? null)
+      }
     }
   } catch {
     // ignore valuation fetch errors
@@ -290,13 +304,21 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     if (ratiosRes.ok) {
       const ratiosHtml = await ratiosRes.text()
       const rPairs = extractPairs(ratiosHtml)
-      const ebitdaText = getFromPairs(rPairs, 'EBITDA', 'EBITDA (LTM)', 'EBITDA (TTM)')
-      const roaText = getFromPairs(rPairs, 'Return on Assets', 'ROA', 'Return on assets (ROA)')
+      const ebitdaText = getFromPairs(rPairs, 'EBITDA', 'EBITDA (LTM)', 'EBITDA (TTM)') ||
+        getByIncludes(rPairs, ['ebitda'])
+      const roaText = getFromPairs(rPairs, 'Return on Assets', 'ROA', 'Return on assets (ROA)') ||
+        getByIncludes(rPairs, ['return', 'assets']) ||
+        getByIncludes(rPairs, ['roa'])
       ebitda = parseNumberWithSuffix(ebitdaText)
       returnOnAssets = parseRatio(roaText)
     }
   } catch {
     // ignore ratio fetch errors
+  }
+
+  // Derive EBITDA from EV and EV/EBITDA if needed
+  if (ebitda == null && enterpriseValue != null && evToEbitda != null && evToEbitda !== 0) {
+    ebitda = enterpriseValue / evToEbitda
   }
 
   return {

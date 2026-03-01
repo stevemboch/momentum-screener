@@ -3,9 +3,9 @@ import { useAppState } from '../store'
 import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
-import { recalculateAll } from '../utils/calculations'
+import { calculateReturns, recalculateAll } from '../utils/calculations'
 
-const YAHOO_CONCURRENCY = 15
+const YAHOO_CONCURRENCY = 5
 const OPENFIGI_BATCH = 150
 const OPENFIGI_DELAY = 100
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -162,11 +162,33 @@ export function usePipeline() {
     })
   }, [])
 
+  const ensureReferenceR3m = useCallback(async () => {
+    if (state.referenceR3m != null) return state.referenceR3m
+    try {
+      const r = await apiYahooSingle('URTH')
+      if (r?.closes?.length) {
+        const { r3m } = calculateReturns(r.closes)
+        dispatch({ type: 'SET_REFERENCE_R3M', r3m: r3m ?? null })
+        return r3m ?? null
+      }
+    } catch {
+      // ignore
+    }
+    return null
+  }, [state.referenceR3m, dispatch])
+
   const fetchPrices = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const withTickers = instruments.filter((i) => i.yahooTicker)
     if (withTickers.length === 0) return instruments
-    const tasks = withTickers.map((inst) => () => apiYahooSingle(inst.yahooTicker))
-    const results = await parallelLimit(tasks, YAHOO_CONCURRENCY, (done, total) => setStatus(`Fetching prices: ${done} / ${total}`, done, total))
+    const results: (any | null)[] = new Array(withTickers.length).fill(null)
+    for (let i = 0; i < withTickers.length; i += YAHOO_CONCURRENCY) {
+      const batch = withTickers.slice(i, i + YAHOO_CONCURRENCY)
+      const settled = await Promise.allSettled(batch.map((inst) => apiYahooSingle(inst.yahooTicker)))
+      settled.forEach((res, j) => {
+        results[i + j] = res.status === 'fulfilled' ? res.value : null
+      })
+      setStatus(`Fetching prices: ${Math.min(i + batch.length, withTickers.length)} / ${withTickers.length}`, Math.min(i + batch.length, withTickers.length), withTickers.length)
+    }
     const updated = [...instruments]
     results.forEach((r: any, i) => {
       if (!r) return
@@ -177,6 +199,7 @@ export function usePipeline() {
         closes: r.closes || [],
         highs: r.highs || [],
         lows: r.lows || [],
+        volumes: r.volumes || [],
         timestamps: r.timestamps || [],
         pe: r.pe ?? null, pb: r.pb ?? null,
         ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
@@ -211,14 +234,15 @@ export function usePipeline() {
       const enriched = await enrichWithOpenFIGI(stubs)
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
       const withPrices = await fetchPrices(enriched)
+      const refR3m = await ensureReferenceR3m()
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
       const withStats = await fetchStats(withPrices)
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(withStats, state.settings.weights, state.settings.atrMultiplier) })
+      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(withStats, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Added ${withStats.length} instruments`, current: withStats.length, total: withStats.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, state.settings.weights, state.settings.atrMultiplier])
+  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceR3m, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m])
 
   const loadXetraBackground = useCallback(async () => {
     dispatch({ type: 'SET_XETRA_LOADING', loading: true })
@@ -291,15 +315,16 @@ export function usePipeline() {
       const toFetch = combined.filter((i) => i.isDedupWinner !== false || i.type === 'Stock')
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: toFetch.length } })
       const withPrices = await fetchPrices(toFetch)
+      const refR3m = await ensureReferenceR3m()
       const finalMap = new Map(withPrices.map((i) => [i.isin, i]))
       const final = combined.map((i) => finalMap.get(i.isin) || i)
       const winners = final.filter((i) => i.isDedupWinner)
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(final, state.settings.weights, state.settings.atrMultiplier) })
+      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(final, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: final.length, total: final.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, enrichWithOpenFIGI, fetchPrices, fetchStats])
+  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceR3m])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
@@ -314,6 +339,7 @@ export function usePipeline() {
           closes: r.closes || [],
           highs: r.highs || [],
           lows: r.lows || [],
+          volumes: r.volumes || [],
           timestamps: r.timestamps || [],
           pe: r.pe ?? null, pb: r.pb ?? null,
           ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,

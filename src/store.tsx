@@ -11,6 +11,7 @@ interface AppState {
   xetraLoading: boolean
   settings: AppSettings
   tableState: TableState
+  referenceR3m: number | null
   etfGroups: ETFGroup[]
   stockGroups: ETFGroup[]
   fetchStatus: FetchStatus
@@ -68,6 +69,7 @@ const DEFAULT_STATE: AppState = {
     aumFloor: 100_000_000,
     filterBelowRiskFree: true,  // ← ON by default
   },
+  referenceR3m: null,
   etfGroups: ETF_GROUPS.map((g) => ({
     ...g,
     count: 0,
@@ -92,6 +94,7 @@ type Action =
   | { type: 'SET_AUM_FLOOR'; floor: number }
   | { type: 'SET_ATR_MULTIPLIER'; multiplier: number }
   | { type: 'SET_RISK_FREE_RATE'; rate: number }
+  | { type: 'SET_REFERENCE_R3M'; r3m: number | null }
   | { type: 'SET_TABLE_STATE'; updates: Partial<TableState> }
   | { type: 'SET_ETF_GROUP'; groupKey: string; enabled: boolean }
   | { type: 'SET_STOCK_GROUP'; groupKey: string; enabled: boolean }
@@ -108,27 +111,27 @@ function reducer(state: AppState, action: Action): AppState {
       const existingISINs = new Set(state.instruments.map((i) => i.isin))
       const newInst = action.instruments.filter((i) => !existingISINs.has(i.isin))
       const merged = [...state.instruments, ...newInst]
-      return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier) }
+      return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     }
     case 'SET_INSTRUMENTS':
-      return { ...state, instruments: recalculateAll(action.instruments, state.settings.weights, state.settings.atrMultiplier) }
+      return { ...state, instruments: recalculateAll(action.instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     case 'UPDATE_INSTRUMENT': {
       const instruments = state.instruments.map((inst) =>
         inst.isin === action.isin ? { ...inst, ...action.updates } : inst
       )
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier) }
+      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     }
     case 'UPDATE_INSTRUMENTS': {
       const instruments = state.instruments.map((inst) => {
         const updates = action.updates.get(inst.isin)
         return updates ? { ...inst, ...updates } : inst
       })
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier) }
+      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     }
     case 'SET_FETCH_STATUS':
       return { ...state, fetchStatus: { ...state.fetchStatus, ...action.status } }
     case 'SET_WEIGHTS': {
-      const instruments = recalculateAll(state.instruments, action.weights, state.settings.atrMultiplier)
+      const instruments = recalculateAll(state.instruments, action.weights, state.settings.atrMultiplier, state.referenceR3m)
       return { ...state, settings: { ...state.settings, weights: action.weights }, instruments }
     }
     case 'SET_AUM_FLOOR':
@@ -138,11 +141,15 @@ function reducer(state: AppState, action: Action): AppState {
         tableState: { ...state.tableState, aumFloor: action.floor },
       }
     case 'SET_ATR_MULTIPLIER': {
-      const instruments = recalculateAll(state.instruments, state.settings.weights, action.multiplier)
+      const instruments = recalculateAll(state.instruments, state.settings.weights, action.multiplier, state.referenceR3m)
       return { ...state, settings: { ...state.settings, atrMultiplier: action.multiplier }, instruments }
     }
     case 'SET_RISK_FREE_RATE':
       return { ...state, settings: { ...state.settings, riskFreeRate: action.rate } }
+    case 'SET_REFERENCE_R3M': {
+      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, action.r3m)
+      return { ...state, referenceR3m: action.r3m, instruments }
+    }
     case 'SET_TABLE_STATE':
       return { ...state, tableState: { ...state.tableState, ...action.updates } }
     case 'SET_ETF_GROUP':

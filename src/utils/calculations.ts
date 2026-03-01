@@ -1,4 +1,5 @@
 import type { Instrument, MomentumWeights } from '../types'
+import { calculateBreakout } from './breakoutUtils'
 
 const TRADING_DAYS = { r1m: 21, r3m: 63, r6m: 125 }
 
@@ -257,8 +258,18 @@ export function calculateValueScores(instruments: Instrument[]): Instrument[] {
     if (inst.type === 'Stock') {
       const eyR = stockEYRanks.get(inst.isin)
       const rocR = stockROCRanks.get(inst.isin)
-      if (eyR !== undefined && rocR !== undefined) { updated.valueScore = eyR + rocR; updated.valueScoreModel = 'magic-formula' }
-      else updated.valueScore = null
+      if (eyR !== undefined && rocR !== undefined) {
+        updated.valueScore = eyR + rocR
+        updated.valueScoreModel = 'magic-formula'
+      } else if (eyR !== undefined) {
+        updated.valueScore = eyR * 2
+        updated.valueScoreModel = 'magic-formula'
+      } else if (rocR !== undefined) {
+        updated.valueScore = rocR * 2
+        updated.valueScoreModel = 'magic-formula'
+      } else {
+        updated.valueScore = null
+      }
     }
     return updated
   })
@@ -269,7 +280,8 @@ export function calculateValueScores(instruments: Instrument[]): Instrument[] {
 export function recalculateAll(
   instruments: Instrument[],
   weights: MomentumWeights,
-  atrMultiplier = 4
+  atrMultiplier = 4,
+  referenceR3m?: number | null
 ): Instrument[] {
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
@@ -302,6 +314,19 @@ export function recalculateAll(
       updated.sellingThreshold = sellingThreshold
     }
     if (inst.pe != null && inst.pe > 0) updated.earningsYield = 1 / inst.pe
+
+    // Breakout score (uses last 60 days, MA200/MA50, volume, and URTH reference)
+    const breakout = calculateBreakout(
+      updated.closes,
+      updated.volumes,
+      updated.timestamps,
+      updated.r3m,
+      referenceR3m
+    )
+    updated.breakoutDate = breakout.breakoutTimestamp ?? undefined
+    updated.breakoutAgeDays = breakout.breakoutAgeDays ?? undefined
+    updated.breakoutScore = breakout.breakoutScore
+    updated.breakoutConfirmed = breakout.breakoutConfirmed
     return updated
   })
 

@@ -25,9 +25,13 @@ const COLUMNS: Col[] = [
   { key: 'pe',            label: 'P/E',      title: 'Price / Earnings' },
   { key: 'pb',            label: 'P/B',      title: 'Price / Book' },
   { key: 'valueScore',    label: 'Value',    title: 'ETFs: P/E+P/B rank. Stocks: Magic Formula. Lower = better.' },
+  { key: 'breakoutDate',  label: 'Ausbruchstag',   title: 'Breakout day (MA200 cross)' },
+  { key: 'breakoutAgeDays', label: 'Ausbruchsalter', title: 'Days since breakout' },
+  { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
+  { key: 'breakoutConfirmed', label: 'Bestätigt',  title: 'Retest successful' },
 ]
 
-const NON_SORTABLE = new Set(['displayName', 'type', 'ma'])
+const NON_SORTABLE = new Set(['displayName', 'type', 'ma', 'breakoutDate', 'breakoutAgeDays', 'breakoutConfirmed'])
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -82,6 +86,29 @@ function ScoreCell({ score, rank, colorFn }: { score: number | null | undefined;
 function fmtPrice(v: number | null | undefined): string {
   if (v == null) return '—'
   return v.toFixed(2)
+}
+
+function fmtDate(ts: number | null | undefined): string {
+  if (!ts) return '—'
+  try {
+    return new Date(ts * 1000).toLocaleDateString('de-DE')
+  } catch {
+    return '—'
+  }
+}
+
+function fmtAge(days: number | null | undefined): string {
+  if (days == null) return '—'
+  return `${days} Tage`
+}
+
+function BreakoutBadge({ score }: { score: number | null | undefined }) {
+  if (!score) return <span className="text-muted">—</span>
+  const base = 'text-[10px] px-1.5 py-0.5 rounded font-semibold'
+  if (score <= 2) return <span className={`${base} text-gray-300 bg-surface2`}>{score}</span>
+  if (score === 3) return <span className={`${base} text-amber-300 bg-amber-400/10`}>{score}</span>
+  if (score === 4) return <span className={`${base} text-green-400 bg-green-400/10`}>{score}</span>
+  return <span className={`${base} text-green-200 bg-green-500/20`}>5 ✅</span>
 }
 
 // ─── MARow for expanded detail ────────────────────────────────────────────────
@@ -173,6 +200,11 @@ function CandidateRow({ candidate, onLoad }: { candidate: any; onLoad: (isin: st
           <span className="text-muted">—</span>
         )}
       </td>
+      {/* Breakout columns */}
+      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
     </tr>
   )
 }
@@ -370,7 +402,7 @@ export function RankingTable() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <table className="w-full text-xs font-mono border-collapse min-w-[1500px]">
+      <table className="w-full text-xs font-mono border-collapse min-w-[1900px]">
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {COLUMNS.map((col) => (
@@ -485,6 +517,26 @@ export function RankingTable() {
                         <span className="text-muted text-[10px] ml-1">#{inst.valueRank}</span>
                       </span>
                     ) : inst.fundamentalsFetched ? '—' : ''}
+                  </td>
+
+                  {/* Breakout Date */}
+                  <td className="px-3 py-2 text-right text-gray-300">
+                    {fmtDate(inst.breakoutDate)}
+                  </td>
+
+                  {/* Breakout Age */}
+                  <td className="px-3 py-2 text-right text-gray-300">
+                    {fmtAge(inst.breakoutAgeDays)}
+                  </td>
+
+                  {/* Breakout Score */}
+                  <td className="px-3 py-2 text-right">
+                    <BreakoutBadge score={inst.breakoutScore} />
+                  </td>
+
+                  {/* Confirmed */}
+                  <td className="px-3 py-2 text-right">
+                    {inst.breakoutConfirmed ? <span className="text-green-400">✅</span> : ''}
                   </td>
                 </tr>
 

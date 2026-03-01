@@ -5,6 +5,7 @@ interface PriceResult {
   closes: number[]
   highs: number[]
   lows: number[]
+  volumes: number[]
   timestamps: number[]
   pe: number | null
   pb: number | null
@@ -19,6 +20,7 @@ interface PriceResult {
 async function fetchOneTicker(ticker: string): Promise<PriceResult> {
   const base: PriceResult = {
     ticker, closes: [], highs: [], lows: [], timestamps: [],
+    volumes: [],
     pe: null, pb: null, ebitda: null, enterpriseValue: null,
     returnOnAssets: null, aum: null, ter: null,
   }
@@ -44,6 +46,7 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
         const closesRaw: (number | null)[] = quote.close || []
         const highsRaw: (number | null)[]  = quote.high  || []
         const lowsRaw: (number | null)[]   = quote.low   || []
+        const volumesRaw: (number | null)[] = quote.volume || []
 
         // Filter to rows where close is valid
         const validIdxs = timestamps
@@ -54,6 +57,7 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
         base.closes     = validIdxs.map(({ i }) => closesRaw[i]!)
         base.highs      = validIdxs.map(({ i }) => highsRaw[i] ?? closesRaw[i]!)
         base.lows       = validIdxs.map(({ i }) => lowsRaw[i]  ?? closesRaw[i]!)
+        base.volumes    = validIdxs.map(({ i }) => volumesRaw[i] ?? 0)
       }
     }
 
