@@ -9,12 +9,20 @@ interface AnalystResult {
   targetLowPrice: number | null
   targetHighPrice: number | null
   currentPrice: number | null
+  ebitda?: number | null
+  enterpriseValue?: number | null
+  returnOnAssets?: number | null
+  pe?: number | null
+  pb?: number | null
   source?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
   error?: string
 }
 
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const analystCache = new Map<string, { ts: number; data: AnalystResult }>()
+const oasCooldownUntil = new Map<string, number>()
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function stripTicker(raw: string): string {
   return raw.split(/[.:]/)[0].toLowerCase()
@@ -31,8 +39,40 @@ function parseMoney(text: string | null): number | null {
   return Number.isFinite(val) ? val : null
 }
 
+function parseRatio(text: string | null): number | null {
+  if (!text) return null
+  const cleaned = text.replace(/[^0-9.+-]/g, '').trim()
+  if (!cleaned) return null
+  const val = Number(cleaned)
+  return Number.isFinite(val) ? val : null
+}
+
+function parseNumberWithSuffix(text: string | null): number | null {
+  if (!text) return null
+  const cleaned = text.replace(/[, ]/g, '').replace(/[$€£]/g, '').trim()
+  const match = cleaned.match(/^([+-]?\d+(?:\.\d+)?)([KMBT])?$/i)
+  if (!match) return null
+  const num = Number(match[1])
+  if (!Number.isFinite(num)) return null
+  const suffix = match[2]?.toUpperCase()
+  const mult = suffix === 'K' ? 1e3 : suffix === 'M' ? 1e6 : suffix === 'B' ? 1e9 : suffix === 'T' ? 1e12 : 1
+  return num * mult
+}
+
+function getFromPairs(map: Map<string, string>, ...labels: string[]) {
+  for (const l of labels) {
+    const v = map.get(l)
+    if (v != null && v !== '') return v
+  }
+  return null
+}
+
 async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<AnalystResult>> {
   const sym = stripTicker(ticker)
+  const cooldownUntil = oasCooldownUntil.get(sym)
+  if (cooldownUntil && Date.now() < cooldownUntil) {
+    throw new Error('OptionsAnalysisSuite: cooldown active')
+  }
   const url = `https://www.optionsanalysissuite.com/stocks/${encodeURIComponent(sym)}/analyst-ratings`
   const headers = {
     'User-Agent': 'Mozilla/5.0 (compatible)',
@@ -63,10 +103,10 @@ async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<Ana
   }
 }
 
-async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystResult>> {
+async function searchMarketScreener(ticker: string, type: string | null): Promise<string | null> {
   const searchParams = new URLSearchParams({
     page: '1',
-    type: 'company',
+    type: type ?? '',
     search: ticker,
     length: '10',
     page_origin: '',
@@ -80,7 +120,7 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     'Referer': 'https://www.marketscreener.com/',
   }
   const searchRes = await fetch(searchUrl, { headers })
-  if (!searchRes.ok) throw new Error(`MarketScreener search error: ${searchRes.status}`)
+  if (!searchRes.ok) return null
   const searchHtml = await searchRes.text()
 
   const rows = searchHtml.match(/<tr [\s\S]*?<\/tr>/g) || []
@@ -93,25 +133,65 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     })
     .filter((c) => c.path)
 
-  if (candidates.length === 0) throw new Error('MarketScreener: no quote link')
+  if (candidates.length === 0) return null
   const targetSym = stripTickerUpper(ticker)
   const best = candidates.find((c) => c.symbol.toUpperCase() === targetSym) || candidates[0]
-  const quotePath = best.path!
+  return best.path || null
+}
+
+async function searchMarketScreenerPage(ticker: string): Promise<string | null> {
+  const searchUrl = `https://www.marketscreener.com/search/?q=${encodeURIComponent(ticker)}`
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (compatible)',
+    'Accept': 'text/html',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.marketscreener.com/',
+  }
+  const res = await fetch(searchUrl, { headers })
+  if (!res.ok) return null
+  const html = await res.text()
+  const linkMatch = html.match(/href="(\/quote\/stock\/[^"]+?)"/i)
+  return linkMatch?.[1] || null
+}
+
+async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystResult>> {
+  const quotePath =
+    (await searchMarketScreener(ticker, 'company')) ||
+    (await searchMarketScreener(ticker, null)) ||
+    (await searchMarketScreenerPage(ticker))
+  if (!quotePath) throw new Error('MarketScreener: no quote link')
 
   const consensusUrl = `https://www.marketscreener.com${quotePath}consensus/`
   const consensusRes = await fetch(consensusUrl, { headers })
   if (!consensusRes.ok) throw new Error(`MarketScreener consensus error: ${consensusRes.status}`)
   const html = await consensusRes.text()
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
+  const title = titleMatch?.[1]?.toUpperCase() || ''
+  const targetSym = stripTickerUpper(ticker)
+  if (targetSym && !title.includes(`| ${targetSym} |`) && !title.includes(`${targetSym} |`)) {
+    throw new Error('MarketScreener: ticker mismatch')
+  }
 
   const stripTags = (s: string) => s.replace(/<[^>]+>/g, '').trim()
-  const pairs = new Map<string, string>()
-  const rowRe = /<div class="grid[^>]*>\s*<div class="c">([^<]+)<\/div>\s*<div class="c-auto[^>]*>([\s\S]*?)<\/div>/gi
-  let match: RegExpExecArray | null
-  while ((match = rowRe.exec(html))) {
-    const label = match[1].trim()
-    const value = stripTags(match[2])
-    pairs.set(label, value)
+  const extractPairs = (sourceHtml: string) => {
+    const map = new Map<string, string>()
+    const gridRe = /<div class="grid[^>]*>\s*<div class="c">([^<]+)<\/div>\s*<div class="c-auto[^>]*>([\s\S]*?)<\/div>/gi
+    let m: RegExpExecArray | null
+    while ((m = gridRe.exec(sourceHtml))) {
+      const label = m[1].trim()
+      const value = stripTags(m[2])
+      map.set(label, value)
+    }
+    const trRe = /<tr[^>]*>\s*<t[dh][^>]*>\s*([^<]+)\s*<\/t[dh]>\s*<t[dh][^>]*>\s*([^<]+)\s*<\/t[dh]>\s*<\/tr>/gi
+    while ((m = trRe.exec(sourceHtml))) {
+      const label = stripTags(m[1])
+      const value = stripTags(m[2])
+      if (label && value) map.set(label, value)
+    }
+    return map
   }
+
+  const pairs = extractPairs(html)
 
   const get = (...labels: string[]) => {
     for (const l of labels) {
@@ -128,6 +208,43 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
   const highText = get('High Price Target', 'High target price', 'Highest target price')
   const lowText = get('Low Price Target', 'Low target price', 'Lowest target price')
 
+  // Fetch quote page for fundamentals like P/E and P/B
+  let pe: number | null = null
+  let pb: number | null = null
+  let ebitda: number | null = null
+  let enterpriseValue: number | null = null
+  let returnOnAssets: number | null = null
+  try {
+    const quoteRes = await fetch(`https://www.marketscreener.com${quotePath}`, { headers })
+    if (quoteRes.ok) {
+      const quoteHtml = await quoteRes.text()
+      const qPairs = extractPairs(quoteHtml)
+      const peText = getFromPairs(qPairs, 'P/E ratio', 'P/E', 'P/E (LTM)', 'P/E (TTM)', 'Price/Earnings')
+      const pbText = getFromPairs(qPairs, 'P/B ratio', 'P/B', 'Price/Book', 'P/BV', 'Price / Book')
+      const evText = getFromPairs(qPairs, 'Enterprise Value', 'Enterprise value', 'EV')
+      pe = parseRatio(peText)
+      pb = parseRatio(pbText)
+      enterpriseValue = parseNumberWithSuffix(evText)
+    }
+  } catch {
+    // ignore fundamentals fetch errors
+  }
+
+  // Fetch ratios page for EBITDA / ROA if available
+  try {
+    const ratiosRes = await fetch(`https://www.marketscreener.com${quotePath}finances-ratios/`, { headers })
+    if (ratiosRes.ok) {
+      const ratiosHtml = await ratiosRes.text()
+      const rPairs = extractPairs(ratiosHtml)
+      const ebitdaText = getFromPairs(rPairs, 'EBITDA', 'EBITDA (LTM)', 'EBITDA (TTM)')
+      const roaText = getFromPairs(rPairs, 'Return on Assets', 'ROA', 'Return on assets (ROA)')
+      ebitda = parseNumberWithSuffix(ebitdaText)
+      returnOnAssets = parseRatio(roaText)
+    }
+  } catch {
+    // ignore ratio fetch errors
+  }
+
   return {
     recommendationKey: consensusText ? consensusText.toLowerCase() : null,
     numberOfAnalystOpinions: analystText ? parseMoney(analystText) : null,
@@ -135,7 +252,34 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     targetHighPrice: parseMoney(highText),
     targetLowPrice: parseMoney(lowText),
     currentPrice: parseMoney(lastText),
+    ebitda,
+    enterpriseValue,
+    returnOnAssets,
+    pe,
+    pb,
   }
+}
+
+async function fetchFromOptionAnalysisSuiteWithRetry(ticker: string): Promise<Partial<AnalystResult>> {
+  const sym = stripTicker(ticker)
+  const maxAttempts = 3
+  let lastErr: any = null
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fetchFromOptionAnalysisSuite(sym)
+    } catch (err: any) {
+      lastErr = err
+      if (String(err?.message || '').includes('OptionsAnalysisSuite error: 429')) {
+        // Backoff and set short cooldown
+        const backoff = 500 * attempt
+        oasCooldownUntil.set(sym, Date.now() + 60_000)
+        await sleep(backoff)
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastErr || new Error('OptionsAnalysisSuite error')
 }
 
 async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResult> {
@@ -202,7 +346,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     } catch (msErr: any) {
       // Fallback 2: OptionsAnalysisSuite (public HTML)
       try {
-        const fallback = await fetchFromOptionAnalysisSuite(ticker)
+        const fallback = await fetchFromOptionAnalysisSuiteWithRetry(ticker)
         return {
           ...base,
           recommendationKey: fallback.recommendationKey ?? null,

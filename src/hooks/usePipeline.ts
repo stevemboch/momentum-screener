@@ -339,21 +339,26 @@ export function usePipeline() {
         return res.json()
       })
       if (!r) return
-      dispatch({
-        type: 'UPDATE_INSTRUMENT',
-        isin,
-        updates: {
-          analystRating: r.recommendationMean ?? null,
-          analystRatingKey: r.recommendationKey ?? null,
-          analystOpinions: r.numberOfAnalystOpinions ?? null,
-          targetPrice: r.targetMeanPrice ?? null,
-          targetLow: r.targetLowPrice ?? null,
-          targetHigh: r.targetHighPrice ?? null,
-          analystSource: r.source ?? null,
-          analystFetched: true,
-          analystError: r.error ?? null,
-        },
-      })
+      const updates: any = {
+        analystRating: r.recommendationMean ?? null,
+        analystRatingKey: r.recommendationKey ?? null,
+        analystOpinions: r.numberOfAnalystOpinions ?? null,
+        targetPrice: r.targetMeanPrice ?? null,
+        targetLow: r.targetLowPrice ?? null,
+        targetHigh: r.targetHighPrice ?? null,
+        analystSource: r.source ?? null,
+        analystFetched: true,
+        analystError: r.error ?? null,
+      }
+      if (r.pe != null) updates.pe = r.pe
+      if (r.pb != null) updates.pb = r.pb
+      if (r.ebitda != null) updates.ebitda = r.ebitda
+      if (r.enterpriseValue != null) updates.enterpriseValue = r.enterpriseValue
+      if (r.returnOnAssets != null) updates.returnOnAssets = r.returnOnAssets
+      if (r.pe != null || r.pb != null || r.ebitda != null || r.enterpriseValue != null || r.returnOnAssets != null) {
+        updates.fundamentalsFetched = true
+      }
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
     } catch (err: any) {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message } })
     }
