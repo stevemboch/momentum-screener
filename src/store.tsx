@@ -19,6 +19,37 @@ interface AppState {
 
 const DEFAULT_WEIGHTS: MomentumWeights = { w1m: 1/3, w3m: 1/3, w6m: 1/3 }
 
+const GROUPS_STORAGE_KEY = 'xetra:groups'
+
+function loadGroupPrefs(): { etf: string[]; stock: string[] } | null {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(GROUPS_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return {
+      etf: Array.isArray(parsed.etf) ? parsed.etf : [],
+      stock: Array.isArray(parsed.stock) ? parsed.stock : [],
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveGroupPrefs(etfGroups: ETFGroup[], stockGroups: ETFGroup[]) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
+  try {
+    const etf = etfGroups.filter((g) => g.enabled).map((g) => g.groupKey)
+    const stock = stockGroups.filter((g) => g.enabled).map((g) => g.groupKey)
+    localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify({ etf, stock }))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+const persistedGroups = loadGroupPrefs()
+
 const DEFAULT_STATE: AppState = {
   instruments: [],
   xetraReady: false,
@@ -37,8 +68,16 @@ const DEFAULT_STATE: AppState = {
     aumFloor: 100_000_000,
     filterBelowRiskFree: true,  // ← ON by default
   },
-  etfGroups: ETF_GROUPS.map((g) => ({ ...g, count: 0, enabled: DEFAULT_ETF_GROUPS.includes(g.groupKey) })),
-  stockGroups: STOCK_GROUPS.map((g) => ({ ...g, count: 0, enabled: DEFAULT_STOCK_GROUPS.includes(g.groupKey) })),
+  etfGroups: ETF_GROUPS.map((g) => ({
+    ...g,
+    count: 0,
+    enabled: persistedGroups ? persistedGroups.etf.includes(g.groupKey) : DEFAULT_ETF_GROUPS.includes(g.groupKey),
+  })),
+  stockGroups: STOCK_GROUPS.map((g) => ({
+    ...g,
+    count: 0,
+    enabled: persistedGroups ? persistedGroups.stock.includes(g.groupKey) : DEFAULT_STOCK_GROUPS.includes(g.groupKey),
+  })),
   fetchStatus: { phase: 'idle', message: '', current: 0, total: 0 },
   xetraActive: false,
 }
@@ -107,18 +146,20 @@ function reducer(state: AppState, action: Action): AppState {
     case 'SET_TABLE_STATE':
       return { ...state, tableState: { ...state.tableState, ...action.updates } }
     case 'SET_ETF_GROUP':
-      return {
-        ...state,
-        etfGroups: state.etfGroups.map((g) =>
+      {
+        const etfGroups = state.etfGroups.map((g) =>
           g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
-        ),
+        )
+        saveGroupPrefs(etfGroups, state.stockGroups)
+        return { ...state, etfGroups }
       }
     case 'SET_STOCK_GROUP':
-      return {
-        ...state,
-        stockGroups: state.stockGroups.map((g) =>
+      {
+        const stockGroups = state.stockGroups.map((g) =>
           g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
-        ),
+        )
+        saveGroupPrefs(state.etfGroups, stockGroups)
+        return { ...state, stockGroups }
       }
     case 'SET_GROUP_COUNTS':
       return {

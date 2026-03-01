@@ -242,7 +242,15 @@ function ExpandedDetail({
               {inst.atr20 != null && (
                 <div className="mt-2">
                   <div>ATR(20): <span className="text-gray-300">{inst.atr20.toFixed(4)}</span></div>
-                  <div>Stop ({atrMultiplier}× ATR): <span className="text-amber-400">{inst.sellingThreshold?.toFixed(2) ?? '—'}</span></div>
+                  <div>Stop ({atrMultiplier}× ATR): <span className="text-amber-400">
+                    {inst.sellingThreshold?.toFixed(2) ?? '—'}
+                  </span>
+                    {lastPrice != null && inst.sellingThreshold != null && (
+                      <span className="text-muted text-[10px] ml-1">
+                        {fmtPct(inst.sellingThreshold / lastPrice - 1)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -440,6 +448,11 @@ export function RankingTable() {
                     {inst.sellingThreshold != null ? (
                       <span className="text-amber-400" title={`ATR(20): ${inst.atr20?.toFixed(4) ?? '—'}`}>
                         {fmtPrice(inst.sellingThreshold)}
+                        {inst.closes?.length ? (
+                          <span className="text-muted text-[10px] ml-1">
+                            {fmtPct(inst.sellingThreshold / inst.closes[inst.closes.length - 1] - 1)}
+                          </span>
+                        ) : null}
                       </span>
                     ) : inst.priceFetched ? '—' : ''}
                   </td>

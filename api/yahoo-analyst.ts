@@ -67,6 +67,24 @@ function getFromPairs(map: Map<string, string>, ...labels: string[]) {
   return null
 }
 
+function stripHtml(text: string) {
+  return text.replace(/<[^>]+>/g, '').replace(/\u00a0/g, ' ').trim()
+}
+
+function extractTableRowValues(html: string, labelRegex: RegExp): string[] | null {
+  const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || []
+  for (const row of rows) {
+    const cells = row.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi)
+    if (!cells || cells.length < 2) continue
+    const cellTexts = cells.map((c) => stripHtml(c))
+    const label = cellTexts[0] || ''
+    if (labelRegex.test(label)) {
+      return cellTexts.slice(1).filter(Boolean)
+    }
+  }
+  return null
+}
+
 async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<AnalystResult>> {
   const sym = stripTicker(ticker)
   const url = `https://www.optionsanalysissuite.com/stocks/${encodeURIComponent(sym)}/analyst-ratings`
@@ -242,6 +260,28 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     }
   } catch {
     // ignore fundamentals fetch errors
+  }
+
+  // Fetch valuation page for P/E, P/B, EV if not available
+  try {
+    const valuationRes = await fetch(`https://www.marketscreener.com${quotePath}valuation/`, { headers })
+    if (valuationRes.ok) {
+      const valuationHtml = await valuationRes.text()
+      if (pe == null) {
+        const peRow = extractTableRowValues(valuationHtml, /^P\/?E/i)
+        pe = parseRatio(peRow?.[0] ?? null)
+      }
+      if (pb == null) {
+        const pbRow = extractTableRowValues(valuationHtml, /price\s*to\s*book|p\/?b/i)
+        pb = parseRatio(pbRow?.[0] ?? null)
+      }
+      if (enterpriseValue == null) {
+        const evRow = extractTableRowValues(valuationHtml, /enterprise\s+value|EV\b/i)
+        enterpriseValue = parseNumberWithSuffix(evRow?.[0] ?? null)
+      }
+    }
+  } catch {
+    // ignore valuation fetch errors
   }
 
   // Fetch ratios page for EBITDA / ROA if available
