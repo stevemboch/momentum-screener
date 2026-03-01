@@ -69,10 +69,6 @@ function getFromPairs(map: Map<string, string>, ...labels: string[]) {
 
 async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<AnalystResult>> {
   const sym = stripTicker(ticker)
-  const cooldownUntil = oasCooldownUntil.get(sym)
-  if (cooldownUntil && Date.now() < cooldownUntil) {
-    throw new Error('OptionsAnalysisSuite: cooldown active')
-  }
   const url = `https://www.optionsanalysissuite.com/stocks/${encodeURIComponent(sym)}/analyst-ratings`
   const headers = {
     'User-Agent': 'Mozilla/5.0 (compatible)',
@@ -174,8 +170,11 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
   const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
   const title = titleMatch?.[1]?.toUpperCase() || ''
   const targetSym = stripTickerUpper(ticker)
-  if (targetSym && !title.includes(`| ${targetSym} |`) && !title.includes(`${targetSym} |`)) {
-    throw new Error('MarketScreener: ticker mismatch')
+  if (targetSym) {
+    const titleTickerMatch = title.match(/\|\s*([A-Z0-9.\-]{1,12})\s*\|/)
+    if (titleTickerMatch && titleTickerMatch[1] && titleTickerMatch[1] !== targetSym) {
+      throw new Error('MarketScreener: ticker mismatch')
+    }
   }
 
   const stripTags = (s: string) => s.replace(/<[^>]+>/g, '').trim()
@@ -272,6 +271,10 @@ async function fetchFromOptionAnalysisSuiteWithRetry(ticker: string): Promise<Pa
   let lastErr: any = null
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      const cooldownUntil = oasCooldownUntil.get(sym)
+      if (cooldownUntil && Date.now() < cooldownUntil) {
+        throw new Error('OptionsAnalysisSuite: cooldown active')
+      }
       return await fetchFromOptionAnalysisSuite(sym)
     } catch (err: any) {
       lastErr = err
@@ -347,6 +350,11 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
         targetLowPrice: ms.targetLowPrice ?? null,
         targetHighPrice: ms.targetHighPrice ?? null,
         currentPrice: ms.currentPrice ?? null,
+        pe: ms.pe ?? null,
+        pb: ms.pb ?? null,
+        ebitda: ms.ebitda ?? null,
+        enterpriseValue: ms.enterpriseValue ?? null,
+        returnOnAssets: ms.returnOnAssets ?? null,
         source: 'marketscreener',
       }
     } catch (msErr: any) {
