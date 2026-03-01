@@ -339,8 +339,18 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     // Fallback 1: MarketScreener (search by ticker)
     try {
       const ms = await fetchFromMarketScreener(ticker)
-      const hasData = ms.recommendationKey != null || ms.numberOfAnalystOpinions != null ||
-        ms.targetMeanPrice != null || ms.targetLowPrice != null || ms.targetHighPrice != null || ms.currentPrice != null
+      const hasData =
+        ms.recommendationKey != null ||
+        ms.numberOfAnalystOpinions != null ||
+        ms.targetMeanPrice != null ||
+        ms.targetLowPrice != null ||
+        ms.targetHighPrice != null ||
+        ms.currentPrice != null ||
+        ms.pe != null ||
+        ms.pb != null ||
+        ms.ebitda != null ||
+        ms.enterpriseValue != null ||
+        ms.returnOnAssets != null
       if (!hasData) throw new Error('MarketScreener: empty data')
       return {
         ...base,
