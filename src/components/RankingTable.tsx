@@ -275,7 +275,7 @@ function ExpandedDetail({
                     </button>
                   ) : (
                     <>
-                      <div>Rating: <span className="text-gray-300">
+                      <div>Rating: <span className="text-gray-300" title={inst.analystSource ? `Source: ${inst.analystSource}` : undefined}>
                         {inst.analystRatingKey ? String(inst.analystRatingKey).toUpperCase() : '—'}
                         {inst.analystRating != null ? ` (${inst.analystRating.toFixed(2)})` : ''}
                       </span>
@@ -283,7 +283,7 @@ function ExpandedDetail({
                           <span className="text-muted"> · {inst.analystOpinions} analysts</span>
                         )}
                       </div>
-                      <div>Target: <span className="text-gray-300">
+                      <div>Target: <span className="text-gray-300" title={inst.analystSource ? `Source: ${inst.analystSource}` : undefined}>
                         {inst.targetPrice != null ? inst.targetPrice.toFixed(2) : '—'}
                       </span>
                         {upside != null && (

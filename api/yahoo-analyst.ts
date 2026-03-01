@@ -9,6 +9,7 @@ interface AnalystResult {
   targetLowPrice: number | null
   targetHighPrice: number | null
   currentPrice: number | null
+  source?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
   error?: string
 }
 
@@ -16,9 +17,13 @@ function stripTicker(raw: string): string {
   return raw.split(/[.:]/)[0].toLowerCase()
 }
 
+function stripTickerUpper(raw: string): string {
+  return raw.split(/[.:]/)[0].toUpperCase()
+}
+
 function parseMoney(text: string | null): number | null {
   if (!text) return null
-  const cleaned = text.replace(/[,$]/g, '').trim()
+  const cleaned = text.replace(/[,$]/g, '').replace(/[A-Za-z]+/g, '').trim()
   const val = Number(cleaned)
   return Number.isFinite(val) ? val : null
 }
@@ -29,6 +34,10 @@ async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<Ana
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
   if (!res.ok) throw new Error(`OptionsAnalysisSuite error: ${res.status}`)
   const html = await res.text()
+  const tickerUpper = sym.toUpperCase()
+  if (!html.toUpperCase().includes(tickerUpper)) {
+    throw new Error('OptionsAnalysisSuite: ticker not found in page')
+  }
 
   const consensusMatch = html.match(/Consensus:\s*([^<\n]+?)\s+from/i)
   const consensus = consensusMatch ? consensusMatch[1].trim() : null
@@ -45,35 +54,72 @@ async function fetchFromOptionAnalysisSuite(ticker: string): Promise<Partial<Ana
   }
 }
 
-async function fetchFromMarketScreener(query: string): Promise<Partial<AnalystResult>> {
-  const searchUrl = `https://www.marketscreener.com/search/?q=${encodeURIComponent(query)}`
+async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystResult>> {
+  const searchParams = new URLSearchParams({
+    page: '1',
+    type: 'company',
+    search: ticker,
+    length: '10',
+    page_origin: '',
+    t: '',
+  })
+  const searchUrl = `https://www.marketscreener.com/async/search/advanced/instruments?${searchParams.toString()}`
   const searchRes = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
   if (!searchRes.ok) throw new Error(`MarketScreener search error: ${searchRes.status}`)
   const searchHtml = await searchRes.text()
 
-  const linkMatch = searchHtml.match(/href="(\/quote\/stock\/[^"]+?)"/i)
-  if (!linkMatch) throw new Error('MarketScreener: no quote link')
-  const quotePath = linkMatch[1]
+  const rows = searchHtml.match(/<tr [\s\S]*?<\/tr>/g) || []
+  const candidates = rows
+    .filter((r) => r.includes('/quote/stock/'))
+    .map((r) => {
+      const linkMatch = r.match(/href="(\/quote\/stock\/[^"]+?)"/i)
+      const symMatch = r.match(/<td class="table-child--w80[\s\S]*?>\s*([^<]+)\s*<\/td>/i)
+      return { path: linkMatch?.[1], symbol: symMatch?.[1]?.trim() || '' }
+    })
+    .filter((c) => c.path)
+
+  if (candidates.length === 0) throw new Error('MarketScreener: no quote link')
+  const targetSym = stripTickerUpper(ticker)
+  const best = candidates.find((c) => c.symbol.toUpperCase() === targetSym) || candidates[0]
+  const quotePath = best.path!
 
   const consensusUrl = `https://www.marketscreener.com${quotePath}consensus/`
   const consensusRes = await fetch(consensusUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'text/html' } })
   if (!consensusRes.ok) throw new Error(`MarketScreener consensus error: ${consensusRes.status}`)
   const html = await consensusRes.text()
 
-  const avgMatch = html.match(/Average target price<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
-  const highMatch = html.match(/High target price<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
-  const lowMatch = html.match(/Low target price<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
-  const lastMatch = html.match(/Last Close<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
-  const consensusMatch = html.match(/Consensus<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
-  const analystMatch = html.match(/Number of analysts<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i)
+  const stripTags = (s: string) => s.replace(/<[^>]+>/g, '').trim()
+  const pairs = new Map<string, string>()
+  const rowRe = /<div class="grid[^>]*>\s*<div class="c">([^<]+)<\/div>\s*<div class="c-auto[^>]*>([\s\S]*?)<\/div>/gi
+  let match: RegExpExecArray | null
+  while ((match = rowRe.exec(html))) {
+    const label = match[1].trim()
+    const value = stripTags(match[2])
+    pairs.set(label, value)
+  }
+
+  const get = (...labels: string[]) => {
+    for (const l of labels) {
+      const v = pairs.get(l)
+      if (v != null && v !== '') return v
+    }
+    return null
+  }
+
+  const consensusText = get('Mean consensus', 'Consensus')
+  const analystText = get('Number of Analysts', 'Number of analysts')
+  const lastText = get('Last Close Price', 'Last Close')
+  const avgText = get('Average target price', 'Average Target Price')
+  const highText = get('High Price Target', 'High target price', 'Highest target price')
+  const lowText = get('Low Price Target', 'Low target price', 'Lowest target price')
 
   return {
-    recommendationKey: consensusMatch ? consensusMatch[1].trim().toLowerCase() : null,
-    numberOfAnalystOpinions: analystMatch ? parseMoney(analystMatch[1]) : null,
-    targetMeanPrice: parseMoney(avgMatch?.[1]?.trim() ?? null),
-    targetHighPrice: parseMoney(highMatch?.[1]?.trim() ?? null),
-    targetLowPrice: parseMoney(lowMatch?.[1]?.trim() ?? null),
-    currentPrice: parseMoney(lastMatch?.[1]?.trim() ?? null),
+    recommendationKey: consensusText ? consensusText.toLowerCase() : null,
+    numberOfAnalystOpinions: analystText ? parseMoney(analystText) : null,
+    targetMeanPrice: parseMoney(avgText),
+    targetHighPrice: parseMoney(highText),
+    targetLowPrice: parseMoney(lowText),
+    currentPrice: parseMoney(lastText),
   }
 }
 
@@ -120,33 +166,35 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     base.targetLowPrice = fd.targetLowPrice?.raw ?? null
     base.targetHighPrice = fd.targetHighPrice?.raw ?? null
     base.currentPrice = fd.currentPrice?.raw ?? null
+    base.source = 'yahoo'
   } catch (err: any) {
-    // Fallback 1: scrape optionsanalysissuite.com (public HTML)
+    // Fallback 1: MarketScreener (search by ticker)
     try {
-      const fallback = await fetchFromOptionAnalysisSuite(ticker)
+      const ms = await fetchFromMarketScreener(ticker)
       return {
         ...base,
-        recommendationKey: fallback.recommendationKey ?? null,
-        targetMeanPrice: fallback.targetMeanPrice ?? null,
-        targetLowPrice: fallback.targetLowPrice ?? null,
-        targetHighPrice: fallback.targetHighPrice ?? null,
+        recommendationKey: ms.recommendationKey ?? null,
+        numberOfAnalystOpinions: ms.numberOfAnalystOpinions ?? null,
+        targetMeanPrice: ms.targetMeanPrice ?? null,
+        targetLowPrice: ms.targetLowPrice ?? null,
+        targetHighPrice: ms.targetHighPrice ?? null,
+        currentPrice: ms.currentPrice ?? null,
+        source: 'marketscreener',
       }
-    } catch (fallbackErr: any) {
-      // Fallback 2: MarketScreener (search by ISIN or ticker)
+    } catch (msErr: any) {
+      // Fallback 2: OptionsAnalysisSuite (public HTML)
       try {
-        const query = isin || ticker
-        const ms = await fetchFromMarketScreener(query)
+        const fallback = await fetchFromOptionAnalysisSuite(ticker)
         return {
           ...base,
-          recommendationKey: ms.recommendationKey ?? null,
-          numberOfAnalystOpinions: ms.numberOfAnalystOpinions ?? null,
-          targetMeanPrice: ms.targetMeanPrice ?? null,
-          targetLowPrice: ms.targetLowPrice ?? null,
-          targetHighPrice: ms.targetHighPrice ?? null,
-          currentPrice: ms.currentPrice ?? null,
+          recommendationKey: fallback.recommendationKey ?? null,
+          targetMeanPrice: fallback.targetMeanPrice ?? null,
+          targetLowPrice: fallback.targetLowPrice ?? null,
+          targetHighPrice: fallback.targetHighPrice ?? null,
+          source: 'optionsanalysissuite',
         }
-      } catch (msErr: any) {
-        base.error = err?.message || fallbackErr?.message || msErr?.message
+      } catch (fallbackErr: any) {
+        base.error = err?.message || msErr?.message || fallbackErr?.message
       }
     }
   }

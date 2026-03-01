@@ -56,6 +56,7 @@ export interface Instrument {
   targetPrice?: number | null
   targetLow?: number | null
   targetHigh?: number | null
+  analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
   analystFetched?: boolean
   analystError?: string
 

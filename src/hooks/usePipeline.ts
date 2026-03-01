@@ -5,9 +5,35 @@ import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, re
 import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
 import { recalculateAll } from '../utils/calculations'
 
-const YAHOO_CONCURRENCY = 10
-const OPENFIGI_BATCH = 100
-const OPENFIGI_DELAY = 200
+const YAHOO_CONCURRENCY = 15
+const OPENFIGI_BATCH = 150
+const OPENFIGI_DELAY = 100
+const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
+
+function cacheGet<T>(key: string): T | null {
+  if (!hasStorage()) return null
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (Date.now() - (parsed.ts || 0) > CACHE_TTL_MS) return null
+    return parsed.data as T
+  } catch {
+    return null
+  }
+}
+
+function cacheSet<T>(key: string, data: T) {
+  if (!hasStorage()) return
+  try {
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+  } catch {
+    // ignore quota errors
+  }
+}
 
 interface OpenFIGIResult { name?: string; securityType?: string; securityType2?: string }
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
@@ -38,9 +64,13 @@ async function apiStats(isins: string[]): Promise<StatsResult[]> {
 }
 
 async function apiXetra() {
+  const cached = cacheGet<string>('cache:xetra')
+  if (cached) return cached
   const res = await fetch('/api/xetra')
   if (!res.ok) throw new Error(`Xetra API error: ${res.status}`)
-  return res.text()
+  const text = await res.text()
+  cacheSet('cache:xetra', text)
+  return text
 }
 
 async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number, onProgress?: (done: number, total: number) => void): Promise<T[]> {
@@ -92,7 +122,37 @@ export function usePipeline() {
       if (inst.wkn?.length === 6) return { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
       return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker }
     })
-    const results = await processBatches(jobs, OPENFIGI_BATCH, OPENFIGI_DELAY, (batch) => apiOpenFIGI(batch), (done, total) => setStatus(`Enriching names: ${done} / ${total}`, done, total))
+    const cacheKey = 'cache:openfigi'
+    const cache = cacheGet<Record<string, OpenFIGIResult>>(cacheKey) || {}
+    const keyFor = (j: { idType: string; idValue: string }) => `${j.idType}:${j.idValue}`
+
+    const missing: { job: { idType: string; idValue: string }; idx: number }[] = []
+    const results: OpenFIGIResult[] = new Array(jobs.length)
+    jobs.forEach((j, i) => {
+      const k = keyFor(j)
+      const cached = cache[k]
+      if (cached) results[i] = cached
+      else missing.push({ job: j, idx: i })
+    })
+
+    if (missing.length > 0) {
+      const fetched = await processBatches(
+        missing.map((m) => m.job),
+        OPENFIGI_BATCH,
+        OPENFIGI_DELAY,
+        (batch) => apiOpenFIGI(batch),
+        (done, total) => setStatus(`Enriching names: ${done} / ${total}`, done, total)
+      )
+      fetched.forEach((r, i) => {
+        const { job, idx } = missing[i]
+        results[idx] = r
+        cache[keyFor(job)] = r
+      })
+      cacheSet(cacheKey, cache)
+    } else {
+      setStatus(`Enriching names: ${jobs.length} / ${jobs.length}`, jobs.length, jobs.length)
+    }
+
     return instruments.map((inst, i) => {
       const figi = results[i]
       if (!figi) return inst
@@ -289,6 +349,7 @@ export function usePipeline() {
           targetPrice: r.targetMeanPrice ?? null,
           targetLow: r.targetLowPrice ?? null,
           targetHigh: r.targetHighPrice ?? null,
+          analystSource: r.source ?? null,
           analystFetched: true,
           analystError: r.error ?? null,
         },
