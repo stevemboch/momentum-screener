@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 interface PriceResult {
   ticker: string
+  longName: string | null
   closes: number[]
   highs: number[]
   lows: number[]
@@ -19,7 +20,7 @@ interface PriceResult {
 
 async function fetchOneTicker(ticker: string): Promise<PriceResult> {
   const base: PriceResult = {
-    ticker, closes: [], highs: [], lows: [], timestamps: [],
+    ticker, longName: null, closes: [], highs: [], lows: [], timestamps: [],
     volumes: [],
     pe: null, pb: null, ebitda: null, enterpriseValue: null,
     returnOnAssets: null, aum: null, ter: null,
@@ -32,7 +33,7 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
       fetch(
-        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics,financialData,summaryDetail,fundProfile`,
+        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price,defaultKeyStatistics,financialData,summaryDetail,fundProfile`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
     ])
@@ -65,10 +66,12 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
       const quoteData = await quoteRes.json()
       const summary = quoteData?.quoteSummary?.result?.[0]
       if (summary) {
+        const price = summary.price || {}
         const ks = summary.defaultKeyStatistics || {}
         const fd = summary.financialData || {}
         const sd = summary.summaryDetail || {}
         const fp = summary.fundProfile || {}
+        base.longName = price.longName ?? price.shortName ?? base.longName
         base.pe = sd.trailingPE?.raw ?? ks.trailingPE?.raw ?? null
         base.pb = ks.priceToBook?.raw ?? null
         base.ebitda = fd.ebitda?.raw ?? null

@@ -215,12 +215,23 @@ const ABBREV: [string, string][] = [
   ['RENEWABLE',         'RENEWABLEENERGY'],
   ['RENEWABLES',        'RENEWABLEENERGY'],
   ['RENEWABLE ENERGY',  'RENEWABLEENERGY'],
+  ['RENEWABLE ENERGIE', 'RENEWABLEENERGY'],
+  ['RENEWABLEENERGIE',  'RENEWABLEENERGY'],
   ['SOLAR',             'SOLARENERGY'],
   ['SOLAR ENERGY',      'SOLARENERGY'],
+  ['SOLAR ENERGIE',     'SOLARENERGY'],
+  ['SOLARENERGIE',      'SOLARENERGY'],
   ['WIND',              'WINDENERGY'],
   ['WIND ENERGY',       'WINDENERGY'],
+  ['WIND ENERGIE',      'WINDENERGY'],
+  ['WINDENERGIE',       'WINDENERGY'],
   ['NUCLEAR',           'NUCLEARENERGY'],
   ['NUCLEAR ENERGY',    'NUCLEARENERGY'],
+  ['NUCLEAR ENERGIE',   'NUCLEARENERGY'],
+  ['NUKLEAR',           'NUCLEARENERGY'],
+  ['NUKLEAR ENERGIE',   'NUCLEARENERGY'],
+  ['KERNENERGIE',       'NUCLEARENERGY'],
+  ['ENERGIE',           'ENERGY'],
   ['MATERIAL',          'MATERIALS'],
   ['MATL',              'MATERIALS'],
   ['H2',                'HYDROGEN'],
@@ -265,7 +276,6 @@ const ABBREV: [string, string][] = [
   ['HLTHCARE',              'HEALTHCARE'],
   ['HEALTH CARE',           'HEALTHCARE'],
   ['CLEAN ENERGY',          'CLEANENERGY'],
-  ['RENEWABLE ENERGY',      'CLEANENERGY'],
   ['CLOUD COMPUTING',       'CLOUDCOMPUTING'],
   ['ARTIFICIAL INTELLIGENCE','AI'],
   ['FUTURE MOBILITY',       'FUTUREMOBILITY'],
@@ -386,6 +396,11 @@ const SECTOR_MAP: [string[], string][] = [
   [['FINANCIALS','FINANCIAL','BANKS','BANKING','FINANCE','INSURANCE'], 'FINANCIALS'],
   [['BASICRESOURCES'],                                    'BASIC-RESOURCES'],
   [['MATERIALS','MATERIAL'],                              'MATERIALS'],
+  [['CLEANENERGY'],                                       'CLEAN-ENERGY'],
+  [['RENEWABLEENERGY'],                                   'RENEWABLE-ENERGY'],
+  [['SOLARENERGY'],                                       'SOLAR-ENERGY'],
+  [['WINDENERGY'],                                        'WIND-ENERGY'],
+  [['NUCLEARENERGY'],                                     'NUCLEAR-ENERGY'],
   [['ENERGY','ENER'],                                     'ENERGY'],
   [['UTILITIES','UTIL','UTILS','UTILITIE'],               'UTILITIES'],
   [['INDUSTRIALS','INDSTRLS','INDUSTRI'],                 'INDUSTRIALS'],
@@ -396,11 +411,6 @@ const SECTOR_MAP: [string[], string][] = [
   [['CYBERSECURITY'],                                     'CYBERSECURITY'],
   [['ROBOTICS','AUTOMATION'],                             'ROBOTICS'],
   [['WATER'],                                             'WATER'],
-  [['CLEANENERGY'],                                       'CLEAN-ENERGY'],
-  [['RENEWABLEENERGY'],                                   'RENEWABLE-ENERGY'],
-  [['SOLARENERGY'],                                       'SOLAR-ENERGY'],
-  [['WINDENERGY'],                                        'WIND-ENERGY'],
-  [['NUCLEARENERGY'],                                     'NUCLEAR-ENERGY'],
   [['BIOTECHNOLOGY','BIOTECH','BIOPHARMA'],               'BIOTECH'],
   [['PHARMACEUTICALS','PHARMA'],                          'PHARMA'],
   [['CLOUDCOMPUTING'],                                    'CLOUD'],
@@ -690,9 +700,7 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
       continue
     }
     const v = extractExposureVector(inst)
-    const isUnclassified =
-      v.assetClass === 'EQUITY' &&
-      !v.region && !v.subregion && (!v.factors || v.factors.length === 0) && !v.sector
+    const isUnclassified = isUnclassifiedExposure(v)
     const key = isUnclassified ? inst.isin : vectorToKey(v)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(inst)
@@ -719,6 +727,15 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
   }
 
   return result
+}
+
+export function isUnclassifiedInstrument(inst: Instrument): boolean {
+  return isUnclassifiedExposure(extractExposureVector(inst))
+}
+
+function isUnclassifiedExposure(v: ExposureVector): boolean {
+  return v.assetClass === 'EQUITY' &&
+    !v.region && !v.subregion && (!v.factors || v.factors.length === 0) && !v.sector
 }
 
 export function applyDedupToInstruments(

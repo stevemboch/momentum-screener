@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react'
 import { useAppState } from '../store'
 import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
-import { buildDedupGroups, applyDedupToInstruments } from '../utils/dedup'
+import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll } from '../utils/calculations'
 
 const YAHOO_CONCURRENCY = 5
@@ -202,6 +202,8 @@ export function usePipeline() {
       if (!r) return
       const idx = updated.findIndex((inst) => inst.yahooTicker === withTickers[i].yahooTicker)
       if (idx < 0) return
+      const shouldReplaceName = r.longName && isUnclassifiedInstrument(updated[idx])
+      const nextLongName = shouldReplaceName ? r.longName : updated[idx].longName
       updated[idx] = {
         ...updated[idx],
         closes: r.closes || [],
@@ -212,6 +214,8 @@ export function usePipeline() {
         pe: r.pe ?? null, pb: r.pb ?? null,
         ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
         returnOnAssets: r.returnOnAssets ?? null,
+        longName: nextLongName,
+        displayName: nextLongName ? toDisplayName(nextLongName, updated[idx].displayName) : updated[idx].displayName,
         priceFetched: true, priceError: r.error, fundamentalsFetched: true,
       }
     })
@@ -389,25 +393,29 @@ export function usePipeline() {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'dedup', message: 'Deduplicating...', current: 0, total: 0 } })
       const etfs = enriched.filter((i) => i.type === 'ETF' || i.type === 'ETC')
       const stocks = enriched.filter((i) => i.type === 'Stock')
-      const groups = buildDedupGroups(etfs)
-      const dedupedEtfs = applyDedupToInstruments(etfs, groups)
-      const dedupedWithAUM = applyStatsResults(dedupedEtfs, statsResults)
-      const aumFloor = state.settings.aumFloor
-      const updatedEtfs = dedupedWithAUM.map((inst) => {
-        if (!inst.isDedupWinner) return inst
-        if (inst.aum != null && inst.aum < aumFloor) return { ...inst, isDedupWinner: false }
-        return inst
-      })
-      const winnersByGroup = new Map<string, boolean>()
-      updatedEtfs.forEach((inst) => { if (inst.isDedupWinner && inst.dedupGroup) winnersByGroup.set(inst.dedupGroup, true) })
-      const finalEtfs = updatedEtfs.map((inst) => {
-        if (!inst.dedupGroup || inst.isDedupWinner) return inst
-        if (!winnersByGroup.has(inst.dedupGroup)) {
-          const aum = inst.aum
-          if (aum == null || aum >= aumFloor) { winnersByGroup.set(inst.dedupGroup, true); return { ...inst, isDedupWinner: true } }
-        }
-        return inst
-      })
+      const applyDedupAndAum = (items: Instrument[]) => {
+        const groups = buildDedupGroups(items)
+        const deduped = applyDedupToInstruments(items, groups)
+        const withAum = applyStatsResults(deduped, statsResults)
+        const aumFloor = state.settings.aumFloor
+        const updated = withAum.map((inst) => {
+          if (!inst.isDedupWinner) return inst
+          if (inst.aum != null && inst.aum < aumFloor) return { ...inst, isDedupWinner: false }
+          return inst
+        })
+        const winnersByGroup = new Map<string, boolean>()
+        updated.forEach((inst) => { if (inst.isDedupWinner && inst.dedupGroup) winnersByGroup.set(inst.dedupGroup, true) })
+        return updated.map((inst) => {
+          if (!inst.dedupGroup || inst.isDedupWinner) return inst
+          if (!winnersByGroup.has(inst.dedupGroup)) {
+            const aum = inst.aum
+            if (aum == null || aum >= aumFloor) { winnersByGroup.set(inst.dedupGroup, true); return { ...inst, isDedupWinner: true } }
+          }
+          return inst
+        })
+      }
+
+      const finalEtfs = applyDedupAndAum(etfs)
       const combined = [...finalEtfs, ...stocks]
       const toFetch = combined.filter((i) => i.isDedupWinner !== false || i.type === 'Stock')
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: toFetch.length } })
@@ -415,9 +423,25 @@ export function usePipeline() {
       const refR3m = await ensureReferenceR3m()
       const finalMap = new Map(withPrices.map((i) => [i.isin, i]))
       const final = combined.map((i) => finalMap.get(i.isin) || i)
-      const winners = final.filter((i) => i.isDedupWinner)
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(final, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
-      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: final.length, total: final.length } })
+
+      // Re-run dedup with Yahoo longName if it unlocked a classification
+      const etfsAfter = final.filter((i) => i.type === 'ETF' || i.type === 'ETC')
+      const stocksAfter = final.filter((i) => i.type === 'Stock')
+      let finalEtfsAfter = applyDedupAndAum(etfsAfter)
+      let finalCombined = [...finalEtfsAfter, ...stocksAfter]
+
+      // Ensure new winners have prices
+      const winnersAfter = finalEtfsAfter.filter((i) => i.isDedupWinner && !i.priceFetched && i.yahooTicker)
+      if (winnersAfter.length > 0) {
+        const withMorePrices = await fetchPrices(winnersAfter)
+        const moreMap = new Map(withMorePrices.map((i) => [i.isin, i]))
+        finalCombined = finalCombined.map((i) => moreMap.get(i.isin) || i)
+        finalEtfsAfter = finalCombined.filter((i) => i.type === 'ETF' || i.type === 'ETC')
+      }
+
+      const winners = finalEtfsAfter.filter((i) => i.isDedupWinner)
+      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(finalCombined, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: finalCombined.length, total: finalCombined.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
