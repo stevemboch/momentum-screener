@@ -122,7 +122,7 @@ export function usePipeline() {
       if (inst.wkn?.length === 6) return { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
       return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker }
     })
-    const cacheKey = 'cache:openfigi'
+    const cacheKey = 'cache:openfigi:v2'
     const cache = cacheGet<Record<string, OpenFIGIResult>>(cacheKey) || {}
     const keyFor = (j: { idType: string; idValue: string }) => `${j.idType}:${j.idValue}`
 
@@ -251,7 +251,15 @@ export function usePipeline() {
 
     const stubs: Instrument[] = newParsed.map((p) => {
       const yahooTicker = p.type === 'Ticker' ? (p.normalized.includes('.') ? p.normalized : `${p.normalized}.DE`) : ''
-      return { isin: p.type === 'ISIN' ? p.normalized : p.raw, wkn: p.type === 'WKN' ? p.normalized : undefined, mnemonic: p.type === 'Ticker' ? p.normalized : undefined, yahooTicker, type: 'Unknown' as const, source: 'manual' as const, displayName: p.raw }
+      return {
+        isin: p.type === 'ISIN' ? p.normalized : '',
+        wkn: p.type === 'WKN' ? p.normalized : undefined,
+        mnemonic: p.type === 'Ticker' ? p.normalized : undefined,
+        yahooTicker,
+        type: 'Unknown' as const,
+        source: 'manual' as const,
+        displayName: p.raw,
+      }
     })
     try {
       if (existingHits.length > 0) {
@@ -291,6 +299,10 @@ export function usePipeline() {
         if (existing) {
           updates.set(existing.isin, { ...existing, ...inst })
         } else {
+          // Skip adding if ISIN is unresolved for WKN
+          if (inst.wkn && (!inst.isin || inst.isin === inst.wkn || inst.isin.length !== 12)) {
+            continue
+          }
           toAdd.push(inst)
         }
       }
