@@ -84,6 +84,23 @@ const DEFAULT_STATE: AppState = {
   xetraActive: false,
 }
 
+const SCORE_AFFECTING_KEYS = new Set<keyof Instrument>([
+  'closes',
+  'highs',
+  'lows',
+  'volumes',
+  'timestamps',
+  'pe',
+  'pb',
+  'ebitda',
+  'enterpriseValue',
+  'returnOnAssets',
+])
+
+function updatesAffectScores(updates: Partial<Instrument>): boolean {
+  return Object.keys(updates).some((k) => SCORE_AFFECTING_KEYS.has(k as keyof Instrument))
+}
+
 type Action =
   | { type: 'ADD_INSTRUMENTS'; instruments: Instrument[] }
   | { type: 'UPDATE_INSTRUMENT'; isin: string; updates: Partial<Instrument> }
@@ -119,13 +136,20 @@ function reducer(state: AppState, action: Action): AppState {
       const instruments = state.instruments.map((inst) =>
         inst.isin === action.isin ? { ...inst, ...action.updates } : inst
       )
+      if (!updatesAffectScores(action.updates)) {
+        return { ...state, instruments }
+      }
       return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     }
     case 'UPDATE_INSTRUMENTS': {
+      const needsRecalc = Array.from(action.updates.values()).some((u) => updatesAffectScores(u))
       const instruments = state.instruments.map((inst) => {
         const updates = action.updates.get(inst.isin)
         return updates ? { ...inst, ...updates } : inst
       })
+      if (!needsRecalc) {
+        return { ...state, instruments }
+      }
       return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     }
     case 'SET_FETCH_STATUS':

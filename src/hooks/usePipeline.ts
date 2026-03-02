@@ -5,31 +5,38 @@ import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, re
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll } from '../utils/calculations'
 
-const YAHOO_CONCURRENCY = 5
+const YAHOO_CONCURRENCY_MIN = 3
+const YAHOO_CONCURRENCY_MAX = 8
+let yahooConcurrency = 5
 const OPENFIGI_BATCH = 150
 const OPENFIGI_DELAY = 100
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const OPENFIGI_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
+const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 
-function cacheGet<T>(key: string): T | null {
+function cacheGet<T>(key: string, ttlMs = CACHE_TTL_MS): T | null {
   if (!hasStorage()) return null
   try {
     const raw = localStorage.getItem(key)
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
-    if (Date.now() - (parsed.ts || 0) > CACHE_TTL_MS) return null
+    const ttl = typeof parsed.ttl === 'number' ? parsed.ttl : ttlMs
+    if (Date.now() - (parsed.ts || 0) > ttl) return null
     return parsed.data as T
   } catch {
     return null
   }
 }
 
-function cacheSet<T>(key: string, data: T) {
+function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS) {
   if (!hasStorage()) return
   try {
-    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), ttl: ttlMs, data }))
   } catch {
     // ignore quota errors
   }
@@ -64,12 +71,12 @@ async function apiStats(isins: string[]): Promise<StatsResult[]> {
 }
 
 async function apiXetra() {
-  const cached = cacheGet<string>('cache:xetra')
+  const cached = cacheGet<string>('cache:xetra', XETRA_TTL_MS)
   if (cached) return cached
   const res = await fetch('/api/xetra')
   if (!res.ok) throw new Error(`Xetra API error: ${res.status}`)
   const text = await res.text()
-  cacheSet('cache:xetra', text)
+  cacheSet('cache:xetra', text, XETRA_TTL_MS)
   return text
 }
 
@@ -123,7 +130,7 @@ export function usePipeline() {
       return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker }
     })
     const cacheKey = 'cache:openfigi:v2'
-    const cache = cacheGet<Record<string, OpenFIGIResult>>(cacheKey) || {}
+    const cache = cacheGet<Record<string, OpenFIGIResult>>(cacheKey, OPENFIGI_TTL_MS) || {}
     const keyFor = (j: { idType: string; idValue: string }) => `${j.idType}:${j.idValue}`
 
     const missing: { job: { idType: string; idValue: string }; idx: number }[] = []
@@ -148,7 +155,7 @@ export function usePipeline() {
         results[idx] = r
         cache[keyFor(job)] = r
       })
-      cacheSet(cacheKey, cache)
+      cacheSet(cacheKey, cache, OPENFIGI_TTL_MS)
     } else {
       setStatus(`Enriching names: ${jobs.length} / ${jobs.length}`, jobs.length, jobs.length)
     }
@@ -195,8 +202,34 @@ export function usePipeline() {
   const fetchPrices = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const withTickers = instruments.filter((i) => i.yahooTicker)
     if (withTickers.length === 0) return instruments
-    const tasks = withTickers.map((inst) => () => apiYahooSingle(inst.yahooTicker))
-    const results = await parallelLimit(tasks, YAHOO_CONCURRENCY, (done, total) => setStatus(`Fetching prices: ${done} / ${total}`, done, total))
+    const cachedResults: any[] = new Array(withTickers.length)
+    const tasks: { idx: number; ticker: string }[] = []
+    withTickers.forEach((inst, idx) => {
+      const key = `cache:yahoo:${inst.yahooTicker}`
+      const cached = cacheGet<any>(key, YAHOO_TTL_MS)
+      if (cached) cachedResults[idx] = cached
+      else tasks.push({ idx, ticker: inst.yahooTicker })
+    })
+    const cachedCount = withTickers.length - tasks.length
+    const limit = Math.max(YAHOO_CONCURRENCY_MIN, Math.min(YAHOO_CONCURRENCY_MAX, yahooConcurrency))
+    const taskFns = tasks.map((t) => () => apiYahooSingle(t.ticker).catch((err) => ({ error: err.message, ticker: t.ticker })))
+    const fetched = tasks.length
+      ? await parallelLimit(taskFns, limit, (done) =>
+        setStatus(`Fetching prices: ${cachedCount + done} / ${withTickers.length}`, cachedCount + done, withTickers.length)
+      )
+      : []
+    const results = [...cachedResults]
+    fetched.forEach((r: any, i: number) => {
+      const t = tasks[i]
+      results[t.idx] = r
+      if (r) cacheSet(`cache:yahoo:${t.ticker}`, r, YAHOO_TTL_MS)
+    })
+
+    const errorCount = fetched.filter((r: any) => !r || r.error).length
+    const errorRate = fetched.length > 0 ? errorCount / fetched.length : 0
+    if (errorRate >= 0.2 && yahooConcurrency > YAHOO_CONCURRENCY_MIN) yahooConcurrency -= 1
+    else if (errorRate === 0 && fetched.length > 0 && yahooConcurrency < YAHOO_CONCURRENCY_MAX) yahooConcurrency += 1
+
     const updated = [...instruments]
     results.forEach((r: any, i) => {
       if (!r) return
@@ -508,8 +541,15 @@ export function usePipeline() {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker) return
     try {
-      const r = await apiYahooSingle(inst.yahooTicker)
+      const cacheKey = `cache:yahoo:${inst.yahooTicker}`
+      let r = cacheGet<any>(cacheKey, YAHOO_TTL_MS)
+      if (!r) {
+        r = await apiYahooSingle(inst.yahooTicker)
+        if (r) cacheSet(cacheKey, r, YAHOO_TTL_MS)
+      }
       if (!r) return
+      const shouldReplaceName = r.longName && isUnclassifiedInstrument(inst)
+      const nextLongName = shouldReplaceName ? r.longName : inst.longName
       dispatch({
         type: 'UPDATE_INSTRUMENT',
         isin,
@@ -522,6 +562,9 @@ export function usePipeline() {
           pe: r.pe ?? null, pb: r.pb ?? null,
           ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
           returnOnAssets: r.returnOnAssets ?? null,
+          yahooLongName: r.longName ?? inst.yahooLongName,
+          longName: nextLongName,
+          displayName: nextLongName ? toDisplayName(nextLongName, inst.displayName) : inst.displayName,
           priceFetched: true, priceError: r.error, fundamentalsFetched: true,
         },
       })
@@ -534,14 +577,19 @@ export function usePipeline() {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
     try {
-      const r = await fetch('/api/yahoo-analyst', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: inst.yahooTicker, isin: inst.isin }),
-      }).then((res) => {
-        if (!res.ok) throw new Error(`Yahoo Analyst API error: ${res.status}`)
-        return res.json()
-      })
+      const cacheKey = `cache:analyst:${inst.yahooTicker}`
+      let r = cacheGet<any>(cacheKey, ANALYST_TTL_MS)
+      if (!r) {
+        r = await fetch('/api/yahoo-analyst', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker: inst.yahooTicker, isin: inst.isin }),
+        }).then((res) => {
+          if (!res.ok) throw new Error(`Yahoo Analyst API error: ${res.status}`)
+          return res.json()
+        })
+        if (r) cacheSet(cacheKey, r, ANALYST_TTL_MS)
+      }
       if (!r) return
       const updates: any = {
         analystRating: r.recommendationMean ?? null,

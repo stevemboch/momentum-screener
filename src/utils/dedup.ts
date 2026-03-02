@@ -205,9 +205,11 @@ const ABBREV: [string, string][] = [
   ['FINANCE',           'FINANCIALS'],
   ['FINL',              'FINANCIALS'],
   ['FIN',               'FINANCIALS'],
+  ['FINANCL',           'FINANCIALS'],
   ['INDSTRLS',          'INDUSTRIALS'],
   ['INDUSTRI',          'INDUSTRIALS'],
   ['INDUSTRL',          'INDUSTRIALS'],
+  ['INDUSTRIAL',        'INDUSTRIALS'],
   ['INSURANCE',         'FINANCIALS'],
   ['TECHNLG',           'TECHNOLOGY'],
   ['TECHNOL',           'TECHNOLOGY'],
@@ -239,6 +241,18 @@ const ABBREV: [string, string][] = [
   ['H2',                'HYDROGEN'],
   ['REAL EST',          'REALESTATE'],
   ['REIT',              'REALESTATE'],
+  ['OIL & GAS',         'OILGAS'],
+  ['OIL&GAS',           'OILGAS'],
+  ['OIL GAS',           'OILGAS'],
+  ['CNSTRN&MTRLS',      'CONSTRUCTIONMATERIALS'],
+  ['GDS&SERV',          'GOODSSERVICES'],
+  ['SELdiv',            'DIVIDEND'],
+  ['SEL DIV',           'DIVIDEND'],
+  ['CONS STP',          'CONSUMERSTAPLES'],
+  ['FOOD&BEVERAGE',     'FOODBEVERAGE'],
+  ['AUTO&PARTS',        'AUTOPARTS'],
+  ['CHEM',              'CHEMICALS'],
+  ['QLT FCT',           'QUALITY'],
   ['CONS DISC',         'CONSUMERDISCRETIONARY'],
   ['CONSDISC',          'CONSUMERDISCRETIONARY'],
   ['CONS DISCR',        'CONSUMERDISCRETIONARY'],
@@ -401,6 +415,12 @@ const SECTOR_MAP: [string[], string][] = [
   [['FINANCIALS','FINANCIAL','BANKS','BANKING','FINANCE','INSURANCE'], 'FINANCIALS'],
   [['BASICRESOURCES'],                                    'BASIC-RESOURCES'],
   [['MATERIALS','MATERIAL'],                              'MATERIALS'],
+  [['OILGAS'],                                            'OIL-&-GAS'],
+  [['CONSTRUCTIONMATERIALS'],                             'CONSTRUCTION-&-MATERIALS'],
+  [['GOODSSERVICES'],                                     'GOODS-&-SERVICES'],
+  [['FOODBEVERAGE'],                                      'FOOD-&-BEVERAGE'],
+  [['AUTOPARTS'],                                         'AUTO-&-PARTS'],
+  [['CHEMICALS','CHEM'],                                  'CHEMICALS'],
   [['CLEANENERGY'],                                       'CLEAN-ENERGY'],
   [['RENEWABLEENERGY'],                                   'RENEWABLE-ENERGY'],
   [['SOLARENERGY'],                                       'SOLAR-ENERGY'],
@@ -701,6 +721,10 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
 
   for (const inst of instruments) {
     if (inst.type === 'Stock') {
+      groups.set(inst.isin, [inst])
+      continue
+    }
+    if (inst.xetraGroup && inst.xetraGroup === 'EXCHANGE TRADED FUNDS - RENTEN') {
       groups.set(inst.isin, [inst])
       continue
     }
