@@ -216,6 +216,8 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
   rank(indexed, 'momentumScore', true)
   rank(indexed, 'sharpeScore', true)
   rank(indexed, 'combinedScore', true)
+  rank(indexed, 'earningsYield', true)
+  rank(indexed, 'returnOnAssets', true)
   rank(indexed, 'valueScore', false) // lower = better
 
   return result
@@ -327,6 +329,7 @@ export function recalculateAll(
     updated.breakoutAgeDays = breakout.breakoutAgeDays ?? undefined
     updated.breakoutScore = breakout.breakoutScore
     updated.breakoutConfirmed = breakout.breakoutConfirmed
+    updated.breakoutFlags = breakout.flags
     return updated
   })
 

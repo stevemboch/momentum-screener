@@ -51,6 +51,13 @@ export interface Instrument {
   breakoutAgeDays?: number
   breakoutScore?: number | null
   breakoutConfirmed?: boolean
+  breakoutFlags?: {
+    ma200Rising?: boolean
+    goldenCross?: boolean
+    relStrength?: boolean
+    volumeConfirm?: boolean
+    retest?: boolean
+  }
   priceFetched?: boolean
   priceError?: string
 
@@ -87,6 +94,8 @@ export interface Instrument {
   enterpriseValue?: number | null
   returnOnAssets?: number | null
   fundamentalsFetched?: boolean
+  earningsYieldRank?: number
+  returnOnAssetsRank?: number
 
   // Value score
   valueScore?: number | null
@@ -115,10 +124,9 @@ export type SortColumn =
   | 'r1m' | 'r3m' | 'r6m'
   | 'vola'
   | 'aum' | 'ter'
-  | 'pe' | 'pb' | 'earningsYield'
+  | 'pe' | 'pb' | 'earningsYield' | 'returnOnAssets'
   | 'combinedScore'
   | 'breakoutScore'
-  | 'valueScore'
   | 'sellingThreshold'
 
 export type SortDirection = 'asc' | 'desc'

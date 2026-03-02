@@ -4,6 +4,13 @@ export interface BreakoutResult {
   breakoutAgeDays: number | null
   breakoutScore: number | null
   breakoutConfirmed: boolean
+  flags: {
+    ma200Rising: boolean
+    goldenCross: boolean
+    relStrength: boolean
+    volumeConfirm: boolean
+    retest: boolean
+  }
 }
 
 function buildMovingAverage(closes: number[], period: number): (number | null)[] {
@@ -33,6 +40,7 @@ export function calculateBreakout(
       breakoutAgeDays: null,
       breakoutScore: null,
       breakoutConfirmed: false,
+      flags: { ma200Rising: false, goldenCross: false, relStrength: false, volumeConfirm: false, retest: false },
     }
   }
 
@@ -59,6 +67,7 @@ export function calculateBreakout(
       breakoutAgeDays: null,
       breakoutScore: null,
       breakoutConfirmed: false,
+      flags: { ma200Rising: false, goldenCross: false, relStrength: false, volumeConfirm: false, retest: false },
     }
   }
 
@@ -75,6 +84,7 @@ export function calculateBreakout(
       breakoutAgeDays: null,
       breakoutScore: null,
       breakoutConfirmed: false,
+      flags: { ma200Rising: false, goldenCross: false, relStrength: false, volumeConfirm: false, retest: false },
     }
   }
 
@@ -130,5 +140,12 @@ export function calculateBreakout(
     breakoutAgeDays: ageDays,
     breakoutScore: score,
     breakoutConfirmed: cond5,
+    flags: {
+      ma200Rising: cond1,
+      goldenCross: cond2,
+      relStrength: cond3,
+      volumeConfirm: cond4,
+      retest: cond5,
+    },
   }
 }

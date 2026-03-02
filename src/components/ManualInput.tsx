@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { Upload, Play, X } from 'lucide-react'
 import { usePipeline } from '../hooks/usePipeline'
 import { useAppState } from '../store'
+import { parseManualInput, parseCSVFile, type ParsedIdentifier } from '../utils/parsers'
 
 const PLACEHOLDER = `Paste tickers, ISINs or WKNs here — one per line or comma-separated.
 
@@ -15,6 +16,7 @@ AAPL, MSFT, GOOGL`
 export function ManualInput() {
   const [text, setText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
+  const [lastParsed, setLastParsed] = useState<ParsedIdentifier[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const { processManualInput } = usePipeline()
   const { state } = useAppState()
@@ -22,12 +24,14 @@ export function ManualInput() {
 
   const handleLoad = () => {
     if (!text.trim() || isLoading) return
+    setLastParsed(parseManualInput(text))
     processManualInput(text, false)
   }
 
   const handleFile = async (file: File) => {
     const content = await file.text()
     const isCSV = file.name.endsWith('.csv') || file.type.includes('csv')
+    setLastParsed(isCSV ? parseCSVFile(content) : parseManualInput(content))
     processManualInput(content, isCSV)
     setText(content.substring(0, 200) + (content.length > 200 ? '...' : ''))
   }
@@ -37,6 +41,22 @@ export function ManualInput() {
     setIsDragging(false)
     const file = e.dataTransfer.files[0]
     if (file) handleFile(file)
+  }
+
+  const findInstrument = (id: ParsedIdentifier) => {
+    const norm = id.normalized.toUpperCase()
+    return state.instruments.find((inst) => {
+      if (id.type === 'ISIN') return inst.isin === norm
+      if (id.type === 'WKN') return inst.wkn?.toUpperCase() === norm
+      const mnemonic = inst.mnemonic?.toUpperCase()
+      const yahooBase = inst.yahooTicker?.split('.')[0]?.toUpperCase()
+      return mnemonic === norm || yahooBase === norm
+    })
+  }
+
+  const jumpTo = (isin: string) => {
+    const el = document.getElementById(`row-${isin}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   return (
@@ -93,6 +113,29 @@ export function ManualInput() {
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
         />
       </div>
+
+      {lastParsed.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-[11px] font-mono text-gray-300">
+          {lastParsed.map((p) => {
+            const inst = findInstrument(p)
+            return (
+              <div key={`${p.type}:${p.normalized}`} className="flex items-center gap-1.5 px-2 py-1 bg-surface border border-border rounded">
+                <span className="text-muted">{p.raw}</span>
+                {inst ? (
+                  <button
+                    onClick={() => jumpTo(inst.isin)}
+                    className="text-accent hover:text-accent/80"
+                  >
+                    Jump
+                  </button>
+                ) : (
+                  <span className="text-muted">…</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

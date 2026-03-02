@@ -24,14 +24,13 @@ const COLUMNS: Col[] = [
   { key: 'ter',           label: 'TER',      title: 'Total expense ratio' },
   { key: 'pe',            label: 'P/E',      title: 'Price / Earnings' },
   { key: 'pb',            label: 'P/B',      title: 'Price / Book' },
-  { key: 'valueScore',    label: 'Value',    title: 'ETFs: P/E+P/B rank. Stocks: Magic Formula. Lower = better.' },
-  { key: 'breakoutDate',  label: 'Ausbruchstag',   title: 'Breakout day (MA200 cross)' },
-  { key: 'breakoutAgeDays', label: 'Ausbruchsalter', title: 'Days since breakout' },
+  { key: 'earningsYield', label: 'EY',       title: 'Earnings Yield (rank)' },
+  { key: 'returnOnAssets', label: 'ROC',     title: 'Return on Assets (rank)' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
-  { key: 'breakoutConfirmed', label: 'Bestätigt',  title: 'Retest successful' },
+  { key: 'breakoutAgeDays', label: 'Ausbruchsalter', title: 'Days since breakout' },
 ]
 
-const NON_SORTABLE = new Set(['displayName', 'type', 'ma', 'breakoutDate', 'breakoutAgeDays', 'breakoutConfirmed'])
+const NON_SORTABLE = new Set(['displayName', 'type', 'ma', 'breakoutAgeDays'])
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -88,6 +87,18 @@ function fmtPrice(v: number | null | undefined): string {
   return v.toFixed(2)
 }
 
+function MetricCell({ value, rank, fmt }: { value: number | null | undefined; rank?: number; fmt: (v: number) => string }) {
+  if (value == null) return <span className="text-muted">—</span>
+  return (
+    <span className="text-gray-300">
+      {fmt(value)}
+      {rank !== undefined && (
+        <span className="text-gray-400 text-[10px] ml-1">#{rank}</span>
+      )}
+    </span>
+  )
+}
+
 function fmtDate(ts: number | null | undefined): string {
   if (!ts) return '—'
   try {
@@ -102,13 +113,32 @@ function fmtAge(days: number | null | undefined): string {
   return `${days} Tage`
 }
 
-function BreakoutBadge({ score }: { score: number | null | undefined }) {
+function BreakoutBadge({
+  score,
+  flags,
+}: {
+  score: number | null | undefined
+  flags?: {
+    ma200Rising?: boolean
+    goldenCross?: boolean
+    relStrength?: boolean
+    volumeConfirm?: boolean
+    retest?: boolean
+  }
+}) {
   if (!score) return <span className="text-muted">—</span>
+  const tooltip = flags ? [
+    `${flags.ma200Rising ? '✅' : '❌'} MA200 steigend`,
+    `${flags.goldenCross ? '✅' : '❌'} Golden Cross`,
+    `${flags.relStrength ? '✅' : '❌'} Rel. Stärke vs MSCI World`,
+    `${flags.volumeConfirm ? '✅' : '❌'} Volumen bestätigt`,
+    `${flags.retest ? '✅' : '❌'} Retest erfolgreich`,
+  ].join(' · ') : undefined
   const base = 'text-[10px] px-1.5 py-0.5 rounded font-semibold'
-  if (score <= 2) return <span className={`${base} text-gray-300 bg-surface2`}>{score}</span>
-  if (score === 3) return <span className={`${base} text-amber-300 bg-amber-400/10`}>{score}</span>
-  if (score === 4) return <span className={`${base} text-green-400 bg-green-400/10`}>{score}</span>
-  return <span className={`${base} text-green-200 bg-green-500/20`}>5 ✅</span>
+  if (score <= 2) return <span className={`${base} text-gray-300 bg-surface2`} title={tooltip}>{score}</span>
+  if (score === 3) return <span className={`${base} text-amber-300 bg-amber-400/10`} title={tooltip}>{score}</span>
+  if (score === 4) return <span className={`${base} text-green-400 bg-green-400/10`} title={tooltip}>{score}</span>
+  return <span className={`${base} text-green-200 bg-green-500/20`} title={tooltip}>5 ✅</span>
 }
 
 // ─── MARow for expanded detail ────────────────────────────────────────────────
@@ -186,8 +216,10 @@ function CandidateRow({ candidate, onLoad }: { candidate: any; onLoad: (isin: st
       {/* P/E, P/B, Value */}
       <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pe != null ? fmtPE(candidate.pe) : '—'}</td>
       <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pb != null ? fmtRatio(candidate.pb) : '—'}</td>
-      <td className="px-3 py-1.5 text-right">
-        {/* Load prices button if not yet loaded */}
+      <td className="px-3 py-1.5 text-right text-gray-300">
+        <MetricCell value={candidate.earningsYield} rank={candidate.earningsYieldRank} fmt={(v) => fmtPct(v)} />
+      </td>
+      <td className="px-3 py-1.5 text-right text-gray-300">
         {!hasPrices ? (
           <button
             onClick={handleLoad}
@@ -197,12 +229,10 @@ function CandidateRow({ candidate, onLoad }: { candidate: any; onLoad: (isin: st
             {loading ? '…' : '⬇ Load'}
           </button>
         ) : (
-          <span className="text-muted">—</span>
+          <MetricCell value={candidate.returnOnAssets} rank={candidate.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
         )}
       </td>
       {/* Breakout columns */}
-      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
-      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
       <td className="px-3 py-1.5 text-right text-gray-400">—</td>
       <td className="px-3 py-1.5 text-right text-gray-400">—</td>
     </tr>
@@ -430,6 +460,8 @@ export function RankingTable() {
               <>
                 <tr
                   key={inst.isin}
+                  id={`row-${inst.isin}`}
+                  data-isin={inst.isin}
                   className={`${rowBg} hover:bg-surface2 border-b border-border/30 cursor-pointer`}
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                 >
@@ -509,34 +541,24 @@ export function RankingTable() {
                     {inst.pb != null ? fmtRatio(inst.pb) : (inst.fundamentalsFetched ? '—' : '')}
                   </td>
 
-                  {/* Value Score */}
+                  {/* Earnings Yield */}
                   <td className="px-3 py-2 text-right">
-                    {inst.valueScore != null ? (
-                      <span className="text-amber-400" title={`Model: ${inst.valueScoreModel}`}>
-                        {inst.valueScore.toFixed(0)}
-                        <span className="text-muted text-[10px] ml-1">#{inst.valueRank}</span>
-                      </span>
-                    ) : inst.fundamentalsFetched ? '—' : ''}
+                    <MetricCell value={inst.earningsYield} rank={inst.earningsYieldRank} fmt={(v) => fmtPct(v)} />
                   </td>
 
-                  {/* Breakout Date */}
-                  <td className="px-3 py-2 text-right text-gray-300">
-                    {fmtDate(inst.breakoutDate)}
+                  {/* ROC (Return on Assets) */}
+                  <td className="px-3 py-2 text-right">
+                    <MetricCell value={inst.returnOnAssets} rank={inst.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
+                  </td>
+
+                  {/* Breakout Score */}
+                  <td className="px-3 py-2 text-right">
+                    <BreakoutBadge score={inst.breakoutScore} flags={inst.breakoutFlags} />
                   </td>
 
                   {/* Breakout Age */}
                   <td className="px-3 py-2 text-right text-gray-300">
                     {fmtAge(inst.breakoutAgeDays)}
-                  </td>
-
-                  {/* Breakout Score */}
-                  <td className="px-3 py-2 text-right">
-                    <BreakoutBadge score={inst.breakoutScore} />
-                  </td>
-
-                  {/* Confirmed */}
-                  <td className="px-3 py-2 text-right">
-                    {inst.breakoutConfirmed ? <span className="text-green-400">✅</span> : ''}
                   </td>
                 </tr>
 
