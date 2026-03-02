@@ -705,6 +705,10 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
       continue
     }
     const v = extractExposureVector(inst)
+    if (v.assetClass === 'BOND') {
+      groups.set(inst.isin, [inst])
+      continue
+    }
     const isUnclassified = isUnclassifiedExposure(v)
     const key = isUnclassified ? inst.isin : vectorToKey(v)
     if (!groups.has(key)) groups.set(key, [])
