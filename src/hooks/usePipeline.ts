@@ -304,11 +304,23 @@ export function usePipeline() {
           setStatus('Resolving WKNs via Xetra...', 0, 0)
           const csvText = await apiXetra()
           const rows = parseXetraCSV(csvText)
-          const byWkn = new Map(rows.filter((r) => r.wkn).map((r) => [r.wkn.toUpperCase(), r]))
+          const normalizeWkn = (v?: string) => (v || '').replace(/^0+/, '').toUpperCase()
+          const byWkn = new Map<string, any>()
+          rows.filter((r) => r.wkn).forEach((r) => {
+            const raw = r.wkn.toUpperCase()
+            byWkn.set(raw, r)
+            const norm = normalizeWkn(raw)
+            if (norm) byWkn.set(norm, r)
+          })
+          const byMnemonic = new Map(rows.filter((r) => r.mnemonic).map((r) => [r.mnemonic.toUpperCase(), r]))
           enriched = enriched.map((inst) => {
             if (!inst.wkn) return inst
             if (inst.isin && inst.isin.length === 12 && !inst.isin.startsWith('WKN:')) return inst
-            const row = byWkn.get(inst.wkn.toUpperCase())
+            let row = byWkn.get(inst.wkn.toUpperCase()) || byWkn.get(normalizeWkn(inst.wkn))
+            if (!row) {
+              const base = (inst.mnemonic || inst.yahooTicker?.split('.')[0] || '').toUpperCase()
+              if (base) row = byMnemonic.get(base)
+            }
             if (!row) return inst
             const yahooTicker = row.mnemonic ? `${row.mnemonic}.DE` : inst.yahooTicker
             return {
