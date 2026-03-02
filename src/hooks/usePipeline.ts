@@ -280,7 +280,7 @@ export function usePipeline() {
       setStatus('Looking up names...', 0, stubs.length)
       let enriched = await enrichWithOpenFIGI(stubs)
       const baseTicker = (t?: string) => t?.split('.')?.[0]?.toUpperCase()
-      const existingByBase = new Map(
+      const existingByBaseTicker = new Map(
         state.instruments
           .map((i) => [baseTicker(i.yahooTicker), i])
           .filter(([k]) => k) as [string, Instrument][]
@@ -288,7 +288,7 @@ export function usePipeline() {
       // If OpenFIGI provided ticker but no ISIN, try to map to existing by base ticker
       enriched = enriched.map((inst) => {
         if (!inst.isin && inst.yahooTicker) {
-          const hit = existingByBase.get(baseTicker(inst.yahooTicker) || '')
+          const hit = existingByBaseTicker.get(baseTicker(inst.yahooTicker) || '')
           if (hit) {
             return { ...inst, isin: hit.isin, wkn: inst.wkn || hit.wkn }
           }
