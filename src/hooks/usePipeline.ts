@@ -35,7 +35,7 @@ function cacheSet<T>(key: string, data: T) {
   }
 }
 
-interface OpenFIGIResult { name?: string; isin?: string; ticker?: string; securityType?: string; securityType2?: string }
+interface OpenFIGIResult { name?: string; securityDescription?: string; isin?: string; ticker?: string; securityType?: string; securityType2?: string }
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
@@ -156,7 +156,9 @@ export function usePipeline() {
     return instruments.map((inst, i) => {
       const figi = results[i]
       if (!figi) return inst
-      const longName: string | undefined = figi.name || undefined
+      const candidateNames = [figi.securityDescription, figi.name].filter((v): v is string => !!v && v.trim().length > 1)
+      const longName: string | undefined =
+        candidateNames.length === 0 ? undefined : candidateNames.sort((a, b) => b.length - a.length)[0]
       const type = inst.source === 'xetra' ? inst.type : resolveInstrumentType(figi.securityType ?? null, figi.securityType2 ?? null, inst.isin)
       const ticker = figi.ticker || undefined
       let yahooTicker = inst.yahooTicker

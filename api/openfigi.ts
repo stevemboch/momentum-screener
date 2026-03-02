@@ -10,11 +10,11 @@ interface FigiResult {
   figi?: string
   isin?: string
   name?: string
+  securityDescription?: string
   ticker?: string
   exchCode?: string
   securityType?: string
   securityType2?: string
-  securityDescription?: string
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -84,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         allResults.push({
           name: xetrMatch.name || null,
+          securityDescription: xetrMatch.securityDescription || null,
           isin: xetrMatch.isin || null,
           ticker: xetrMatch.ticker || null,
           securityType: xetrMatch.securityType || null,
