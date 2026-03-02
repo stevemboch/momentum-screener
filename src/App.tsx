@@ -39,25 +39,19 @@ export default function App() {
         >
           <div className="flex flex-col gap-4 p-4 overflow-y-auto flex-1 min-w-[256px]">
             {/* Manual input section */}
-            <section>
+            <section className="rounded border border-border bg-bg/40 p-3">
               <SectionHeader label="Manual Input" />
               <ManualInput />
             </section>
 
-            {/* Divider */}
-            <div className="border-t border-border" />
-
             {/* Portfolio section */}
-            <section>
+            <section className="rounded border border-border bg-bg/40 p-3">
               <SectionHeader label="Portfolio" />
               <PortfolioPanel />
             </section>
 
-            {/* Divider */}
-            <div className="border-t border-border" />
-
             {/* Xetra section */}
-            <section>
+            <section className="rounded border border-border bg-bg/40 p-3">
               <SectionHeader label="Xetra Universe" />
               <XetraPanel />
             </section>
@@ -68,7 +62,7 @@ export default function App() {
                 <div className="border-t border-border" />
                 <section>
                   <SectionHeader label={`Loaded (${state.instruments.length})`} />
-                  <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+                  <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto bg-bg/40 border border-border rounded p-2">
                     {state.instruments.slice(0, 50).map((inst) => (
                       <div
                         key={inst.isin}

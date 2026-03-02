@@ -224,7 +224,7 @@ function CandidateRow({ candidate, onLoad }: { candidate: any; onLoad: (isin: st
           <button
             onClick={handleLoad}
             disabled={loading}
-            className="text-[10px] px-2 py-0.5 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors disabled:opacity-50"
+            className="btn-sm btn-muted disabled:opacity-50"
           >
             {loading ? '…' : '⬇ Load'}
           </button>
@@ -286,7 +286,7 @@ function ExpandedDetail({
               <div className="mt-1 flex items-center gap-2">
                 <button
                   onClick={() => onLoadPrices(inst.isin)}
-                  className="text-[10px] px-2 py-0.5 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors"
+                  className="btn-sm btn-muted"
                 >
                   ⬇ Load prices
                 </button>
@@ -358,7 +358,7 @@ function ExpandedDetail({
                   {!inst.analystFetched ? (
                     <button
                       onClick={() => onLoadAnalyst(inst.isin)}
-                      className="text-[10px] px-2 py-0.5 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors"
+                      className="btn-sm btn-muted"
                     >
                       ⬇ Load
                     </button>

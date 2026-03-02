@@ -107,7 +107,7 @@ export function ManualInput() {
         <button
           onClick={handleLoad}
           disabled={!text.trim() || isLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 border border-accent/30 text-accent text-xs font-mono font-semibold rounded hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="flex items-center gap-1.5 btn btn-accent text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Play size={11} />
           Load
@@ -116,7 +116,7 @@ export function ManualInput() {
         <button
           onClick={() => fileRef.current?.click()}
           disabled={isLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border text-muted text-xs font-mono rounded hover:text-gray-300 hover:border-gray-500 disabled:opacity-40 transition-colors"
+          className="flex items-center gap-1.5 btn btn-muted bg-surface text-xs disabled:opacity-40"
         >
           <Upload size={11} />
           CSV

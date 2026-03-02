@@ -7,6 +7,7 @@ export function PortfolioPanel() {
 
   const portfolio = state.instruments.filter((i) => i.inPortfolio)
   const missingIsins = state.portfolioIsins.filter((isin) => !portfolio.find((i) => i.isin === isin))
+  const needsPriceLoad = portfolio.some((i) => !i.priceFetched || !i.closes || i.closes.length === 0)
 
   if (portfolio.length === 0 && missingIsins.length === 0) {
     return (
@@ -19,16 +20,18 @@ export function PortfolioPanel() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => fetchPortfolioPrices(portfolio.map((i) => i.isin))}
-          className="text-[10px] px-2 py-1 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors"
-        >
-          Load prices
-        </button>
+        {portfolio.length > 0 && needsPriceLoad && (
+          <button
+            onClick={() => fetchPortfolioPrices(portfolio.map((i) => i.isin))}
+            className="btn btn-muted"
+          >
+            Load prices
+          </button>
+        )}
         {missingIsins.length > 0 && (
           <button
             onClick={() => processManualInput(missingIsins.join('\n'), false)}
-            className="text-[10px] px-2 py-1 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors"
+            className="btn btn-muted"
           >
             Load instruments
           </button>

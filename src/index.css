@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .btn {
+    @apply text-[10px] px-2 py-1 rounded border border-border font-mono transition-colors;
+  }
+  .btn-sm {
+    @apply text-[10px] px-2 py-0.5 rounded border border-border font-mono transition-colors;
+  }
+  .btn-muted {
+    @apply text-muted hover:text-gray-300 hover:border-accent/40;
+  }
+  .btn-accent {
+    @apply text-accent border-accent/30 bg-accent/10 hover:bg-accent/20;
+  }
+  .btn-ghost {
+    @apply text-muted hover:text-gray-300;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
