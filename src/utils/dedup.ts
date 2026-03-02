@@ -108,6 +108,9 @@ const ABBREV: [string, string][] = [
   ['PACIFIC EX JAPAN','PACIFICEXJAPAN'],
   ['WORLD EX US',   'WORLDEXUS'],
   ['WORLD EX-US',   'WORLDEXUS'],
+  ['WRLD',          'WORLD'],
+  ['WRLDW',         'WORLD'],
+  ['WRD',           'WORLD'],
   ['EMERGING ASIA', 'EMERGINGASIA'],
   ['FRONTIER MARKETS','FRONTIERMARKETS'],
   ['NORTH AMERICA', 'NORTHAMERICA'],
@@ -117,6 +120,12 @@ const ABBREV: [string, string][] = [
   ['PAN-EUROPE',    'EUROPE'],
   ['PANEUROPE',     'EUROPE'],
   ['EMERGING MARKETS','EMERGINGMARKETS'],
+  ['EX CHINA',       'EXCHINA'],
+  ['EX-CHINA',       'EXCHINA'],
+  ['EXCHINA',        'EXCHINA'],
+  ['X CHINA',        'EXCHINA'],
+  ['X-CHINA',        'EXCHINA'],
+  ['XCHINA',         'EXCHINA'],
   ['MINIMUM VOLATILITY','MINVOL'],
   ['MINIMUM VARIANCE',  'MINVOL'],
   ['LOW VOLATILITY',    'MINVOL'],
@@ -131,6 +140,50 @@ const ABBREV: [string, string][] = [
   ['HIGH DIV',          'DIVIDEND'],
   ['HDY',               'DIVIDEND'],
   ['DIVIDENDEN',        'DIVIDEND'],
+  ['LOW VOLAT',         'MINVOL'],
+  ['LOW VOLAT.',        'MINVOL'],
+  ['LOWVOLAT',          'MINVOL'],
+  ['LVOL',              'MINVOL'],
+  ['UTILITIE',          'UTILITIES'],
+  ['UTIL',              'UTILITIES'],
+  ['UTILS',             'UTILITIES'],
+  ['MEDIA',             'COMMUNICATIONS'],
+  ['COMM SVCS',         'COMMUNICATIONS'],
+  ['COMM SVC',          'COMMUNICATIONS'],
+  ['RETAIL',            'CONSUMERDISCRETIONARY'],
+  ['TELECOMS',          'COMMUNICATIONS'],
+  ['TELECOM',           'COMMUNICATIONS'],
+  ['TELCO',             'COMMUNICATIONS'],
+  ['TELECOMM',          'COMMUNICATIONS'],
+  ['PROPERTY',          'REALESTATE'],
+  ['HEALTH',            'HEALTHCARE'],
+  ['HLTH',              'HEALTHCARE'],
+  ['FINANCE',           'FINANCIALS'],
+  ['FINL',              'FINANCIALS'],
+  ['FIN',               'FINANCIALS'],
+  ['INDSTRLS',          'INDUSTRIALS'],
+  ['INDUSTRI',          'INDUSTRIALS'],
+  ['INDUSTRL',          'INDUSTRIALS'],
+  ['INSURANCE',         'FINANCIALS'],
+  ['TECHNLG',           'TECHNOLOGY'],
+  ['TECHNOL',           'TECHNOLOGY'],
+  ['ENER',              'ENERGY'],
+  ['CLMAT',             'CLEANENERGY'],
+  ['CLIMATE',           'CLEANENERGY'],
+  ['MATERIAL',          'MATERIALS'],
+  ['MATL',              'MATERIALS'],
+  ['REAL EST',          'REALESTATE'],
+  ['REIT',              'REALESTATE'],
+  ['CONS DISC',         'CONSUMERDISCRETIONARY'],
+  ['CONSDISC',          'CONSUMERDISCRETIONARY'],
+  ['CONS DISCR',        'CONSUMERDISCRETIONARY'],
+  ['CONS STAP',         'CONSUMERSTAPLES'],
+  ['CONSSTAP',          'CONSUMERSTAPLES'],
+  ['STAP',              'CONSUMERSTAPLES'],
+  ['DISC',              'CONSUMERDISCRETIONARY'],
+  ['SMALL',             'SMALLCAP'],
+  ['MID',               'MIDCAP'],
+  ['LARGE',             'LARGECAP'],
   ['EQUAL WEIGHT',      'EQUALWEIGHT'],
   ['EQUAL WEIGHTED',    'EQUALWEIGHT'],
   ['EQWT',              'EQUALWEIGHT'],
@@ -252,6 +305,7 @@ const SUBREGION_MAP: [string[], string][] = [
   [['PACIFICEXJAPAN'],                  'PACIFIC-EX-JP'],
   [['WORLDEXUS'],                       'WORLD-EX-US'],
   [['EMERGINGASIA'],                    'EMERGING-ASIA'],
+  [['EXCHINA','CHINAEX','EXCN'],        'EX-CHINA'],
   [['NORDICS','NORDIC','SCANDINAVIA'],  'NORDICS'],
   [['GULF','GCC'],                      'GULF'],
 ]
@@ -275,18 +329,18 @@ const FACTOR_MAP: [string[], string][] = [
 
 const SECTOR_MAP: [string[], string][] = [
   [['SEMICONDUCTORS'],                                    'SEMICONDUCTORS'],
-  [['TECHNOLOGY','TECH'],                                 'TECH'],
+  [['TECHNOLOGY','TECH','TECHNLG'],                       'TECH'],
   [['HEALTHCARE'],                                        'HEALTHCARE'],
-  [['FINANCIALS','FINANCIAL','BANKS','BANKING'],          'FINANCIALS'],
+  [['FINANCIALS','FINANCIAL','BANKS','BANKING','FINANCE','INSURANCE'], 'FINANCIALS'],
   [['BASICRESOURCES'],                                    'BASIC-RESOURCES'],
-  [['MATERIALS'],                                         'MATERIALS'],
-  [['ENERGY'],                                            'ENERGY'],
-  [['UTILITIES'],                                         'UTILITIES'],
-  [['INDUSTRIALS'],                                       'INDUSTRIALS'],
-  [['REALESTATE'],                                        'REAL-ESTATE'],
+  [['MATERIALS','MATERIAL'],                              'MATERIALS'],
+  [['ENERGY','ENER'],                                     'ENERGY'],
+  [['UTILITIES','UTIL','UTILS','UTILITIE'],               'UTILITIES'],
+  [['INDUSTRIALS','INDSTRLS','INDUSTRI'],                 'INDUSTRIALS'],
+  [['REALESTATE','PROPERTY'],                             'REAL-ESTATE'],
   [['CONSUMERDISCRETIONARY','DISCRETIONARY'],             'CONSUMER-DISC'],
-  [['CONSUMERSTAPLES','STAPLES'],                         'CONSUMER-STAPLES'],
-  [['COMMUNICATIONS','TELECOM'],                          'COMMUNICATIONS'],
+  [['CONSUMERSTAPLES','STAPLES','RETAIL'],                'CONSUMER-STAPLES'],
+  [['COMMUNICATIONS','TELECOM','TELECOMS','MEDIA'],       'COMMUNICATIONS'],
   [['CYBERSECURITY'],                                     'CYBERSECURITY'],
   [['ROBOTICS','AUTOMATION'],                             'ROBOTICS'],
   [['WATER'],                                             'WATER'],
@@ -498,12 +552,16 @@ function extractExposureVector(instrument: Instrument): ExposureVector {
   }
 
   // Equity
+  const region = matchFirst(expanded, REGION_MAP)
+  const subregion = matchFirst(expanded, SUBREGION_MAP)
+  const sector = matchFirst(expanded, SECTOR_MAP)
+  const factors = matchAll(expanded, FACTOR_MAP).sort()
   return {
     assetClass:   'EQUITY',
-    region:       matchFirst(expanded, REGION_MAP),
-    subregion:    matchFirst(expanded, SUBREGION_MAP),
-    factors:      matchAll(expanded, FACTOR_MAP).sort(),
-    sector:       matchFirst(expanded, SECTOR_MAP),
+    region:       region || (sector || (factors && factors.length > 0) ? 'WORLD' : null),
+    subregion,
+    factors,
+    sector,
     bondType:     null,
     bondDuration: null,
     esg, hedged,
@@ -574,7 +632,11 @@ export function buildDedupGroups(instruments: Instrument[]): DedupGroup[] {
       groups.set(inst.isin, [inst])
       continue
     }
-    const key = extractExposureKey(inst)
+    const v = extractExposureVector(inst)
+    const isUnclassified =
+      v.assetClass === 'EQUITY' &&
+      !v.region && !v.subregion && (!v.factors || v.factors.length === 0) && !v.sector
+    const key = isUnclassified ? inst.isin : vectorToKey(v)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(inst)
   }

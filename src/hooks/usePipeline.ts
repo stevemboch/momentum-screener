@@ -278,13 +278,34 @@ export function usePipeline() {
       }
 
       setStatus('Looking up names...', 0, stubs.length)
-      const enriched = await enrichWithOpenFIGI(stubs)
+      let enriched = await enrichWithOpenFIGI(stubs)
+      const baseTicker = (t?: string) => t?.split('.')?.[0]?.toUpperCase()
+      const existingByBase = new Map(
+        state.instruments
+          .map((i) => [baseTicker(i.yahooTicker), i])
+          .filter(([k]) => k) as [string, Instrument][]
+      )
+      // If OpenFIGI provided ticker but no ISIN, try to map to existing by base ticker
+      enriched = enriched.map((inst) => {
+        if (!inst.isin && inst.yahooTicker) {
+          const hit = existingByBase.get(baseTicker(inst.yahooTicker) || '')
+          if (hit) {
+            return { ...inst, isin: hit.isin, wkn: inst.wkn || hit.wkn }
+          }
+        }
+        return inst
+      })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
       const withPrices = await fetchPrices(enriched)
       const refR3m = await ensureReferenceR3m()
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
       const withStats = await fetchStats(withPrices)
       const existingByYahoo = new Map(state.instruments.map((i) => [i.yahooTicker, i]))
+      const existingByBase = new Map(
+        state.instruments
+          .map((i) => [baseTicker(i.yahooTicker), i])
+          .filter(([k]) => k) as [string, Instrument][]
+      )
       const existingByIsin = new Map(state.instruments.map((i) => [i.isin, i]))
       const existingByWkn = new Map(state.instruments.map((i) => [i.wkn, i]))
 
@@ -293,6 +314,7 @@ export function usePipeline() {
       for (const inst of withStats) {
         const existing =
           (inst.yahooTicker && existingByYahoo.get(inst.yahooTicker)) ||
+          (inst.yahooTicker && existingByBase.get(baseTicker(inst.yahooTicker) || '')) ||
           existingByIsin.get(inst.isin) ||
           (inst.wkn && existingByWkn.get(inst.wkn)) ||
           existingByIsin.get(inst.wkn || '')
