@@ -45,9 +45,10 @@ export function ManualInput() {
 
   const findInstrument = (id: ParsedIdentifier) => {
     const norm = id.normalized.toUpperCase()
+    const normalizeWkn = (v?: string) => (v || '').replace(/^0+/, '').toUpperCase()
     return state.instruments.find((inst) => {
       if (id.type === 'ISIN') return inst.isin === norm
-      if (id.type === 'WKN') return inst.wkn?.toUpperCase() === norm
+      if (id.type === 'WKN') return normalizeWkn(inst.wkn) === normalizeWkn(norm)
       const mnemonic = inst.mnemonic?.toUpperCase()
       const yahooBase = inst.yahooTicker?.split('.')[0]?.toUpperCase()
       return mnemonic === norm || yahooBase === norm

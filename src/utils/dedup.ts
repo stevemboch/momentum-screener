@@ -273,6 +273,8 @@ const ABBREV: [string, string][] = [
   ['BASIC RESOURCES',       'BASICRESOURCES'],
   ['NATURAL RESOURCES',     'BASICRESOURCES'],
   ['BASICRESOURCE',         'BASICRESOURCES'],
+  ['BASIC RSRCES',          'BASICRESOURCES'],
+  ['RSRCES',                'BASICRESOURCES'],
   ['SEMICNDCT',             'SEMICONDUCTORS'],
   ['SEMICONDUCTOR',         'SEMICONDUCTORS'],
   ['HLTHCARE',              'HEALTHCARE'],

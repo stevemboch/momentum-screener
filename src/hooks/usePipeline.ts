@@ -298,7 +298,9 @@ export function usePipeline() {
       }
 
       // If WKNs still lack a real ISIN, try Xetra CSV as fallback (on-demand)
-      const needsWknResolution = enriched.some((i) => i.wkn && (!i.isin || i.isin.startsWith('WKN:') || i.isin.length !== 12))
+      const needsWknResolution = enriched.some((i) =>
+        (!i.isin || i.isin.startsWith('WKN:') || i.isin.startsWith('TICKER:') || i.isin.length !== 12)
+      )
       if (needsWknResolution) {
         try {
           setStatus('Resolving WKNs via Xetra...', 0, 0)
@@ -314,9 +316,11 @@ export function usePipeline() {
           })
           const byMnemonic = new Map(rows.filter((r) => r.mnemonic).map((r) => [r.mnemonic.toUpperCase(), r]))
           enriched = enriched.map((inst) => {
-            if (!inst.wkn) return inst
             if (inst.isin && inst.isin.length === 12 && !inst.isin.startsWith('WKN:')) return inst
-            let row = byWkn.get(inst.wkn.toUpperCase()) || byWkn.get(normalizeWkn(inst.wkn))
+            let row = null as any
+            if (inst.wkn) {
+              row = byWkn.get(inst.wkn.toUpperCase()) || byWkn.get(normalizeWkn(inst.wkn))
+            }
             if (!row) {
               const base = (inst.mnemonic || inst.yahooTicker?.split('.')[0] || '').toUpperCase()
               if (base) row = byMnemonic.get(base)
