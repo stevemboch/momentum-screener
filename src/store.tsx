@@ -68,7 +68,23 @@ function savePortfolio(isins: string[]) {
   try {
     localStorage.setItem(PORTFOLIO_STORAGE_KEY, JSON.stringify(isins))
   } catch {
-    // ignore storage errors
+    try {
+      // Free space by clearing large caches, then retry once.
+      const keysToClear = [
+        'cache:xetra',
+        'cache:openfigi:v2',
+      ]
+      keysToClear.forEach((k) => localStorage.removeItem(k))
+      // Clear all per-ticker caches
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('cache:yahoo:') || k.startsWith('cache:analyst:')) {
+          localStorage.removeItem(k)
+        }
+      })
+      localStorage.setItem(PORTFOLIO_STORAGE_KEY, JSON.stringify(isins))
+    } catch {
+      // ignore storage errors
+    }
   }
 }
 

@@ -3,9 +3,10 @@ import { usePipeline } from '../hooks/usePipeline'
 
 export function PortfolioPanel() {
   const { state, dispatch } = useAppState()
-  const { fetchPortfolioPrices, fetchSingleInstrumentPrices } = usePipeline()
+  const { fetchPortfolioPrices, fetchSingleInstrumentPrices, processManualInput } = usePipeline()
 
   const portfolio = state.instruments.filter((i) => i.inPortfolio)
+  const missingIsins = state.portfolioIsins.filter((isin) => !portfolio.find((i) => i.isin === isin))
 
   if (portfolio.length === 0) {
     return (
@@ -24,6 +25,14 @@ export function PortfolioPanel() {
         >
           Load prices
         </button>
+        {missingIsins.length > 0 && (
+          <button
+            onClick={() => processManualInput(missingIsins.join('\n'), false)}
+            className="text-[10px] px-2 py-1 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors"
+          >
+            Load instruments
+          </button>
+        )}
         <span className="text-[10px] text-muted font-mono">{portfolio.length} items</span>
       </div>
       <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
