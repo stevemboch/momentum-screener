@@ -8,7 +8,7 @@ export function PortfolioPanel() {
   const portfolio = state.instruments.filter((i) => i.inPortfolio)
   const missingIsins = state.portfolioIsins.filter((isin) => !portfolio.find((i) => i.isin === isin))
 
-  if (portfolio.length === 0) {
+  if (portfolio.length === 0 && missingIsins.length === 0) {
     return (
       <div className="text-[11px] font-mono text-muted">
         No portfolio instruments.
@@ -33,7 +33,9 @@ export function PortfolioPanel() {
             Load instruments
           </button>
         )}
-        <span className="text-[10px] text-muted font-mono">{portfolio.length} items</span>
+        <span className="text-[10px] text-muted font-mono">
+          {portfolio.length} items{missingIsins.length > 0 ? ` · ${missingIsins.length} missing` : ''}
+        </span>
       </div>
       <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
         {portfolio.map((inst) => (
