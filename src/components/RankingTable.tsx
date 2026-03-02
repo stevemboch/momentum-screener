@@ -476,7 +476,12 @@ export function RankingTable() {
                         </span>
                       )}
                     </div>
-                    <div className="text-muted text-[10px] mt-0.5">{inst.isin}{inst.currency && ` · ${inst.currency}`}</div>
+                    <div className="text-muted text-[10px] mt-0.5">
+                      {inst.isin}
+                      {inst.isin?.startsWith('WKN:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
+                      {inst.isin?.startsWith('TICKER:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
+                      {inst.currency && ` · ${inst.currency}`}
+                    </div>
                   </td>
 
                   {/* Type */}

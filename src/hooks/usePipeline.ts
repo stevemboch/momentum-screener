@@ -258,8 +258,12 @@ export function usePipeline() {
 
     const stubs: Instrument[] = newParsed.map((p) => {
       const yahooTicker = p.type === 'Ticker' ? (p.normalized.includes('.') ? p.normalized : `${p.normalized}.DE`) : ''
+      const tempIsin =
+        p.type === 'ISIN' ? p.normalized :
+        p.type === 'WKN' ? `WKN:${p.normalized}` :
+        `TICKER:${p.normalized}`
       return {
-        isin: p.type === 'ISIN' ? p.normalized : '',
+        isin: tempIsin,
         wkn: p.type === 'WKN' ? p.normalized : undefined,
         mnemonic: p.type === 'Ticker' ? p.normalized : undefined,
         yahooTicker,
