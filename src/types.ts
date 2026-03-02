@@ -18,6 +18,7 @@ export interface Instrument {
   // Names
   xetraName?: string
   longName?: string
+  yahooLongName?: string
   displayName: string
 
   // Dedup

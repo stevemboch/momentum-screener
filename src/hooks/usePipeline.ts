@@ -214,6 +214,7 @@ export function usePipeline() {
         pe: r.pe ?? null, pb: r.pb ?? null,
         ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
         returnOnAssets: r.returnOnAssets ?? null,
+        yahooLongName: r.longName ?? updated[idx].yahooLongName,
         longName: nextLongName,
         displayName: nextLongName ? toDisplayName(nextLongName, updated[idx].displayName) : updated[idx].displayName,
         priceFetched: true, priceError: r.error, fundamentalsFetched: true,
@@ -284,7 +285,13 @@ export function usePipeline() {
       }
 
       setStatus('Looking up names...', 0, stubs.length)
-      let enriched = await enrichWithOpenFIGI(stubs)
+      let enriched = stubs
+      try {
+        enriched = await enrichWithOpenFIGI(stubs)
+      } catch {
+        // Fallback: proceed with raw input if OpenFIGI fails
+        setStatus('OpenFIGI failed, using raw input...', 0, stubs.length)
+      }
       const baseTicker = (t?: string) => t?.split('.')?.[0]?.toUpperCase()
       const existingByBaseTicker = new Map(
         state.instruments

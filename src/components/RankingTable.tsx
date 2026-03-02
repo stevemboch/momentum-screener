@@ -280,6 +280,7 @@ function ExpandedDetail({
               {inst.yahooTicker && <div>Yahoo: <span className="text-gray-300">{inst.yahooTicker}</span></div>}
               {inst.xetraGroup && <div>Group: <span className="text-gray-300">{inst.xetraGroup}</span></div>}
               {inst.longName && <div>OpenFIGI: <span className="text-gray-300">{inst.longName}</span></div>}
+              {inst.yahooLongName && <div>Yahoo long name: <span className="text-gray-300">{inst.yahooLongName}</span></div>}
               {lastPrice != null && <div className="mt-1">Last Price: <span className="text-gray-300">{lastPrice.toFixed(2)}</span></div>}
               {inst.dedupGroup && (
                 <div className="mt-1 text-[10px]">
