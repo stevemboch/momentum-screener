@@ -207,9 +207,13 @@ export function useDisplayedInstruments() {
 
   // Type filter
   if (tableState.typeFilter === 'etf') {
-    filtered = filtered.filter((i) => i.type === 'ETF' || i.type === 'ETC')
+    filtered = filtered.filter((i) =>
+      i.type === 'ETF' || i.type === 'ETC' || (i.type === 'Unknown' && i.source === 'manual')
+    )
   } else if (tableState.typeFilter === 'stock') {
-    filtered = filtered.filter((i) => i.type === 'Stock')
+    filtered = filtered.filter((i) =>
+      i.type === 'Stock' || (i.type === 'Unknown' && i.source === 'manual')
+    )
   }
 
   // Dedup filter — hides non-winners when enabled

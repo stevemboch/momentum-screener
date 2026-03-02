@@ -82,14 +82,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           matches.find((m) => m.exchCode === 'GS') ||
           matches[0]
 
+        // If the chosen match has no ISIN, try to find any match that does.
+        const withIsin =
+          etfMatches.find((m) => m.isin) ||
+          matches.find((m) => m.isin) ||
+          xetrMatch
+
+        const pick = xetrMatch?.isin ? xetrMatch : withIsin
+
         allResults.push({
-          name: xetrMatch.name || null,
-          securityDescription: xetrMatch.securityDescription || null,
-          isin: xetrMatch.isin || null,
-          ticker: xetrMatch.ticker || null,
-          securityType: xetrMatch.securityType || null,
-          securityType2: xetrMatch.securityType2 || null,
-          exchCode: xetrMatch.exchCode || null,
+          name: pick?.name || null,
+          securityDescription: pick?.securityDescription || null,
+          isin: pick?.isin || null,
+          ticker: pick?.ticker || null,
+          securityType: pick?.securityType || null,
+          securityType2: pick?.securityType2 || null,
+          exchCode: pick?.exchCode || null,
         })
       }
     } catch (err) {

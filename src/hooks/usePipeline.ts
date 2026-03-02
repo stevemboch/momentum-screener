@@ -296,6 +296,36 @@ export function usePipeline() {
         // Fallback: proceed with raw input if OpenFIGI fails
         setStatus('OpenFIGI failed, using raw input...', 0, stubs.length)
       }
+
+      // If WKNs still lack a real ISIN, try Xetra CSV as fallback (on-demand)
+      const needsWknResolution = enriched.some((i) => i.wkn && (!i.isin || i.isin.startsWith('WKN:') || i.isin.length !== 12))
+      if (needsWknResolution) {
+        try {
+          setStatus('Resolving WKNs via Xetra...', 0, 0)
+          const csvText = await apiXetra()
+          const rows = parseXetraCSV(csvText)
+          const byWkn = new Map(rows.filter((r) => r.wkn).map((r) => [r.wkn.toUpperCase(), r]))
+          enriched = enriched.map((inst) => {
+            if (!inst.wkn) return inst
+            if (inst.isin && inst.isin.length === 12 && !inst.isin.startsWith('WKN:')) return inst
+            const row = byWkn.get(inst.wkn.toUpperCase())
+            if (!row) return inst
+            const yahooTicker = row.mnemonic ? `${row.mnemonic}.DE` : inst.yahooTicker
+            return {
+              ...inst,
+              isin: row.isin,
+              mnemonic: row.mnemonic || inst.mnemonic,
+              yahooTicker,
+              currency: row.currency || inst.currency,
+              xetraGroup: row.group || inst.xetraGroup,
+              xetraName: row.instrument || inst.xetraName,
+              displayName: inst.displayName || row.instrument,
+            }
+          })
+        } catch {
+          // ignore
+        }
+      }
       const baseTicker = (t?: string) => t?.split('.')?.[0]?.toUpperCase()
       const existingByBaseTicker = new Map(
         state.instruments
@@ -338,9 +368,9 @@ export function usePipeline() {
         if (existing) {
           updates.set(existing.isin, { ...existing, ...inst })
         } else {
-          // Skip adding if ISIN is unresolved for WKN
+          // Skip adding if ISIN is unresolved for WKN (unless we have a temp ID)
           if (inst.wkn && (!inst.isin || inst.isin === inst.wkn || inst.isin.length !== 12)) {
-            continue
+            if (!inst.isin?.startsWith('WKN:')) continue
           }
           toAdd.push(inst)
         }
