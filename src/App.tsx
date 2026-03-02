@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { ManualInput } from './components/ManualInput'
+import { PortfolioPanel } from './components/PortfolioPanel'
 import { XetraPanel } from './components/XetraPanel'
 import { RankingTable } from './components/RankingTable'
 import { FilterBar } from './components/FilterBar'
@@ -41,6 +42,15 @@ export default function App() {
             <section>
               <SectionHeader label="Manual Input" />
               <ManualInput />
+            </section>
+
+            {/* Divider */}
+            <div className="border-t border-border" />
+
+            {/* Portfolio section */}
+            <section>
+              <SectionHeader label="Portfolio" />
+              <PortfolioPanel />
             </section>
 
             {/* Divider */}

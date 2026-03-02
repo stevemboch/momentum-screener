@@ -247,12 +247,14 @@ function ExpandedDetail({
   allInstruments,
   onLoadPrices,
   onLoadAnalyst,
+  onTogglePortfolio,
 }: {
   inst: any
   atrMultiplier: number
   allInstruments: any[]
   onLoadPrices: (isin: string) => void
   onLoadAnalyst: (isin: string) => void
+  onTogglePortfolio: (isin: string) => void
 }) {
   const lastPrice = inst.closes?.length > 0 ? inst.closes[inst.closes.length - 1] : undefined
   const referencePrice = inst.currentPrice ?? lastPrice
@@ -281,6 +283,22 @@ function ExpandedDetail({
               {inst.xetraGroup && <div>Group: <span className="text-gray-300">{inst.xetraGroup}</span></div>}
               {inst.longName && <div>OpenFIGI: <span className="text-gray-300">{inst.longName}</span></div>}
               {inst.yahooLongName && <div>Yahoo long name: <span className="text-gray-300">{inst.yahooLongName}</span></div>}
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  onClick={() => onLoadPrices(inst.isin)}
+                  className="text-[10px] px-2 py-0.5 rounded border border-border text-muted hover:text-gray-300 hover:border-accent/40 transition-colors"
+                >
+                  ⬇ Load prices
+                </button>
+                <span className="text-[10px] text-muted">Portfolio:</span>
+                <button
+                  onClick={() => onTogglePortfolio(inst.isin)}
+                  className={`text-[10px] ${inst.inPortfolio ? 'text-amber-400' : 'text-muted hover:text-gray-300'}`}
+                  title={inst.inPortfolio ? 'Remove from portfolio' : 'Add to portfolio'}
+                >
+                  ★
+                </button>
+              </div>
               {lastPrice != null && <div className="mt-1">Last Price: <span className="text-gray-300">{lastPrice.toFixed(2)}</span></div>}
               {inst.dedupGroup && (
                 <div className="mt-1 text-[10px]">
@@ -455,6 +473,7 @@ export function RankingTable() {
           {instruments.map((inst, idx) => {
             const isExpanded = expandedISIN === inst.isin
             const rowBg = idx % 2 === 0 ? 'bg-bg' : 'bg-surface'
+            const portfolioClass = inst.inPortfolio ? 'bg-accent/5' : ''
             const hasGroup = inst.dedupCandidates && inst.dedupCandidates.length > 0
 
             return (
@@ -463,12 +482,19 @@ export function RankingTable() {
                   key={inst.isin}
                   id={`row-${inst.isin}`}
                   data-isin={inst.isin}
-                  className={`${rowBg} hover:bg-surface2 border-b border-border/30 cursor-pointer`}
+                  className={`${rowBg} ${portfolioClass} hover:bg-surface2 border-b border-border/30 cursor-pointer`}
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                 >
                   {/* Name */}
                   <td className="px-3 py-2 text-left max-w-[220px]">
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin }) }}
+                        className={`text-[12px] leading-none ${inst.inPortfolio ? 'text-amber-400' : 'text-muted hover:text-gray-300'}`}
+                        title={inst.inPortfolio ? 'Remove from portfolio' : 'Add to portfolio'}
+                      >
+                        ★
+                      </button>
                       <span className="truncate text-gray-200" title={inst.displayName}>{inst.displayName}</span>
                       {hasGroup && (
                         <span className="text-[9px] text-accent/70 ml-1 shrink-0" title={`${inst.dedupCandidates!.length} weitere ETFs in dieser Gruppe`}>
@@ -576,6 +602,7 @@ export function RankingTable() {
                     allInstruments={allInstruments}
                     onLoadPrices={fetchSingleInstrumentPrices}
                     onLoadAnalyst={fetchSingleInstrumentAnalyst}
+                    onTogglePortfolio={(isin) => dispatch({ type: 'TOGGLE_PORTFOLIO', isin })}
                   />
                 )}
               </>

@@ -616,5 +616,14 @@ export function usePipeline() {
     }
   }, [state.instruments])
 
-  return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer, fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst }
+  const fetchPortfolioPrices = useCallback(async (isins: string[]) => {
+    const targets = state.instruments.filter((i) => isins.includes(i.isin) && i.yahooTicker)
+    if (targets.length === 0) return
+    setStatus('Fetching portfolio prices...', 0, targets.length)
+    const updated = await fetchPrices(targets)
+    const updates = new Map(updated.map((i) => [i.isin, { ...i }]))
+    dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
+  }, [state.instruments, fetchPrices])
+
+  return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer, fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst, fetchPortfolioPrices }
 }

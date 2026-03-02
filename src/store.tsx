@@ -16,11 +16,13 @@ interface AppState {
   stockGroups: ETFGroup[]
   fetchStatus: FetchStatus
   xetraActive: boolean
+  portfolioIsins: string[]
 }
 
 const DEFAULT_WEIGHTS: MomentumWeights = { w1m: 1/3, w3m: 1/3, w6m: 1/3 }
 
 const GROUPS_STORAGE_KEY = 'xetra:groups'
+const PORTFOLIO_STORAGE_KEY = 'portfolio:isins'
 
 function loadGroupPrefs(): { etf: string[]; stock: string[] } | null {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null
@@ -49,7 +51,29 @@ function saveGroupPrefs(etfGroups: ETFGroup[], stockGroups: ETFGroup[]) {
   }
 }
 
+function loadPortfolio(): string[] {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(PORTFOLIO_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function savePortfolio(isins: string[]) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(PORTFOLIO_STORAGE_KEY, JSON.stringify(isins))
+  } catch {
+    // ignore storage errors
+  }
+}
+
 const persistedGroups = loadGroupPrefs()
+const persistedPortfolio = loadPortfolio()
 
 const DEFAULT_STATE: AppState = {
   instruments: [],
@@ -82,6 +106,7 @@ const DEFAULT_STATE: AppState = {
   })),
   fetchStatus: { phase: 'idle', message: '', current: 0, total: 0 },
   xetraActive: false,
+  portfolioIsins: persistedPortfolio,
 }
 
 const SCORE_AFFECTING_KEYS = new Set<keyof Instrument>([
@@ -121,17 +146,25 @@ type Action =
   | { type: 'SET_XETRA_ACTIVE'; active: boolean }
   | { type: 'REMOVE_INSTRUMENT'; isin: string }
   | { type: 'CLEAR_XETRA' }
+  | { type: 'TOGGLE_PORTFOLIO'; isin: string }
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'ADD_INSTRUMENTS': {
       const existingISINs = new Set(state.instruments.map((i) => i.isin))
-      const newInst = action.instruments.filter((i) => !existingISINs.has(i.isin))
+      const portfolioSet = new Set(state.portfolioIsins)
+      const newInst = action.instruments
+        .filter((i) => !existingISINs.has(i.isin))
+        .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
       const merged = [...state.instruments, ...newInst]
       return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     }
     case 'SET_INSTRUMENTS':
-      return { ...state, instruments: recalculateAll(action.instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
+      {
+        const portfolioSet = new Set(state.portfolioIsins)
+        const next = action.instruments.map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
+        return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
+      }
     case 'UPDATE_INSTRUMENT': {
       const instruments = state.instruments.map((inst) =>
         inst.isin === action.isin ? { ...inst, ...action.updates } : inst
@@ -205,6 +238,20 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, instruments: state.instruments.filter((i) => i.isin !== action.isin) }
     case 'CLEAR_XETRA':
       return { ...state, instruments: state.instruments.filter((i) => i.source !== 'xetra'), xetraActive: false }
+    case 'TOGGLE_PORTFOLIO': {
+      const exists = state.portfolioIsins.includes(action.isin)
+      const nextIsins = exists
+        ? state.portfolioIsins.filter((i) => i !== action.isin)
+        : [...state.portfolioIsins, action.isin]
+      savePortfolio(nextIsins)
+      return {
+        ...state,
+        portfolioIsins: nextIsins,
+        instruments: state.instruments.map((inst) =>
+          inst.isin === action.isin ? { ...inst, inPortfolio: !exists } : inst
+        ),
+      }
+    }
     default:
       return state
   }

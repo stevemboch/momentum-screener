@@ -25,6 +25,7 @@ export interface Instrument {
   dedupGroup?: string
   isDedupWinner?: boolean
   dedupCandidates?: string[]
+  inPortfolio?: boolean
 
   // AUM / TER
   aum?: number | null
