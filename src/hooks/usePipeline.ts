@@ -158,7 +158,18 @@ export function usePipeline() {
       if (!figi) return inst
       const longName: string | undefined = figi.name || undefined
       const type = inst.source === 'xetra' ? inst.type : resolveInstrumentType(figi.securityType ?? null, figi.securityType2 ?? null, inst.isin)
-      return { ...inst, longName, type, displayName: toDisplayName(longName, inst.displayName) }
+      const ticker = figi.ticker || undefined
+      let yahooTicker = inst.yahooTicker
+      if (!yahooTicker && ticker) {
+        yahooTicker = ticker.includes('.') ? ticker : `${ticker}.DE`
+      }
+      return {
+        ...inst,
+        longName,
+        type,
+        yahooTicker,
+        displayName: toDisplayName(longName, inst.displayName),
+      }
     })
   }, [])
 
@@ -263,7 +274,26 @@ export function usePipeline() {
       const refR3m = await ensureReferenceR3m()
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
       const withStats = await fetchStats(withPrices)
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(withStats, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
+      const existingByYahoo = new Map(state.instruments.map((i) => [i.yahooTicker, i]))
+      const existingByIsin = new Map(state.instruments.map((i) => [i.isin, i]))
+
+      const updates = new Map<string, Partial<Instrument>>()
+      const toAdd: Instrument[] = []
+      for (const inst of withStats) {
+        const existing =
+          (inst.yahooTicker && existingByYahoo.get(inst.yahooTicker)) ||
+          existingByIsin.get(inst.isin)
+        if (existing) {
+          updates.set(existing.isin, { ...existing, ...inst })
+        } else {
+          toAdd.push(inst)
+        }
+      }
+
+      if (updates.size > 0) dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
+      if (toAdd.length > 0) {
+        dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(toAdd, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
+      }
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Added ${withStats.length} instruments`, current: withStats.length, total: withStats.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
