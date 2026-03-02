@@ -35,7 +35,7 @@ function cacheSet<T>(key: string, data: T) {
   }
 }
 
-interface OpenFIGIResult { name?: string; securityType?: string; securityType2?: string }
+interface OpenFIGIResult { name?: string; ticker?: string; securityType?: string; securityType2?: string }
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
