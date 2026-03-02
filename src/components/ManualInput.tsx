@@ -56,7 +56,23 @@ export function ManualInput() {
 
   const jumpTo = (isin: string) => {
     const el = document.getElementById(`row-${isin}`)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.click()
+      return
+    }
+    // If this is a dedup candidate, jump to the winner row and expand
+    const candidate = state.instruments.find((i) => i.isin === isin)
+    if (candidate?.dedupGroup) {
+      const winner = state.instruments.find((i) => i.dedupGroup === candidate.dedupGroup && i.isDedupWinner)
+      if (winner) {
+        const winEl = document.getElementById(`row-${winner.isin}`)
+        if (winEl) {
+          winEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          winEl.click()
+        }
+      }
+    }
   }
 
   return (

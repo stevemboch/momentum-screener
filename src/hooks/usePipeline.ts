@@ -180,15 +180,8 @@ export function usePipeline() {
   const fetchPrices = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const withTickers = instruments.filter((i) => i.yahooTicker)
     if (withTickers.length === 0) return instruments
-    const results: (any | null)[] = new Array(withTickers.length).fill(null)
-    for (let i = 0; i < withTickers.length; i += YAHOO_CONCURRENCY) {
-      const batch = withTickers.slice(i, i + YAHOO_CONCURRENCY)
-      const settled = await Promise.allSettled(batch.map((inst) => apiYahooSingle(inst.yahooTicker)))
-      settled.forEach((res, j) => {
-        results[i + j] = res.status === 'fulfilled' ? res.value : null
-      })
-      setStatus(`Fetching prices: ${Math.min(i + batch.length, withTickers.length)} / ${withTickers.length}`, Math.min(i + batch.length, withTickers.length), withTickers.length)
-    }
+    const tasks = withTickers.map((inst) => () => apiYahooSingle(inst.yahooTicker))
+    const results = await parallelLimit(tasks, YAHOO_CONCURRENCY, (done, total) => setStatus(`Fetching prices: ${done} / ${total}`, done, total))
     const updated = [...instruments]
     results.forEach((r: any, i) => {
       if (!r) return
@@ -225,11 +218,44 @@ export function usePipeline() {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'idle', message: 'No valid identifiers found', current: 0, total: 0 } })
       return
     }
-    const stubs: Instrument[] = parsed.map((p) => {
+    const existing = state.instruments
+    const findExisting = (p: { type: string; normalized: string }) => {
+      const norm = p.normalized.toUpperCase()
+      return existing.find((inst) => {
+        if (p.type === 'ISIN') return inst.isin === norm
+        if (p.type === 'WKN') return inst.wkn?.toUpperCase() === norm
+        const mnemonic = inst.mnemonic?.toUpperCase()
+        const yahooBase = inst.yahooTicker?.split('.')[0]?.toUpperCase()
+        return mnemonic === norm || yahooBase === norm
+      })
+    }
+    const existingHits: Instrument[] = []
+    const newParsed = parsed.filter((p) => {
+      const hit = findExisting(p)
+      if (hit) existingHits.push(hit)
+      return !hit
+    })
+
+    const stubs: Instrument[] = newParsed.map((p) => {
       const yahooTicker = p.type === 'Ticker' ? (p.normalized.includes('.') ? p.normalized : `${p.normalized}.DE`) : ''
       return { isin: p.type === 'ISIN' ? p.normalized : p.raw, wkn: p.type === 'WKN' ? p.normalized : undefined, mnemonic: p.type === 'Ticker' ? p.normalized : undefined, yahooTicker, type: 'Unknown' as const, source: 'manual' as const, displayName: p.raw }
     })
     try {
+      if (existingHits.length > 0) {
+        const toRefresh = existingHits.filter((i) => !i.priceFetched && i.yahooTicker)
+        if (toRefresh.length > 0) {
+          dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
+          const refreshed = await fetchPrices(toRefresh)
+          const updates = new Map(refreshed.map((i) => [i.isin, { ...i }]))
+          dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
+        }
+      }
+
+      if (stubs.length === 0) {
+        dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Updated ${existingHits.length} instruments`, current: existingHits.length, total: existingHits.length } })
+        return
+      }
+
       setStatus('Looking up names...', 0, stubs.length)
       const enriched = await enrichWithOpenFIGI(stubs)
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
