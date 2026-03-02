@@ -8,6 +8,7 @@ interface FigiJob {
 
 interface FigiResult {
   figi?: string
+  isin?: string
   name?: string
   ticker?: string
   exchCode?: string
@@ -83,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         allResults.push({
           name: xetrMatch.name || null,
+          isin: xetrMatch.isin || null,
           ticker: xetrMatch.ticker || null,
           securityType: xetrMatch.securityType || null,
           securityType2: xetrMatch.securityType2 || null,

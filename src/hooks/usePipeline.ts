@@ -35,7 +35,7 @@ function cacheSet<T>(key: string, data: T) {
   }
 }
 
-interface OpenFIGIResult { name?: string; ticker?: string; securityType?: string; securityType2?: string }
+interface OpenFIGIResult { name?: string; isin?: string; ticker?: string; securityType?: string; securityType2?: string }
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
@@ -163,8 +163,10 @@ export function usePipeline() {
       if (!yahooTicker && ticker) {
         yahooTicker = ticker.includes('.') ? ticker : `${ticker}.DE`
       }
+      const mappedIsin = figi.isin && figi.isin.length === 12 ? figi.isin : undefined
       return {
         ...inst,
+        isin: mappedIsin || inst.isin,
         longName,
         type,
         yahooTicker,
@@ -234,7 +236,7 @@ export function usePipeline() {
       const norm = p.normalized.toUpperCase()
       return existing.find((inst) => {
         if (p.type === 'ISIN') return inst.isin === norm
-        if (p.type === 'WKN') return inst.wkn?.toUpperCase() === norm
+        if (p.type === 'WKN') return inst.wkn?.toUpperCase() === norm || inst.isin === norm
         const mnemonic = inst.mnemonic?.toUpperCase()
         const yahooBase = inst.yahooTicker?.split('.')[0]?.toUpperCase()
         return mnemonic === norm || yahooBase === norm
@@ -276,13 +278,16 @@ export function usePipeline() {
       const withStats = await fetchStats(withPrices)
       const existingByYahoo = new Map(state.instruments.map((i) => [i.yahooTicker, i]))
       const existingByIsin = new Map(state.instruments.map((i) => [i.isin, i]))
+      const existingByWkn = new Map(state.instruments.map((i) => [i.wkn, i]))
 
       const updates = new Map<string, Partial<Instrument>>()
       const toAdd: Instrument[] = []
       for (const inst of withStats) {
         const existing =
           (inst.yahooTicker && existingByYahoo.get(inst.yahooTicker)) ||
-          existingByIsin.get(inst.isin)
+          existingByIsin.get(inst.isin) ||
+          (inst.wkn && existingByWkn.get(inst.wkn)) ||
+          existingByIsin.get(inst.wkn || '')
         if (existing) {
           updates.set(existing.isin, { ...existing, ...inst })
         } else {
