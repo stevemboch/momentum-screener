@@ -347,12 +347,15 @@ export function usePipeline() {
             const norm = normalizeWkn(raw)
             if (norm) byWkn.set(norm, r)
           })
+          const byIsin = new Map(rows.filter((r) => r.isin).map((r) => [r.isin.toUpperCase(), r]))
           const byMnemonic = new Map(rows.filter((r) => r.mnemonic).map((r) => [r.mnemonic.toUpperCase(), r]))
           enriched = enriched.map((inst) => {
-            if (inst.isin && inst.isin.length === 12 && !inst.isin.startsWith('WKN:')) return inst
             let row = null as any
             if (inst.wkn) {
               row = byWkn.get(inst.wkn.toUpperCase()) || byWkn.get(normalizeWkn(inst.wkn))
+            }
+            if (!row && inst.isin && inst.isin.length === 12) {
+              row = byIsin.get(inst.isin.toUpperCase())
             }
             if (!row) {
               const base = (inst.mnemonic || inst.yahooTicker?.split('.')[0] || '').toUpperCase()
