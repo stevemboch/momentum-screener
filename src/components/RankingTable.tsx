@@ -248,6 +248,7 @@ function ExpandedDetail({
   onLoadPrices,
   onLoadAnalyst,
   onTogglePortfolio,
+  onRemove,
 }: {
   inst: any
   atrMultiplier: number
@@ -255,6 +256,7 @@ function ExpandedDetail({
   onLoadPrices: (isin: string) => void
   onLoadAnalyst: (isin: string) => void
   onTogglePortfolio: (isin: string) => void
+  onRemove: (isin: string) => void
 }) {
   const lastPrice = inst.closes?.length > 0 ? inst.closes[inst.closes.length - 1] : undefined
   const referencePrice = inst.currentPrice ?? lastPrice
@@ -297,6 +299,13 @@ function ExpandedDetail({
                   title={inst.inPortfolio ? 'Remove from portfolio' : 'Add to portfolio'}
                 >
                   ★
+                </button>
+                <button
+                  onClick={() => onRemove(inst.isin)}
+                  className="text-[10px] text-muted hover:text-red-400"
+                  title="Hide/remove instrument"
+                >
+                  ×
                 </button>
               </div>
               {lastPrice != null && <div className="mt-1">Last Price: <span className="text-gray-300">{lastPrice.toFixed(2)}</span></div>}
@@ -496,6 +505,13 @@ export function RankingTable() {
                         ★
                       </button>
                       <span className="truncate text-gray-200" title={inst.displayName}>{inst.displayName}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin }) }}
+                        className="text-[11px] text-muted hover:text-red-400 ml-1"
+                        title="Hide/remove instrument"
+                      >
+                        ×
+                      </button>
                       {hasGroup && (
                         <span className="text-[9px] text-accent/70 ml-1 shrink-0" title={`${inst.dedupCandidates!.length} weitere ETFs in dieser Gruppe`}>
                           +{inst.dedupCandidates!.length}
@@ -603,6 +619,7 @@ export function RankingTable() {
                     onLoadPrices={fetchSingleInstrumentPrices}
                     onLoadAnalyst={fetchSingleInstrumentAnalyst}
                     onTogglePortfolio={(isin) => dispatch({ type: 'TOGGLE_PORTFOLIO', isin })}
+                    onRemove={(isin) => dispatch({ type: 'REMOVE_INSTRUMENT', isin })}
                   />
                 )}
               </>
