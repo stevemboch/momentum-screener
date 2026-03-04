@@ -337,11 +337,16 @@ export function useDisplayedInstruments() {
   const col = tableState.sortColumn
   const dir = tableState.sortDirection === 'desc' ? -1 : 1
   filtered.sort((a, b) => {
-    const av = (a as any)[col]
-    const bv = (b as any)[col]
+    const avRaw = (a as any)[col]
+    const bvRaw = (b as any)[col]
+    const av = typeof avRaw === 'number' ? avRaw : Number(avRaw)
+    const bv = typeof bvRaw === 'number' ? bvRaw : Number(bvRaw)
     if (av == null && bv == null) return 0
     if (av == null) return 1
     if (bv == null) return -1
+    if (!Number.isFinite(av) && !Number.isFinite(bv)) return 0
+    if (!Number.isFinite(av)) return 1
+    if (!Number.isFinite(bv)) return -1
     return (av - bv) * dir
   })
 
