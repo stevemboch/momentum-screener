@@ -478,7 +478,7 @@ export function RankingTable() {
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody key={`${sortColumn}:${sortDirection}:${state.tableState.typeFilter}:${state.tableState.showDeduped}`}>
           {instruments.map((inst, idx) => {
             const isExpanded = expandedISIN === inst.isin
             const rowBg = idx % 2 === 0 ? 'bg-bg' : 'bg-surface'
