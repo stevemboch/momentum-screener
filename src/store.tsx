@@ -102,11 +102,10 @@ const DEFAULT_STATE: AppState = {
     riskFreeRate: 0.035,  // 3.5% p.a. (ECB/EUR)
   },
   tableState: {
-    sortColumn: 'sharpeScore',  // ← Sharpe as default
+    sortColumn: 'riskAdjustedScore',
     sortDirection: 'desc',
     typeFilter: 'all',
     showDeduped: true,
-    aumFloor: 100_000_000,
     filterBelowRiskFree: true,  // ← ON by default
   },
   referenceR3m: null,
@@ -211,7 +210,6 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         settings: { ...state.settings, aumFloor: action.floor },
-        tableState: { ...state.tableState, aumFloor: action.floor },
       }
     case 'SET_ATR_MULTIPLIER': {
       const instruments = recalculateAll(state.instruments, state.settings.weights, action.multiplier, state.referenceR3m)

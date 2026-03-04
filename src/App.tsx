@@ -61,9 +61,18 @@ export default function App() {
               <>
                 <div className="border-t border-border" />
                 <section>
-                  <SectionHeader label={`Loaded (${state.instruments.length})`} />
+                  <div className="flex items-center">
+                    <SectionHeader label={`Loaded (${state.instruments.length})`} />
+                    <button
+                      onClick={() => dispatch({ type: 'SET_INSTRUMENTS', instruments: [] })}
+                      className="text-[10px] font-mono text-muted hover:text-red-400 ml-auto"
+                      title="Alle Instruments entfernen"
+                    >
+                      Alle löschen
+                    </button>
+                  </div>
                   <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto bg-bg/40 border border-border rounded p-2">
-                    {state.instruments.slice(0, 50).map((inst) => (
+                    {state.instruments.map((inst) => (
                       <div
                         key={inst.isin}
                         className="flex items-center justify-between py-0.5 group"
@@ -79,11 +88,6 @@ export default function App() {
                         </button>
                       </div>
                     ))}
-                    {state.instruments.length > 50 && (
-                      <div className="text-[10px] text-muted font-mono">
-                        +{state.instruments.length - 50} more
-                      </div>
-                    )}
                   </div>
                 </section>
               </>

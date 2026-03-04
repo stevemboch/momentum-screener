@@ -1,7 +1,7 @@
 import type { Instrument, MomentumWeights } from '../types'
 import { calculateBreakout } from './breakoutUtils'
 
-const TRADING_DAYS = { r1m: 21, r3m: 63, r6m: 125 }
+const TRADING_DAYS = { r1m: 21, r3m: 63, r6m: 126 }
 
 // ─── Returns ─────────────────────────────────────────────────────────────────
 
@@ -142,24 +142,24 @@ export function calculateMomentumScore(
   return available.reduce((sum, a) => sum + a.val * (a.w / totalW), 0)
 }
 
-export function calculateSharpeScore(momentumScore: number | null, vola: number | null): number | null {
+export function calculateRiskAdjustedScore(momentumScore: number | null, vola: number | null): number | null {
   if (momentumScore === null || vola === null || vola === 0) return null
   return momentumScore / vola
 }
 
 // ─── Combined Score ──────────────────────────────────────────────────────────
-// Simple average of momentumScore and sharpeScore, both higher = better.
+// Simple average of momentumScore and riskAdjustedScore, both higher = better.
 // Gives a single "best of both" metric to sort by.
 
 export function calculateCombinedScore(
   momentumPercentile: number | null | undefined,
-  sharpePercentile: number | null | undefined,
+  riskAdjustedPercentile: number | null | undefined,
 ): number | null {
-  if (momentumPercentile != null && sharpePercentile != null) {
-    return (momentumPercentile + sharpePercentile) / 2
+  if (momentumPercentile != null && riskAdjustedPercentile != null) {
+    return (momentumPercentile + riskAdjustedPercentile) / 2
   }
   if (momentumPercentile != null) return momentumPercentile
-  if (sharpePercentile != null) return sharpePercentile
+  if (riskAdjustedPercentile != null) return riskAdjustedPercentile
   return null
 }
 
@@ -208,13 +208,16 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
       })
       .forEach(({ inst }, rank) => {
         const idx = result.findIndex((r) => r.isin === inst.isin)
-        if (idx >= 0) (result[idx] as any)[`${String(field)}Rank`] = rank + 1
+        if (idx >= 0) {
+          const rankField = field === 'riskAdjustedScore' ? 'riskAdjustedRank' : `${String(field)}Rank`
+          ;(result[idx] as any)[rankField] = rank + 1
+        }
       })
   }
 
   const indexed = instruments.map((inst, i) => ({ inst, i }))
   rank(indexed, 'momentumScore', true)
-  rank(indexed, 'sharpeScore', true)
+  rank(indexed, 'riskAdjustedScore', true)
   rank(indexed, 'combinedScore', true)
   rank(indexed, 'earningsYield', true)
   rank(indexed, 'returnOnAssets', true)
@@ -238,8 +241,8 @@ export function calculateValueScores(instruments: Instrument[]): Instrument[] {
   const etfBYRanks = new Map(etfBY.map((e, i) => [e.isin, i + 1]))
 
   const stockEY = stocks
-    .filter((s) => s.ebitda != null && s.enterpriseValue != null && s.enterpriseValue! > 0)
-    .map((s) => ({ isin: s.isin, ey: s.ebitda! / s.enterpriseValue! }))
+    .filter((s) => s.earningsYield != null)
+    .map((s) => ({ isin: s.isin, ey: s.earningsYield! }))
     .sort((a, b) => b.ey - a.ey)
   const stockROC = stocks.filter((s) => s.returnOnAssets != null)
     .map((s) => ({ isin: s.isin, roc: s.returnOnAssets! })).sort((a, b) => b.roc - a.roc)
@@ -294,8 +297,7 @@ export function recalculateAll(
       updated.r6m = r6m
       updated.vola = calculateVola(inst.closes)
       updated.momentumScore = calculateMomentumScore(r1m, r3m, r6m, weights)
-      updated.sharpeScore = calculateSharpeScore(updated.momentumScore, updated.vola)
-      updated.combinedScore = calculateCombinedScore(updated.momentumScore, updated.sharpeScore)
+      updated.riskAdjustedScore = calculateRiskAdjustedScore(updated.momentumScore, updated.vola)
 
       // Moving averages
       const mas = calculateMAs(inst.closes)
@@ -315,7 +317,16 @@ export function recalculateAll(
       updated.atr20 = atr20
       updated.sellingThreshold = sellingThreshold
     }
-    if (inst.pe != null && inst.pe > 0) updated.earningsYield = 1 / inst.pe
+    if (inst.type === 'ETF' || inst.type === 'ETC') {
+      if (inst.pe != null && inst.pe > 0) updated.earningsYield = 1 / inst.pe
+      else updated.earningsYield = null
+    } else if (inst.type === 'Stock') {
+      if (inst.ebitda != null && inst.enterpriseValue != null && inst.enterpriseValue > 0) {
+        updated.earningsYield = inst.ebitda / inst.enterpriseValue
+      } else {
+        updated.earningsYield = null
+      }
+    }
 
     // Breakout score (uses last 60 days, MA200/MA50, volume, and URTH reference)
     const breakout = calculateBreakout(
@@ -334,11 +345,11 @@ export function recalculateAll(
   })
 
   const momentumPct = buildPercentileMap(withScores, 'momentumScore')
-  const sharpePct = buildPercentileMap(withScores, 'sharpeScore')
+  const riskAdjustedPct = buildPercentileMap(withScores, 'riskAdjustedScore')
   const withCombined = withScores.map((inst) => {
     const combinedScore = calculateCombinedScore(
       momentumPct.get(inst.isin),
-      sharpePct.get(inst.isin)
+      riskAdjustedPct.get(inst.isin)
     )
     return { ...inst, combinedScore }
   })

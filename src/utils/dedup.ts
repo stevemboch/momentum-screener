@@ -105,7 +105,6 @@ const ABBREV: [string, string][] = [
   ['NASDAQ-100',    'NASDAQ100'],
   ['NASDAQ100',     'NASDAQ100'],
   ['EURSTX',        'EUROSTOXX'],
-  ['EUR',           'EUROPE'],
   ['EU',            'EUROPE'],
   ['WLD',           'WORLD'],
   ['GLB',           'GLOBAL'],
@@ -644,9 +643,15 @@ function extractExposureVector(instrument: Instrument): ExposureVector {
   }
 
   // Equity
-  const region = matchFirst(expanded, REGION_MAP)
+  let region = matchFirst(expanded, REGION_MAP)
   const subregion = matchFirst(expanded, SUBREGION_MAP)
   const sector = matchFirst(expanded, SECTOR_MAP)
+  // EUR als Regions-Fallback: nur wenn kein anderes Regionssignal greift
+  // und EUR nicht als Währungshinweis steht (trailing, vor Klammer, vor HEDGED)
+  if (!region && !subregion && !sector) {
+    const hasEurAsRegion = /\bEUR\b(?!\s*(HEDGED?|HDG|HDGD|\)|$))/i.test(expanded)
+    if (hasEurAsRegion) region = 'EUROPE'
+  }
   const factors = matchAll(expanded, FACTOR_MAP).sort()
   return {
     assetClass:   'EQUITY',

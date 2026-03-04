@@ -44,9 +44,9 @@ export interface Instrument {
   r6m?: number | null
   vola?: number | null
   momentumScore?: number | null
-  sharpeScore?: number | null
+  riskAdjustedScore?: number | null
   momentumRank?: number
-  sharpeRank?: number
+  riskAdjustedRank?: number
   combinedScore?: number | null
   combinedRank?: number
   breakoutDate?: number
@@ -122,7 +122,7 @@ export interface AppSettings {
 
 export type SortColumn =
   | 'momentumScore'
-  | 'sharpeScore'
+  | 'riskAdjustedScore'
   | 'r1m' | 'r3m' | 'r6m'
   | 'vola'
   | 'aum' | 'ter'
@@ -139,7 +139,6 @@ export interface TableState {
   sortDirection: SortDirection
   typeFilter: TypeFilter
   showDeduped: boolean
-  aumFloor: number
   filterBelowRiskFree: boolean
 }
 

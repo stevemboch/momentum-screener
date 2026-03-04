@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import type { SortColumn } from '../types'
@@ -11,7 +11,7 @@ type Col = { key: string; label: string; title?: string; align?: 'right' | 'left
 const COLUMNS: Col[] = [
   { key: 'displayName',   label: 'Name',     align: 'left' },
   { key: 'type',          label: 'Type',     align: 'left' },
-  { key: 'sharpeScore',   label: 'Sharpe',   title: 'Momentum ÷ annualised volatility (rank)' },
+  { key: 'riskAdjustedScore', label: 'Risk-Adj.', title: 'Momentum ÷ annualisierte Volatilität (Rang)' },
   { key: 'momentumScore', label: 'Momentum', title: 'Weighted return score (rank)' },
   { key: 'combinedScore', label: 'Combined', title: 'Average of Momentum + Sharpe score (rank)' },
   { key: 'r1m',           label: '1M',       title: '1-month return' },
@@ -25,7 +25,7 @@ const COLUMNS: Col[] = [
   { key: 'pe',            label: 'P/E',      title: 'Price / Earnings' },
   { key: 'pb',            label: 'P/B',      title: 'Price / Book' },
   { key: 'earningsYield', label: 'EY',       title: 'Earnings Yield (rank)' },
-  { key: 'returnOnAssets', label: 'ROC',     title: 'Return on Assets (rank)' },
+  { key: 'returnOnAssets', label: 'ROA',     title: 'Return on Assets — Jahresgewinn / Gesamtkapital (Rang)' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
   { key: 'breakoutAgeDays', label: 'Ausbruchsalter', title: 'Days since breakout' },
 ]
@@ -126,7 +126,7 @@ function BreakoutBadge({
     retest?: boolean
   }
 }) {
-  if (!score) return <span className="text-muted">—</span>
+  if (score == null) return <span className="text-muted">—</span>
   const tooltip = flags ? [
     `${flags.ma200Rising ? '✅' : '❌'} MA200 steigend`,
     `${flags.goldenCross ? '✅' : '❌'} Golden Cross`,
@@ -187,9 +187,9 @@ function CandidateRow({ candidate, onLoad }: { candidate: any; onLoad: (isin: st
           {candidate.ter != null && ` · ${fmtTER(candidate.ter)}`}
         </div>
       </td>
-      {/* Sharpe */}
+      {/* Risk-Adjusted */}
       <td className="px-3 py-1.5 text-right">
-        <ScoreCell score={candidate.sharpeScore} rank={candidate.sharpeRank} />
+        <ScoreCell score={candidate.riskAdjustedScore} rank={candidate.riskAdjustedRank} />
       </td>
       {/* Momentum */}
       <td className="px-3 py-1.5 text-right">
@@ -486,9 +486,8 @@ export function RankingTable() {
             const hasGroup = inst.dedupCandidates && inst.dedupCandidates.length > 0
 
             return (
-              <>
+              <React.Fragment key={inst.isin}>
                 <tr
-                  key={inst.isin}
                   id={`row-${inst.isin}`}
                   data-isin={inst.isin}
                   className={`${rowBg} ${portfolioClass} hover:bg-surface2 border-b border-border/30 cursor-pointer`}
@@ -529,9 +528,9 @@ export function RankingTable() {
                   {/* Type */}
                   <td className="px-3 py-2 text-left"><TypeBadge type={inst.type} /></td>
 
-                  {/* Sharpe Score */}
+                  {/* Risk-Adjusted Score */}
                   <td className="px-3 py-2 text-right">
-                    <ScoreCell score={inst.sharpeScore} rank={inst.sharpeRank} colorFn={scoreColor} />
+                    <ScoreCell score={inst.riskAdjustedScore} rank={inst.riskAdjustedRank} colorFn={scoreColor} />
                   </td>
 
                   {/* Momentum */}
@@ -594,7 +593,7 @@ export function RankingTable() {
                     <MetricCell value={inst.earningsYield} rank={inst.earningsYieldRank} fmt={(v) => fmtPct(v)} />
                   </td>
 
-                  {/* ROC (Return on Assets) */}
+                  {/* ROA (Return on Assets) */}
                   <td className="px-3 py-2 text-right">
                     <MetricCell value={inst.returnOnAssets} rank={inst.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
                   </td>
@@ -612,7 +611,6 @@ export function RankingTable() {
 
                 {isExpanded && (
                   <ExpandedDetail
-                    key={`${inst.isin}-exp`}
                     inst={inst}
                     atrMultiplier={state.settings.atrMultiplier}
                     allInstruments={allInstruments}
@@ -622,7 +620,7 @@ export function RankingTable() {
                     onRemove={(isin) => dispatch({ type: 'REMOVE_INSTRUMENT', isin })}
                   />
                 )}
-              </>
+              </React.Fragment>
             )
           })}
         </tbody>

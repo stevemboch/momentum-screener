@@ -8,17 +8,24 @@ export function SettingsPanel() {
   const { state, dispatch } = useAppState()
   const { weights, aumFloor, atrMultiplier, riskFreeRate } = state.settings
 
-  const [localW1m, setLocalW1m] = useState(weights.w1m)
-  const [localW3m, setLocalW3m] = useState(weights.w3m)
-  const [localW6m, setLocalW6m] = useState(weights.w6m)
-
-  const total = localW1m + localW3m + localW6m
+  const raw = {
+    w1m: weights.w1m * 10,
+    w3m: weights.w3m * 10,
+    w6m: weights.w6m * 10,
+  }
+  const total = raw.w1m + raw.w3m + raw.w6m
   const norm = (v: number) => total > 0 ? v / total : 1 / 3
   const fmtW = (v: number) => `${(norm(v) * 100).toFixed(0)}%`
 
-  const applyWeights = () => {
-    dispatch({ type: 'SET_WEIGHTS', weights: { w1m: norm(localW1m), w3m: norm(localW3m), w6m: norm(localW6m) } })
-    setOpen(false)
+  const updateWeight = (key: keyof MomentumWeights, value: number) => {
+    const next = { ...raw, [key]: value }
+    const nextTotal = next.w1m + next.w3m + next.w6m
+    const normalized = {
+      w1m: nextTotal > 0 ? next.w1m / nextTotal : 1 / 3,
+      w3m: nextTotal > 0 ? next.w3m / nextTotal : 1 / 3,
+      w6m: nextTotal > 0 ? next.w6m / nextTotal : 1 / 3,
+    }
+    dispatch({ type: 'SET_WEIGHTS', weights: normalized })
   }
 
   return (
@@ -41,11 +48,11 @@ export function SettingsPanel() {
 
             {/* Momentum Weights */}
             <Section label="Momentum Weights" hint="auto-normalised">
-              <WeightSlider label="1M" value={localW1m} effective={fmtW(localW1m)} onChange={setLocalW1m} />
-              <WeightSlider label="3M" value={localW3m} effective={fmtW(localW3m)} onChange={setLocalW3m} />
-              <WeightSlider label="6M" value={localW6m} effective={fmtW(localW6m)} onChange={setLocalW6m} />
+              <WeightSlider label="1M" value={raw.w1m} effective={fmtW(raw.w1m)} onChange={(v) => updateWeight('w1m', v)} />
+              <WeightSlider label="3M" value={raw.w3m} effective={fmtW(raw.w3m)} onChange={(v) => updateWeight('w3m', v)} />
+              <WeightSlider label="6M" value={raw.w6m} effective={fmtW(raw.w6m)} onChange={(v) => updateWeight('w6m', v)} />
               <div className="text-[10px] text-muted font-mono mt-1">
-                Effective: {fmtW(localW1m)} / {fmtW(localW3m)} / {fmtW(localW6m)}
+                Effective: {fmtW(raw.w1m)} / {fmtW(raw.w3m)} / {fmtW(raw.w6m)}
               </div>
             </Section>
 
@@ -100,9 +107,6 @@ export function SettingsPanel() {
             <div className="flex justify-end gap-2 mt-2">
               <button onClick={() => setOpen(false)} className="px-3 py-1.5 text-xs font-mono text-muted hover:text-gray-300 border border-border rounded">
                 Cancel
-              </button>
-              <button onClick={applyWeights} className="px-3 py-1.5 text-xs font-mono text-accent bg-accent/10 border border-accent/30 rounded hover:bg-accent/20">
-                Apply
               </button>
             </div>
           </div>

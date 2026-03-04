@@ -455,8 +455,17 @@ export function usePipeline() {
       xetraBuffer.current = instruments
       dispatch({ type: 'SET_XETRA_READY', ready: true })
       dispatch({ type: 'SET_XETRA_LOADING', loading: false })
-    } catch (err) {
+    } catch (err: any) {
       dispatch({ type: 'SET_XETRA_LOADING', loading: false })
+      dispatch({
+        type: 'SET_FETCH_STATUS',
+        status: {
+          phase: 'error',
+          message: `Xetra CSV konnte nicht geladen werden: ${err.message}`,
+          current: 0,
+          total: 0,
+        },
+      })
     }
   }, [])
 
