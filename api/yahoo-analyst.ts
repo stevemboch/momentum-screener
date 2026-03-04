@@ -233,7 +233,7 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     return null
   }
 
-  const getByIncludes = (needles: string[]) => {
+  const getByIncludesInPairs = (needles: string[]) => {
     const n = needles.map((s) => s.toLowerCase())
     for (const [label, value] of pairs.entries()) {
       const l = label.toLowerCase()
@@ -242,12 +242,12 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     return null
   }
 
-  const consensusText = get('Mean consensus', 'Consensus') || getByIncludes(['consensus'])
-  const analystText = get('Number of Analysts', 'Number of analysts') || getByIncludes(['analyst'])
-  const lastText = get('Last Close Price', 'Last Close') || getByIncludes(['last', 'close'])
-  const avgText = get('Average target price', 'Average Target Price') || getByIncludes(['average', 'target'])
-  const highText = get('High Price Target', 'High target price', 'Highest target price') || getByIncludes(['high', 'target'])
-  const lowText = get('Low Price Target', 'Low target price', 'Lowest target price') || getByIncludes(['low', 'target'])
+  const consensusText = get('Mean consensus', 'Consensus') || getByIncludesInPairs(['consensus'])
+  const analystText = get('Number of Analysts', 'Number of analysts') || getByIncludesInPairs(['analyst'])
+  const lastText = get('Last Close Price', 'Last Close') || getByIncludesInPairs(['last', 'close'])
+  const avgText = get('Average target price', 'Average Target Price') || getByIncludesInPairs(['average', 'target'])
+  const highText = get('High Price Target', 'High target price', 'Highest target price') || getByIncludesInPairs(['high', 'target'])
+  const lowText = get('Low Price Target', 'Low target price', 'Lowest target price') || getByIncludesInPairs(['low', 'target'])
 
   // Fetch quote page for fundamentals like P/E and P/B
   let pe: number | null = null
