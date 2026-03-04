@@ -444,15 +444,20 @@ export function usePipeline() {
       const csvText = await apiXetra()
       const rows = parseXetraCSV(csvText)
       const instruments = rows.map(xetraRowToInstrument)
+      const uniqueByIsin = new Map<string, Instrument>()
+      instruments.forEach((inst) => {
+        if (!uniqueByIsin.has(inst.isin)) uniqueByIsin.set(inst.isin, inst)
+      })
+      const dedupedInstruments = Array.from(uniqueByIsin.values())
       const etfCounts: Record<string, number> = {}
       const stockCounts: Record<string, number> = {}
-      instruments.forEach((inst) => {
+      dedupedInstruments.forEach((inst) => {
         const g = inst.xetraGroup || ''
         if (inst.type === 'Stock') stockCounts[g] = (stockCounts[g] || 0) + 1
         else etfCounts[g] = (etfCounts[g] || 0) + 1
       })
       dispatch({ type: 'SET_GROUP_COUNTS', etf: etfCounts, stock: stockCounts })
-      xetraBuffer.current = instruments
+      xetraBuffer.current = dedupedInstruments
       dispatch({ type: 'SET_XETRA_READY', ready: true })
       dispatch({ type: 'SET_XETRA_LOADING', loading: false })
     } catch (err: any) {

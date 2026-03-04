@@ -167,9 +167,15 @@ function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'ADD_INSTRUMENTS': {
       const existingISINs = new Set(state.instruments.map((i) => i.isin))
+      const seenInBatch = new Set<string>()
       const portfolioSet = new Set(state.portfolioIsins)
       const newInst = action.instruments
         .filter((i) => !existingISINs.has(i.isin))
+        .filter((i) => {
+          if (seenInBatch.has(i.isin)) return false
+          seenInBatch.add(i.isin)
+          return true
+        })
         .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
       const merged = [...state.instruments, ...newInst]
       return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
@@ -177,7 +183,14 @@ function reducer(state: AppState, action: Action): AppState {
     case 'SET_INSTRUMENTS':
       {
         const portfolioSet = new Set(state.portfolioIsins)
-        const next = action.instruments.map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
+        const seen = new Set<string>()
+        const next = action.instruments
+          .filter((i) => {
+            if (seen.has(i.isin)) return false
+            seen.add(i.isin)
+            return true
+          })
+          .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
         return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
       }
     case 'UPDATE_INSTRUMENT': {
