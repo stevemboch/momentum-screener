@@ -54,7 +54,7 @@ function MaFlag({ above, label }: { above: boolean | null | undefined; label: st
   }
   return (
     <span
-      className={`${base} ${above ? 'bg-green-400 border-green-400/60' : 'bg-red-400 border-red-400/60'}`}
+      className={`${base} ${above ? '!bg-green-400 border-green-400/60' : '!bg-red-400 border-red-400/60'}`}
       title={`${label}: ${above ? 'above' : 'below'}`}
     />
   )
