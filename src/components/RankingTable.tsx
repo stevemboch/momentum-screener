@@ -44,17 +44,22 @@ const NON_SORTABLE = new Set(['displayName', 'ma', 'breakoutAgeDays'])
 
 function MaFlag({ above, label }: { above: boolean | null | undefined; label: string }) {
   const base = 'inline-flex w-2.5 h-2.5 rounded-full border shadow-sm'
+  const color = above === null || above === undefined
+    ? '#2a3045'
+    : (above ? '#4ade80' : '#f87171')
   if (above === null || above === undefined) {
     return (
       <span
-        className={`${base} bg-surface2 border-border`}
+        className={base}
+        style={{ backgroundColor: color, borderColor: color }}
         title={`${label}: no data`}
       />
     )
   }
   return (
     <span
-      className={`${base} ${above ? '!bg-green-400 border-green-400/60' : '!bg-red-400 border-red-400/60'}`}
+      className={base}
+      style={{ backgroundColor: color, borderColor: color }}
       title={`${label}: ${above ? 'above' : 'below'}`}
     />
   )
