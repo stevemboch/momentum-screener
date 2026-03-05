@@ -266,6 +266,8 @@ function ExpandedDetail({
     : null
   const { result: ctx, loading: ctxLoading, load: loadCtx, invalidate } =
     useInstrumentContext(inst.isin)
+  const [combinedLoading, setCombinedLoading] = useState(false)
+  const hasContext = !!ctx && !ctx.error
 
   // Resolve dedup candidates from full instrument list
   const candidates = (inst.dedupCandidates ?? [])
@@ -364,130 +366,146 @@ function ExpandedDetail({
               )}
               {inst.valueScoreModel && <div>Value model: <span className="text-amber-400">{inst.valueScoreModel}</span></div>}
               {inst.priceError && <div className="text-red-400 mt-1">Error: {inst.priceError}</div>}
-              {inst.type === 'Stock' && (
-                <div className="mt-2">
-                  <div className="text-gray-400 font-semibold mb-1">Analyst</div>
-                  {!inst.analystFetched ? (
-                    <button
-                      onClick={() => onLoadAnalyst(inst.isin)}
-                      className="btn-sm btn-muted"
-                    >
-                      ⬇ Load
-                    </button>
-                  ) : (
-                    <>
-                      <div>Rating: <span className="text-gray-300" title={inst.analystSource ? `Source: ${inst.analystSource}` : undefined}>
-                        {inst.analystRatingKey ? String(inst.analystRatingKey).toUpperCase() : '—'}
-                        {inst.analystRating != null ? ` (${inst.analystRating.toFixed(2)})` : ''}
-                      </span>
-                        {inst.analystOpinions != null && (
-                          <span className="text-muted"> · {inst.analystOpinions} analysts</span>
-                        )}
-                      </div>
-                      <div>Target: <span className="text-gray-300" title={inst.analystSource ? `Source: ${inst.analystSource}` : undefined}>
-                        {inst.targetPrice != null ? inst.targetPrice.toFixed(2) : '—'}
-                      </span>
-                        {upside != null && (
-                          <span className={upside >= 0 ? 'text-green-400' : 'text-red-400'}>
-                            {upside >= 0 ? ' +' : ' '}{(upside * 100).toFixed(1)}%
-                          </span>
-                        )}
-                      </div>
-                      {(inst.targetLow != null || inst.targetHigh != null) && (
-                        <div className="text-muted">
-                          Range: {inst.targetLow != null ? inst.targetLow.toFixed(2) : '—'} – {inst.targetHigh != null ? inst.targetHigh.toFixed(2) : '—'}
-                        </div>
-                      )}
-                      {inst.analystError && <div className="text-red-400 mt-1">Error: {inst.analystError}</div>}
-                    </>
-                  )}
-                </div>
-              )}
             </div>
           </div>
           {(inst.type === 'Stock' || inst.type === 'Unknown') && inst.yahooTicker && (
             <div className="mt-3 pt-3 border-t border-border">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-semibold text-gray-400 font-mono">
-                  🌐 Earnings & Makro-Kontext
+                  🌐 Analyst & Macro Context
                 </span>
                 <div className="flex items-center gap-2">
                   {ctx && (
                     <span className="text-[10px] text-muted font-mono">
-                      {new Date(ctx.fetchedAt).toLocaleTimeString('de-DE')}
+                      {new Date(ctx.fetchedAt).toLocaleTimeString('en-US')}
                     </span>
                   )}
                   <button
-                    onClick={() => {
-                      if (ctx) invalidate()
-                      else loadCtx(
-                        inst.yahooTicker,
-                        inst.displayName,
-                        lastPrice ?? null,
-                        inst.targetPrice ?? null
-                      )
+                    onClick={async () => {
+                      setCombinedLoading(true)
+                      try {
+                        if (ctx) invalidate()
+                        await Promise.all([
+                          onLoadAnalyst(inst.isin),
+                          loadCtx(
+                            inst.yahooTicker,
+                            inst.displayName,
+                            lastPrice ?? null,
+                            inst.targetPrice ?? null
+                          ),
+                        ])
+                      } finally {
+                        setCombinedLoading(false)
+                      }
                     }}
-                    disabled={ctxLoading}
+                    disabled={ctxLoading || combinedLoading}
                     className="text-[10px] font-mono text-muted hover:text-gray-300
                        border border-border rounded px-1.5 py-0.5
                        disabled:opacity-40 transition-colors"
                   >
-                    {ctxLoading ? '…' : ctx ? '↺ Neu laden' : '⬇ Laden'}
+                    {(ctxLoading || combinedLoading) ? '…' : ctx ? '↺ Refresh' : '⬇ Load'}
                   </button>
                 </div>
               </div>
 
-              {ctx && !ctx.error && (
+              {(inst.analystFetched || hasContext) && (
                 <div className="grid grid-cols-2 gap-4 text-[11px] font-mono">
-                  {/* Linke Spalte: Earnings */}
+                  {/* Left column: Analyst + Earnings */}
                   <div className="space-y-1">
-                    {ctx.lastEarnings && (
-                      <>
-                        <div>
-                          <span className="text-muted">Letzte Earnings: </span>
-                          <span className="text-gray-300">{ctx.lastEarnings.date ?? '—'}</span>
-                          {ctx.lastEarnings.result && (
-                            <span className={`ml-1 ${
-                              ctx.lastEarnings.result === 'beat'   ? 'text-green-400' :
-                              ctx.lastEarnings.result === 'miss'   ? 'text-red-400'   :
-                                                                     'text-gray-400'
-                            }`}>
-                              · {ctx.lastEarnings.result.toUpperCase()}
-                            </span>
+                    <div className="text-gray-400 font-semibold">Analyst</div>
+                    {inst.type === 'Stock' ? (
+                      inst.analystFetched ? (
+                        <>
+                          <div>Rating: <span className="text-gray-300" title={inst.analystSource ? `Source: ${inst.analystSource}` : undefined}>
+                            {inst.analystRatingKey ? String(inst.analystRatingKey).toUpperCase() : '—'}
+                            {inst.analystRating != null ? ` (${inst.analystRating.toFixed(2)})` : ''}
+                          </span>
+                            {inst.analystOpinions != null && (
+                              <span className="text-muted"> · {inst.analystOpinions} analysts</span>
+                            )}
+                          </div>
+                          <div>Target: <span className="text-gray-300" title={inst.analystSource ? `Source: ${inst.analystSource}` : undefined}>
+                            {inst.targetPrice != null ? inst.targetPrice.toFixed(2) : '—'}
+                          </span>
+                            {upside != null && (
+                              <span className={upside >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                {upside >= 0 ? ' +' : ' '}{(upside * 100).toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                          {(inst.targetLow != null || inst.targetHigh != null) && (
+                            <div className="text-muted">
+                              Range: {inst.targetLow != null ? inst.targetLow.toFixed(2) : '—'} – {inst.targetHigh != null ? inst.targetHigh.toFixed(2) : '—'}
+                            </div>
                           )}
-                        </div>
-                        {ctx.lastEarnings.detail && (
-                          <div className="text-muted leading-snug">
-                            {ctx.lastEarnings.detail}
+                          {inst.analystError && <div className="text-red-400 mt-1">Error: {inst.analystError}</div>}
+                        </>
+                      ) : (
+                        <div className="text-muted">Not loaded</div>
+                      )
+                    ) : (
+                      <div className="text-muted">Not available for this instrument type</div>
+                    )}
+                    <div className="text-gray-400 font-semibold mt-2">Earnings</div>
+                    {hasContext ? (
+                      <>
+                        {ctx.lastEarnings && (
+                          <>
+                            <div>
+                              <span className="text-muted">Last earnings: </span>
+                              <span className="text-gray-300">{ctx.lastEarnings.date ?? '—'}</span>
+                              {ctx.lastEarnings.result && (
+                                <span className={`ml-1 ${
+                                  ctx.lastEarnings.result === 'beat'   ? 'text-green-400' :
+                                  ctx.lastEarnings.result === 'miss'   ? 'text-red-400'   :
+                                                                         'text-gray-400'
+                                }`}>
+                                  · {ctx.lastEarnings.result.toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+                            {ctx.lastEarnings.detail && (
+                              <div className="text-muted leading-snug">
+                                {ctx.lastEarnings.detail}
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {ctx.nextEarnings && (
+                          <div>
+                            <span className="text-muted">Next earnings: </span>
+                            <span className="text-gray-300">{ctx.nextEarnings}</span>
                           </div>
                         )}
                       </>
-                    )}
-                    {ctx.nextEarnings && (
-                      <div>
-                        <span className="text-muted">Nächste Earnings: </span>
-                        <span className="text-gray-300">{ctx.nextEarnings}</span>
-                      </div>
+                    ) : (
+                      <div className="text-muted">Not loaded</div>
                     )}
                   </div>
 
-                  {/* Rechte Spalte: News + Makro */}
+                  {/* Right column: News + Macro */}
                   <div className="space-y-1">
-                    {ctx.news.map((n, i) => (
-                      <div key={i} className="flex items-start gap-1.5">
-                        <span className={`shrink-0 ${
-                          n.sentiment === 'positive' ? 'text-green-400' :
-                          n.sentiment === 'negative' ? 'text-red-400'   :
-                                                       'text-gray-400'
-                        }`}>●</span>
-                        <span className="text-gray-300 leading-snug">{n.headline}</span>
-                      </div>
-                    ))}
-                    {ctx.macroRisk && (
-                      <div className="flex items-start gap-1.5 mt-1">
-                        <span className="text-amber-400 shrink-0">⚠</span>
-                        <span className="text-amber-400 leading-snug">{ctx.macroRisk}</span>
-                      </div>
+                    {hasContext ? (
+                      <>
+                        {ctx.news.map((n, i) => (
+                          <div key={i} className="flex items-start gap-1.5">
+                            <span className={`shrink-0 ${
+                              n.sentiment === 'positive' ? 'text-green-400' :
+                              n.sentiment === 'negative' ? 'text-red-400'   :
+                                                           'text-gray-400'
+                            }`}>●</span>
+                            <span className="text-gray-300 leading-snug">{n.headline}</span>
+                          </div>
+                        ))}
+                        {ctx.macroRisk && (
+                          <div className="flex items-start gap-1.5 mt-1">
+                            <span className="text-amber-400 shrink-0">⚠</span>
+                            <span className="text-amber-400 leading-snug">{ctx.macroRisk}</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-muted">Not loaded</div>
                     )}
                   </div>
                 </div>
@@ -495,7 +513,7 @@ function ExpandedDetail({
 
               {ctx?.error && (
                 <div className="text-[11px] font-mono text-red-400">
-                  Fehler: {ctx.error}
+                  Error: {ctx.error}
                 </div>
               )}
             </div>

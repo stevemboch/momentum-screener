@@ -6,23 +6,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { ticker, name, lastPrice, targetPrice } = req.body
   if (!ticker || !name) return res.status(400).json({ error: 'ticker und name required' })
 
-  const systemPrompt = `Du bist ein Finanzanalyst. Suche nach aktuellen 
-Informationen zu einem Börseninstrument und erstelle einen kompakten Kontext-Brief.
-Antworte ausschließlich auf Deutsch. Sei faktisch und knapp.
-Antworte ausschließlich als valides JSON ohne Markdown-Backticks.`
+  const systemPrompt = `You are a financial analyst. Search for up-to-date 
+information about a listed instrument and create a compact context brief.
+Answer in English only. Be factual and concise.
+Answer exclusively as valid JSON without Markdown backticks.`
 
   const userMessage =
 `Instrument: ${name} (Ticker: ${ticker})
-Aktueller Kurs: ${lastPrice != null ? lastPrice : 'unbekannt'}
-Analyst-Kursziel: ${targetPrice != null ? targetPrice : 'unbekannt'}
+Last price: ${lastPrice != null ? lastPrice : 'unknown'}
+Analyst target price: ${targetPrice != null ? targetPrice : 'unknown'}
 
-Suche nach:
-1. Den letzten Earnings (Datum und ob Beat/Miss/In-line vs. Konsens, kurze Erläuterung)
-2. Dem nächsten Earnings-Termin falls bekannt
-3. Maximal 2 relevanten aktuellen News-Schlagzeilen (letzte 4 Wochen)
-4. Einem Makro- oder Sektor-Risiko das aktuell relevant ist
+Search for:
+1. The last earnings (date and beat/miss/inline vs consensus, short explanation)
+2. The next earnings date if known
+3. Up to 2 relevant recent news headlines (last 4 weeks)
+4. One currently relevant macro or sector risk
 
-Antworte als JSON:
+Answer as JSON:
 {
   "lastEarnings": {
     "date": string | null,
