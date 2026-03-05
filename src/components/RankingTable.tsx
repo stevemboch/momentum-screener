@@ -405,7 +405,7 @@ function ExpandedDetail({
               )}
             </div>
           </div>
-          {inst.type === 'Stock' && inst.yahooTicker && (
+          {(inst.type === 'Stock' || inst.type === 'Unknown') && inst.yahooTicker && (
             <div className="mt-3 pt-3 border-t border-border">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-semibold text-gray-400 font-mono">
