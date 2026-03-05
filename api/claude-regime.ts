@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { openrouterChat, parseJSON } from './_openrouter'
+import { parseJSON } from './_openrouter'
+import { aiChat } from './_ai'
 import type { RegimeInputs } from '../src/utils/regimeInputs'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -39,7 +40,7 @@ Answer as JSON:
 }`
 
   try {
-    const raw = await openrouterChat(systemPrompt, userMessage)
+    const raw = await aiChat(systemPrompt, userMessage)
     const result = parseJSON(raw)
     return res.status(200).json(result)
   } catch (err: any) {

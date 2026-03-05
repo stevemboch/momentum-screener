@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { openrouterChat, parseJSON } from './_openrouter'
+import { parseJSON } from './_openrouter'
+import { aiChat } from './_ai'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -96,7 +97,7 @@ Answer exclusively as valid JSON without Markdown backticks:
 { "severity": "ok" | "warning" | "critical", "findings": ["string"] }`
 
   try {
-    const raw = await openrouterChat(systemPrompt, JSON.stringify(instruments, null, 2))
+    const raw = await aiChat(systemPrompt, JSON.stringify(instruments, null, 2))
     const result = parseJSON(raw)
     return res.status(200).json(result)
   } catch (err: any) {

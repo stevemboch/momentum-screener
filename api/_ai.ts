@@ -1,0 +1,20 @@
+import { geminiChat } from './_gemini'
+import { openrouterChat } from './_openrouter'
+
+export async function aiChat(
+  systemPrompt: string,
+  userMessage: string,
+  geminiModel = 'gemini-2.5-flash'
+): Promise<string> {
+  try {
+    return await geminiChat(systemPrompt, userMessage, geminiModel)
+  } catch (err: any) {
+    try {
+      return await openrouterChat(systemPrompt, userMessage)
+    } catch (fallbackErr: any) {
+      const primaryMsg = err?.message || String(err)
+      const fallbackMsg = fallbackErr?.message || String(fallbackErr)
+      throw new Error(`Gemini failed: ${primaryMsg}. OpenRouter failed: ${fallbackMsg}`)
+    }
+  }
+}
