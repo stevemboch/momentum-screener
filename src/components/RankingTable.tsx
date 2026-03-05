@@ -371,15 +371,10 @@ function ExpandedDetail({
           {(inst.type === 'Stock' || inst.type === 'Unknown') && inst.yahooTicker && (
             <div className="mt-3 pt-3 border-t border-border">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-gray-400 font-mono">
-                  🌐 Analyst & Macro Context
-                </span>
                 <div className="flex items-center gap-2">
-                  {ctx && (
-                    <span className="text-[10px] text-muted font-mono">
-                      {new Date(ctx.fetchedAt).toLocaleTimeString('en-US')}
-                    </span>
-                  )}
+                  <span className="text-[11px] font-semibold text-gray-400 font-mono">
+                    🌐 Analyst & Macro Context
+                  </span>
                   <button
                     onClick={async () => {
                       setCombinedLoading(true)
@@ -405,6 +400,18 @@ function ExpandedDetail({
                   >
                     {(ctxLoading || combinedLoading) ? '…' : ctx ? '↺ Refresh' : '⬇ Load'}
                   </button>
+                  {(ctxLoading || combinedLoading) && (
+                    <span className="text-[10px] text-muted font-mono">
+                      {ctxLoading ? 'Searching…' : 'Loading…'}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {ctx && (
+                    <span className="text-[10px] text-muted font-mono">
+                      {new Date(ctx.fetchedAt).toLocaleTimeString('en-US')}
+                    </span>
+                  )}
                 </div>
               </div>
 
