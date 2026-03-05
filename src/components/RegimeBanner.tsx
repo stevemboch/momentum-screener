@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRegime } from '../hooks/useRegime'
+import { useAppState } from '../store'
 import type { MarketRegime } from '../types'
 
 const CONFIG: Record<MarketRegime, { label: string; icon: string; color: string }> = {
@@ -10,18 +11,26 @@ const CONFIG: Record<MarketRegime, { label: string; icon: string; color: string 
 }
 
 export function RegimeBanner() {
+  const { state } = useAppState()
   const { regime, compute } = useRegime()
   const [dismissed, setDismissed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const REGIME_DELAY_MS = 1500
 
   useEffect(() => {
+    if (state.fetchStatus.phase !== 'done') return
     let cancelled = false
     setLoading(true)
-    compute().finally(() => {
-      if (!cancelled) setLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [compute])
+    const t = setTimeout(() => {
+      compute().finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    }, REGIME_DELAY_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [state.fetchStatus.phase, state.instruments.length, state.referenceR3m, compute])
 
   if (dismissed) return null
 

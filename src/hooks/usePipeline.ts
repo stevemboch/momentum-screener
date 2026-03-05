@@ -4,7 +4,6 @@ import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll } from '../utils/calculations'
-import { useRegime } from './useRegime'
 
 const YAHOO_CONCURRENCY_MIN = 3
 const YAHOO_CONCURRENCY_MAX = 8
@@ -118,7 +117,6 @@ function applyStatsResults(instruments: Instrument[], statsResults: StatsResult[
 
 export function usePipeline() {
   const { state, dispatch } = useAppState()
-  const { compute: computeRegime } = useRegime()
   const abortRef = useRef(false)
   const xetraBuffer = useRef<Instrument[]>([])
 
@@ -551,11 +549,10 @@ export function usePipeline() {
       const winners = finalEtfsAfter.filter((i) => i.isDedupWinner)
       dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(finalCombined, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: finalCombined.length, total: finalCombined.length } })
-      computeRegime({ instruments: finalCombined, referenceR3m: refR3m ?? state.referenceR3m })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceR3m, computeRegime])
+  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceR3m])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
