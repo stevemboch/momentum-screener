@@ -6,36 +6,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const inputs: RegimeInputs = req.body
   if (!inputs || inputs.instrumentCount < 10)
-    return res.status(400).json({ error: 'Zu wenig Instrumente (min. 10)' })
+    return res.status(400).json({ error: 'Not enough instruments (min. 10)' })
 
   const fmt = (v: number | null) =>
     v == null ? 'n/a' : `${(v * 100).toFixed(1)}%`
 
-  const systemPrompt = `Du bist ein quantitativer Marktanalyst. Du bekommst 
-aggregierte Marktbreite-Kennzahlen eines Aktien/ETF-Universums und klassifizierst 
-das aktuelle Marktregime. Antworte sachlich, präzise und auf Deutsch.
-Antworte ausschließlich als valides JSON ohne Markdown-Backticks.`
+  const systemPrompt = `You are a quantitative market analyst. You receive 
+aggregated market-breadth metrics for an equity/ETF universe and classify 
+the current market regime. Answer clearly and concisely in English.
+Answer exclusively as valid JSON without Markdown backticks.`
 
   const userMessage =
-`Marktbreite-Kennzahlen (${inputs.instrumentCount} Instrumente):
-- Instrumente über MA200:            ${fmt(inputs.aboveMA200Pct)}
-- Durchschnittlicher 3M-Return:      ${fmt(inputs.avgR3m)}
-- Instrumente mit positivem 3M-Ret.: ${fmt(inputs.positiveR3mPct)}
-- Durchschnittliche Volatilität:     ${fmt(inputs.avgVola)}
-- MSCI World 3M-Return (Referenz):   ${fmt(inputs.urthR3m)}
+`Market breadth metrics (${inputs.instrumentCount} instruments):
+- Instruments above MA200:          ${fmt(inputs.aboveMA200Pct)}
+- Average 3M return:                ${fmt(inputs.avgR3m)}
+- Instruments with positive 3M ret: ${fmt(inputs.positiveR3mPct)}
+- Average volatility:               ${fmt(inputs.avgVola)}
+- MSCI World 3M return (reference): ${fmt(inputs.urthR3m)}
 
-Klassifiziere als genau eines von:
-  RISK_ON     → breite Aufwärtsbewegung, Momentum intakt
-  RISK_OFF    → Verkaufsdruck, breite Schwäche
-  SIDEWAYS    → gemischtes Bild, keine klare Richtung
-  TRANSITION  → Regime wechselt gerade
+Classify as exactly one of:
+  RISK_ON     → broad uptrend, momentum intact
+  RISK_OFF    → selling pressure, broad weakness
+  SIDEWAYS    → mixed signals, no clear direction
+  TRANSITION  → regime is shifting
 
-Antworte als JSON:
+Answer as JSON:
 {
   "regime": "RISK_ON" | "RISK_OFF" | "SIDEWAYS" | "TRANSITION",
   "confidence": 0-100,
-  "summary": "Ein Satz Begründung auf Deutsch",
-  "suggestion": "Eine konkrete Gewichtungsempfehlung auf Deutsch"
+  "summary": "One-sentence rationale in English",
+  "suggestion": "One concrete allocation suggestion in English"
 }`
 
   try {

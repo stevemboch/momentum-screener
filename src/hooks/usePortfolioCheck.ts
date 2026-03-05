@@ -17,16 +17,18 @@ export function usePortfolioCheck() {
     if (portfolioInstruments.length === 0) return
 
     const payload = portfolioInstruments.map(i => ({
-      name:         i.displayName,
-      type:         i.type,
-      dedupKey:     i.dedupGroup ?? null,
-      currency:     i.currency ?? null,
+      name:             i.displayName,
+      longName:         i.longName ?? null,
+      xetraGroup:       i.xetraGroup ?? null,
+      type:             i.type,
+      dedupKey:         i.dedupGroup ?? null,
+      currency:         i.currency ?? null,
       momentumRank:     i.momentumRank ?? null,
       riskAdjustedRank: i.riskAdjustedRank ?? null,
       valueRank:        i.valueRank ?? null,
-      r3m:  i.r3m ?? null,
-      r6m:  i.r6m ?? null,
-      vola: i.vola ?? null,
+      r3m:              i.r3m ?? null,
+      r6m:              i.r6m ?? null,
+      vola:             i.vola ?? null,
     }))
 
     setLoading(true)

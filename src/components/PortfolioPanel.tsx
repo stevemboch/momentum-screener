@@ -71,8 +71,14 @@ export function PortfolioPanel() {
                text-muted hover:text-gray-300 hover:border-accent/50 
                disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
       >
-        {loading ? 'Analysiere...' : '🔍 Portfolio analysieren'}
+        {loading ? 'Analyzing...' : '🔍 Analyze portfolio'}
       </button>
+
+      {portfolioCount > 0 && (
+        <div className="text-[10px] text-muted font-mono mt-1 leading-snug">
+          Best results with Xetra instruments — manual inputs have fewer exposure signals.
+        </div>
+      )}
 
       {result && (
         <div className={`mt-2 p-2 rounded border text-[11px] font-mono ${
@@ -85,7 +91,7 @@ export function PortfolioPanel() {
               result.severity === 'ok'      ? 'text-green-400' :
               result.severity === 'warning' ? 'text-amber-400' : 'text-red-400'
             }>
-              {result.severity === 'ok' ? '✓ Ok' : result.severity === 'warning' ? '⚠ Warnung' : '✗ Kritisch'}
+              {result.severity === 'ok' ? '✓ OK' : result.severity === 'warning' ? '⚠ Warning' : '✗ Critical'}
             </span>
             <button onClick={clear} className="text-muted hover:text-gray-300">×</button>
           </div>
@@ -98,7 +104,7 @@ export function PortfolioPanel() {
       )}
 
       {error && (
-        <div className="mt-2 text-[11px] font-mono text-red-400">Fehler: {error}</div>
+        <div className="mt-2 text-[11px] font-mono text-red-400">Error: {error}</div>
       )}
     </div>
   )

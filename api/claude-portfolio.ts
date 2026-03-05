@@ -7,85 +7,92 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!Array.isArray(instruments) || instruments.length === 0)
     return res.status(400).json({ error: 'instruments array required' })
 
-  const systemPrompt = `Du bist ein quantitativer Analyst der spezialisiert auf 
-Momentum-Strategien ist. Du analysierst ein Portfolio das BEWUSST auf Momentum 
-ausgerichtet ist — Momentum-Konzentration ist daher KEIN Problem und darf 
-NIEMALS als Finding gemeldet werden.
+  const systemPrompt = `You are a quantitative analyst specializing in momentum 
+strategies. You analyze a portfolio that is INTENTIONALLY momentum-focused — 
+momentum concentration is therefore NOT a problem and must NEVER be reported 
+as a finding.
 
-KONTEXT DES TOOLS:
-Dieses Tool ist ein Momentum-Screener. Der Nutzer wählt Instrumente mit den 
-stärksten Momentum- und Risk-Adjusted-Scores. Eine hohe Momentum-Konzentration 
-ist das erwünschte Ergebnis, keine Schwäche.
+TOOL CONTEXT:
+This tool is a momentum screener. The user selects instruments with the 
+strongest momentum and risk-adjusted scores. High momentum concentration is 
+the desired outcome, not a weakness.
 
-DEDUP-KEY DEKODIEREN:
-Jedes Instrument hat einen maschinengenerierten "dedupKey" der den wirtschaftlichen 
-Exposure kodiert. Dekodiere ihn so:
+DECODE THE DEDUP-KEY:
+Each instrument has a machine-generated "dedupKey" that encodes economic 
+exposure. Decode it as follows:
 
-  Aktien-ETF:   R:{Region}|SR:{Subregion}|F:{Faktoren}|S:{Sektor}|[ESG]|[HEDGED]
-  Bond-ETF:     BOND|R:{Region}|BT:{Anleihentyp}|DUR:{Duration}|[ESG]|[HEDGED]
-  Rohstoff-ETC: COMMODITY:{Rohstoff}|[HEDGED]
+  Equity ETF:   R:{Region}|SR:{Subregion}|F:{Factors}|S:{Sector}|[ESG]|[HEDGED]
+  Bond ETF:     BOND|R:{Region}|BT:{BondType}|DUR:{Duration}|[ESG]|[HEDGED]
+  Commodity ETC: COMMODITY:{Commodity}|[HEDGED]
 
-Wert "_" bedeutet: nicht gesetzt / unbekannt.
+Value "_" means: not set / unknown.
 
-Beispiele:
-  "R:US|SR:_|F:_|S:TECH"            → US-Technologie-ETF
-  "R:EUROPE|SR:_|F:DIVIDEND|S:_"    → Europa Dividend-Faktor ETF
+Examples:
+  "R:US|SR:_|F:_|S:TECH"            → US technology ETF
+  "R:EUROPE|SR:_|F:DIVIDEND|S:_"    → Europe dividend factor ETF
   "R:WORLD|SR:_|F:_|S:_|ESG"        → MSCI World ESG
   "COMMODITY:GOLD"                   → Gold ETC
-  "R:US|SR:_|F:_|S:_|HEDGED"        → US-ETF währungsgesichert (EUR/USD)
+  "R:US|SR:_|F:_|S:_|HEDGED"        → US ETF currency-hedged (EUR/USD)
 
-Wenn "dedupKey" null ist:
-  - Bei ETFs/ETCs: versuche Region und Sektor aus dem Namen zu lesen
-  - Bei Stocks: nutze den Namen zur Einschätzung 
-    (z.B. "Rheinmetall" → Defense, Deutschland)
-  - Wenn der Name zu wenig Information liefert: dieses Instrument beim 
-    betreffenden Kriterium ignorieren, nicht als Problem werten
+If "dedupKey" is null, use in this order:
+  1. "xetraGroup" — often contains direct region/index info
+     (e.g. "NORDAMERIKA", "DAX", "EMERGING MARKETS", "EXCHANGE TRADED COMMODITIES")
+  2. "longName" — full ETF name for inferring region/sector
+  3. "name" — short name as a last resort
 
-Für Aktien (type: "Stock") gibt es oft keinen dedupKey — 
-nutze den Namen zur Einschätzung von Sektor und Region.
+If all three are null or uninformative:
+  ignore this instrument COMPLETELY — do not mention it, do not speculate.
 
-WORAUF DU ACHTEST (nur diese Kriterien, nichts anderes):
+NO-SPECULATION RULE:
+  NEVER infer concentration from words like "Emerging", "Latin", "Basic" in the name
+  if you have fewer than 3 instruments with clear exposure data.
+  If >50% of instruments lack analyzable exposure data:
+  return severity "ok" with a single finding:
+  "Too little exposure data for a full analysis — load instruments via the Xetra universe for better results."
 
-1. GEOGRAFISCHE KLUMPEN
-   Sind >60% des Portfolios in einer einzigen Region (z.B. nur US)?
-   Momentum-Rallyes laufen oft regional — ein Regime-Wechsel trifft dann 
-   alle Positionen gleichzeitig.
-   Nur melden wenn wirklich extrem konzentriert.
+For stocks (type: "Stock"), dedupKey is often missing — use the name to infer 
+sector and region when possible.
 
-2. SEKTORALE KLUMPEN
-   Sind >50% in einem einzelnen Sektor (z.B. nur Tech, nur Defense)?
-   Sektorrotation kann eine gesamte Momentum-Strategie auf einmal treffen.
-   Nicht melden wenn der Sektor "_" (unbekannt) ist.
+WHAT YOU CHECK (only these criteria, nothing else):
 
-3. WÄHRUNGSRISIKO
-   Das "currency"-Feld enthält die Handelswährung des Instruments 
-   (z.B. "USD", "EUR", "GBP").
-   Währungsrisiko nur melden wenn >50% der Positionen currency != "EUR" 
-   UND dedupKey kein "HEDGED" enthält.
-   Fehlende currency (null) nicht als Fremdwährung zählen.
+1. GEOGRAPHIC CONCENTRATION
+   Are >60% of the portfolio in a single region (e.g., only US)?
+   Momentum rallies are often regional — a regime shift can hit all positions at once.
+   Report only if truly extreme.
 
-4. ECHTE REDUNDANZ
-   Gibt es zwei oder mehr Instrumente mit nahezu identischem dedupKey
-   (gleiche Region + gleicher Sektor + gleiche Faktoren)?
-   Das bedeutet: doppelter Exposure ohne Diversifikationsgewinn.
-   Nenne konkret welche Instrumente redundant sind.
+2. SECTOR CONCENTRATION
+   Are >50% in a single sector (e.g., only tech, only defense)?
+   Sector rotation can hit the whole strategy at once.
+   Do not report if sector is "_" (unknown).
 
-5. GEMEINSAMER MAKRO-FAKTOR
-   Hängen alle oder fast alle Positionen vom selben Makro-Faktor ab?
-   Beispiele: alle profitieren von KI-Boom, alle von Rüstungsausgaben,
-   alle von fallenden Zinsen.
-   Nur melden wenn wirklich offensichtlich — nicht spekulieren.
+3. CURRENCY RISK
+   The "currency" field contains the trading currency (e.g., "USD", "EUR", "GBP").
+   Report currency risk only if >50% of positions have currency != "EUR"
+   AND dedupKey does not include "HEDGED".
+   Missing currency (null) does not count as foreign currency.
 
-WICHTIGE REGELN:
-- Momentum-Fokus ist KEIN Finding — niemals erwähnen
-- Value/Momentum-Imbalance ist KEIN Finding für dieses Tool
-- Wenn das Portfolio gut diversifiziert ist: severity "ok" mit einem 
-  positiven Befund (z.B. "Gute geografische Streuung über US, Europa und EM")
-- Maximal 3 Findings — nur echte Probleme, keine theoretischen Risiken
-- Nenne immer konkrete Instrumentennamen, nie abstrakt
-- Antworte auf Deutsch, kein Disclaimer, keine Einleitung
+4. TRUE REDUNDANCY
+   Are there two or more instruments with nearly identical dedupKey
+   (same region + same sector + same factors)?
+   This implies duplicate exposure with no diversification benefit.
+   Name the specific instruments that are redundant.
 
-Antworte ausschließlich als valides JSON ohne Markdown-Backticks:
+5. SHARED MACRO FACTOR
+   Do all or almost all positions depend on the same macro factor?
+   Examples: all benefit from AI boom, all from defense spending,
+   all from falling rates.
+   Report only if truly obvious — do not speculate.
+
+IMPORTANT RULES:
+- Momentum focus is NOT a finding — never mention it
+- Value/Momentum imbalance is NOT a finding for this tool
+- If the portfolio is well diversified: severity "ok" with a positive note
+  (e.g., "Good geographic spread across US, Europe, and EM")
+- Maximum 3 findings — only real issues, no theoretical risks
+- Always name concrete instruments, never abstractly
+- Answer in English, no disclaimer, no intro
+
+Answer exclusively as valid JSON without Markdown backticks:
 { "severity": "ok" | "warning" | "critical", "findings": ["string"] }`
 
   try {
