@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer } from 'react'
 import type {
-  Instrument, AppSettings, FetchStatus, ETFGroup, TableState, MomentumWeights, RegimeResult,
+  Instrument, AppSettings, FetchStatus, ETFGroup, TableState, MomentumWeights, RegimeResult, ColumnGroup,
 } from './types'
 import { ETF_GROUPS, STOCK_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
@@ -24,6 +24,7 @@ const DEFAULT_WEIGHTS: MomentumWeights = { w1m: 1/3, w3m: 1/3, w6m: 1/3 }
 
 const GROUPS_STORAGE_KEY = 'xetra:groups'
 const PORTFOLIO_STORAGE_KEY = 'portfolio:isins'
+const HIDDEN_COLUMNS_KEY = 'ui:hiddenColumnGroups'
 
 function loadGroupPrefs(): { etf: string[]; stock: string[] } | null {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null
@@ -89,8 +90,32 @@ function savePortfolio(isins: string[]) {
   }
 }
 
+function loadHiddenColumnGroups(): ColumnGroup[] {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(HIDDEN_COLUMNS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    const allowed: ColumnGroup[] = ['scores', 'returns', 'technical', 'fundamentals', 'breakout']
+    return parsed.filter((v) => allowed.includes(v))
+  } catch {
+    return []
+  }
+}
+
+function saveHiddenColumnGroups(groups: ColumnGroup[]) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify(groups))
+  } catch {
+    // ignore storage errors
+  }
+}
+
 const persistedGroups = loadGroupPrefs()
 const persistedPortfolio = loadPortfolio()
+const persistedHiddenColumns = loadHiddenColumnGroups()
 
 const DEFAULT_STATE: AppState = {
   instruments: [],
@@ -108,6 +133,7 @@ const DEFAULT_STATE: AppState = {
     typeFilter: 'all',
     showDeduped: true,
     filterBelowRiskFree: true,  // ← ON by default
+    hiddenColumnGroups: persistedHiddenColumns,
   },
   referenceR3m: null,
   etfGroups: ETF_GROUPS.map((g) => ({
@@ -165,6 +191,7 @@ type Action =
   | { type: 'CLEAR_XETRA' }
   | { type: 'TOGGLE_PORTFOLIO'; isin: string }
   | { type: 'SET_MARKET_REGIME'; regime: RegimeResult | null }
+  | { type: 'TOGGLE_COLUMN_GROUP'; group: ColumnGroup }
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -284,6 +311,14 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'SET_MARKET_REGIME':
       return { ...state, marketRegime: action.regime }
+    case 'TOGGLE_COLUMN_GROUP': {
+      const current = state.tableState.hiddenColumnGroups
+      const next = current.includes(action.group)
+        ? current.filter((g) => g !== action.group)
+        : [...current, action.group]
+      saveHiddenColumnGroups(next)
+      return { ...state, tableState: { ...state.tableState, hiddenColumnGroups: next } }
+    }
     default:
       return state
   }

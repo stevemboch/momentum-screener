@@ -7,11 +7,9 @@ import { RankingTable } from './components/RankingTable'
 import { FilterBar } from './components/FilterBar'
 import { SettingsPanel } from './components/SettingsPanel'
 import { RegimeBanner } from './components/RegimeBanner'
-import { useAppState } from './store'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const { state, dispatch } = useAppState()
 
   return (
     <div className="h-screen flex flex-col bg-bg text-gray-200 font-sans overflow-hidden">
@@ -56,43 +54,6 @@ export default function App() {
               <SectionHeader label="Xetra Universe" />
               <XetraPanel />
             </section>
-
-            {/* Instruments list */}
-            {state.instruments.length > 0 && (
-              <>
-                <div className="border-t border-border" />
-                <section>
-                  <div className="flex items-center">
-                    <SectionHeader label={`Loaded (${state.instruments.length})`} />
-                    <button
-                      onClick={() => dispatch({ type: 'SET_INSTRUMENTS', instruments: [] })}
-                      className="text-[10px] font-mono text-muted hover:text-red-400 ml-auto"
-                      title="Alle Instruments entfernen"
-                    >
-                      Alle löschen
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto bg-bg/40 border border-border rounded p-2">
-                    {state.instruments.map((inst) => (
-                      <div
-                        key={inst.isin}
-                        className="flex items-center justify-between py-0.5 group"
-                      >
-                        <span className="text-[11px] font-mono text-muted truncate flex-1">
-                          {inst.displayName.substring(0, 28)}
-                        </span>
-                        <button
-                          onClick={() => dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin })}
-                          className="text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 text-[10px] ml-1 shrink-0"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </>
-            )}
           </div>
         </aside>
 
@@ -115,7 +76,7 @@ export default function App() {
           <RegimeBanner />
 
           {/* Table */}
-          <RankingTable />
+          <RankingTable onOpenSidebar={() => setSidebarOpen(true)} />
         </main>
       </div>
     </div>

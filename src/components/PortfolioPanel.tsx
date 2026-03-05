@@ -4,7 +4,7 @@ import { usePortfolioCheck } from '../hooks/usePortfolioCheck'
 
 export function PortfolioPanel() {
   const { state, dispatch } = useAppState()
-  const { fetchPortfolioPrices, fetchSingleInstrumentPrices, processManualInput } = usePipeline()
+  const { fetchPortfolioPrices, processManualInput } = usePipeline()
   const { result, loading, error, run, clear } = usePortfolioCheck()
   const portfolioCount = state.portfolioIsins.length
 
@@ -47,13 +47,6 @@ export function PortfolioPanel() {
         {portfolio.map((inst) => (
           <div key={inst.isin} className="flex items-center gap-2 text-[11px] font-mono">
             <span className="truncate flex-1 text-gray-300">{inst.displayName}</span>
-            <button
-              onClick={() => fetchSingleInstrumentPrices(inst.isin)}
-              className="text-[10px] text-accent hover:text-accent/80"
-              title="Load prices"
-            >
-              Load
-            </button>
             <button
               onClick={() => dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin })}
               className="text-[10px] text-muted hover:text-red-400"

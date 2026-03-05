@@ -144,12 +144,16 @@ export type SortColumn =
 export type SortDirection = 'asc' | 'desc'
 export type TypeFilter = 'all' | 'etf' | 'stock'
 
+export type ColumnGroup =
+  'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout'
+
 export interface TableState {
   sortColumn: SortColumn
   sortDirection: SortDirection
   typeFilter: TypeFilter
   showDeduped: boolean
   filterBelowRiskFree: boolean
+  hiddenColumnGroups: ColumnGroup[]
 }
 
 // ─── Xetra CSV Row ──────────────────────────────────────────────────────────

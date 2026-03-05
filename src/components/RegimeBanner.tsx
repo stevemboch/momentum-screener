@@ -34,32 +34,7 @@ export function RegimeBanner() {
 
   if (dismissed) return null
 
-  if (!regime) {
-    return (
-      <div className="flex items-start justify-between gap-4 px-4 py-2 border-b text-[11px] font-mono border-border bg-surface text-muted">
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          <span className="shrink-0">ℹ️</span>
-          <div>
-            <span className="font-semibold">Market Regime</span>
-            <span className="text-muted mx-1.5">·</span>
-            <span>{loading ? 'Calculating...' : 'Unavailable'}</span>
-            <div className="mt-0.5 text-muted">
-              Need at least 10 instruments with prices. Load the Xetra universe for best results.
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            setLoading(true)
-            compute().finally(() => setLoading(false))
-          }}
-          className="text-muted hover:text-gray-300 shrink-0 mt-0.5"
-        >
-          Retry
-        </button>
-      </div>
-    )
-  }
+  if (!regime) return null
 
   const cfg = CONFIG[regime.regime]
 

@@ -1,16 +1,38 @@
+import { useEffect, useRef, useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
-import type { TypeFilter } from '../types'
+import type { ColumnGroup, TypeFilter } from '../types'
+
+const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
+  scores: 'Scores',
+  returns: 'Returns',
+  technical: 'Technical',
+  fundamentals: 'Fundamentals',
+  breakout: 'Breakout',
+}
 
 export function FilterBar() {
   const { state, dispatch } = useAppState()
   const displayed = useDisplayedInstruments()
-  const { typeFilter, showDeduped, filterBelowRiskFree } = state.tableState
+  const { typeFilter, showDeduped, filterBelowRiskFree, hiddenColumnGroups } = state.tableState
   const { fetchStatus, settings } = state
+  const [colMenuOpen, setColMenuOpen] = useState(false)
+  const colMenuRef = useRef<HTMLDivElement | null>(null)
 
   const setTypeFilter = (f: TypeFilter) =>
     dispatch({ type: 'SET_TABLE_STATE', updates: { typeFilter: f } })
 
   const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
+
+  useEffect(() => {
+    if (!colMenuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (!colMenuRef.current) return
+      if (colMenuRef.current.contains(e.target as Node)) return
+      setColMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [colMenuOpen])
 
   const toggleSwitch = (active: boolean, onClick: () => void, label: string, title?: string) => (
     <button
@@ -64,10 +86,60 @@ export function FilterBar() {
         `Hide instruments whose annualised return is below the risk-free rate (${(settings.riskFreeRate * 100).toFixed(1)}% p.a.)`
       )}
 
+      <div className="flex items-center gap-1.5 text-xs font-mono text-muted">
+        <span>Stop</span>
+        <input
+          type="range"
+          min={3} max={5} step={0.25}
+          value={settings.atrMultiplier}
+          onChange={(e) => dispatch({
+            type: 'SET_ATR_MULTIPLIER',
+            multiplier: Number(e.target.value),
+          })}
+          className="w-16 accent-blue-500 h-1"
+          title={`ATR Multiplier: ${settings.atrMultiplier}× — Selling threshold = Last Price − ${settings.atrMultiplier}× ATR(20)`}
+        />
+        <span className="text-gray-300 w-6">{settings.atrMultiplier}×</span>
+      </div>
+
       {/* Instrument count */}
       <span className="text-xs font-mono text-muted ml-1">
-        {displayed.length.toLocaleString()} instruments
+        {displayed.length.toLocaleString()}
+        {displayed.length !== state.instruments.length && (
+          <span className="text-muted"> / {state.instruments.length.toLocaleString()}</span>
+        )}
+        {' '}instruments
       </span>
+
+      <div className="relative ml-auto" ref={colMenuRef}>
+        <button
+          onClick={() => setColMenuOpen(!colMenuOpen)}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded border border-border text-muted hover:text-gray-300 transition-colors"
+        >
+          Columns {hiddenColumnGroups.length > 0 && (
+            <span className="text-accent">({hiddenColumnGroups.length} hidden)</span>
+          )}
+        </button>
+        {colMenuOpen && (
+          <div className="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded shadow-xl p-2 flex flex-col gap-1 min-w-[140px]">
+            {(Object.keys(COL_GROUP_LABELS) as ColumnGroup[]).map(group => {
+              const hidden = hiddenColumnGroups.includes(group)
+              return (
+                <button
+                  key={group}
+                  onClick={() => dispatch({ type: 'TOGGLE_COLUMN_GROUP', group })}
+                  className={`flex items-center gap-2 px-2 py-1 text-xs font-mono rounded text-left transition-colors ${
+                    hidden ? 'text-muted' : 'text-gray-300'
+                  } hover:bg-surface2`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${hidden ? 'bg-surface2 border border-border' : 'bg-accent'}`} />
+                  {COL_GROUP_LABELS[group]}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Fetch progress */}
       {isActive && (

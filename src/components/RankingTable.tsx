@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { useInstrumentContext } from '../hooks/useInstrumentContext'
-import type { SortColumn } from '../types'
+import type { ColumnGroup, SortColumn } from '../types'
 import {
   fmtAUM, fmtTER, fmtPct, fmtRatio, fmtVola, fmtPE, returnColor, scoreColor
 } from '../utils/formatters'
@@ -11,8 +11,7 @@ type Col = { key: string; label: string; title?: string; align?: 'right' | 'left
 
 const COLUMNS: Col[] = [
   { key: 'displayName',   label: 'Name',     align: 'left' },
-  { key: 'type',          label: 'Type',     align: 'left' },
-  { key: 'riskAdjustedScore', label: 'Risk-Adj.', title: 'Momentum ÷ annualisierte Volatilität (Rang)' },
+  { key: 'riskAdjustedScore', label: 'Risk-Adj.', title: 'Momentum ÷ annualized volatility (rank)' },
   { key: 'momentumScore', label: 'Momentum', title: 'Weighted return score (rank)' },
   { key: 'combinedScore', label: 'Combined', title: 'Average of Momentum + Sharpe score (rank)' },
   { key: 'r1m',           label: '1M',       title: '1-month return' },
@@ -26,12 +25,20 @@ const COLUMNS: Col[] = [
   { key: 'pe',            label: 'P/E',      title: 'Price / Earnings' },
   { key: 'pb',            label: 'P/B',      title: 'Price / Book' },
   { key: 'earningsYield', label: 'EY',       title: 'Earnings Yield (rank)' },
-  { key: 'returnOnAssets', label: 'ROA',     title: 'Return on Assets — Jahresgewinn / Gesamtkapital (Rang)' },
+  { key: 'returnOnAssets', label: 'ROA',     title: 'Return on Assets — Net income / total assets (rank)' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
-  { key: 'breakoutAgeDays', label: 'Ausbruchsalter', title: 'Days since breakout' },
+  { key: 'breakoutAgeDays', label: 'Breakout Age', title: 'Days since breakout' },
 ]
 
-const NON_SORTABLE = new Set(['displayName', 'type', 'ma', 'breakoutAgeDays'])
+const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
+  scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore'],
+  returns:      ['r1m', 'r3m', 'r6m', 'vola'],
+  technical:    ['ma', 'sellingThreshold'],
+  fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
+  breakout:     ['breakoutScore', 'breakoutAgeDays'],
+}
+
+const NON_SORTABLE = new Set(['displayName', 'ma', 'breakoutAgeDays'])
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -47,11 +54,11 @@ function MaFlag({ above, label }: { above: boolean | null | undefined; label: st
 
 function MaCell({ inst }: { inst: any }) {
   return (
-    <div className="flex items-center justify-end gap-[3px]">
-      <span className="text-muted text-[9px] mr-0.5">10</span><MaFlag above={inst.aboveMa10} label="MA10" />
-      <span className="text-muted text-[9px] ml-1 mr-0.5">50</span><MaFlag above={inst.aboveMa50} label="MA50" />
-      <span className="text-muted text-[9px] ml-1 mr-0.5">100</span><MaFlag above={inst.aboveMa100} label="MA100" />
-      <span className="text-muted text-[9px] ml-1 mr-0.5">200</span><MaFlag above={inst.aboveMa200} label="MA200" />
+    <div className="flex items-center justify-end gap-[4px]">
+      <MaFlag above={inst.aboveMa10} label="MA10" />
+      <MaFlag above={inst.aboveMa50} label="MA50" />
+      <MaFlag above={inst.aboveMa100} label="MA100" />
+      <MaFlag above={inst.aboveMa200} label="MA200" />
     </div>
   )
 }
@@ -75,7 +82,7 @@ function ScoreCell({ score, rank, colorFn }: { score: number | null | undefined;
   const color = colorFn ? colorFn(score) : scoreColor(score)
   return (
     <span className={color}>
-      {score.toFixed(3)}
+      {score.toFixed(2)}
       {rank !== undefined && (
         <span className="text-gray-400 text-[10px] ml-1">#{rank}</span>
       )}
@@ -103,7 +110,7 @@ function MetricCell({ value, rank, fmt }: { value: number | null | undefined; ra
 function fmtDate(ts: number | null | undefined): string {
   if (!ts) return '—'
   try {
-    return new Date(ts * 1000).toLocaleDateString('de-DE')
+    return new Date(ts * 1000).toLocaleDateString('en-US')
   } catch {
     return '—'
   }
@@ -111,7 +118,7 @@ function fmtDate(ts: number | null | undefined): string {
 
 function fmtAge(days: number | null | undefined): string {
   if (days == null) return '—'
-  return `${days} Tage`
+  return `${days}d`
 }
 
 function BreakoutBadge({
@@ -129,11 +136,11 @@ function BreakoutBadge({
 }) {
   if (score == null) return <span className="text-muted">—</span>
   const tooltip = flags ? [
-    `${flags.ma200Rising ? '✅' : '❌'} MA200 steigend`,
+    `${flags.ma200Rising ? '✅' : '❌'} MA200 rising`,
     `${flags.goldenCross ? '✅' : '❌'} Golden Cross`,
-    `${flags.relStrength ? '✅' : '❌'} Rel. Stärke vs MSCI World`,
-    `${flags.volumeConfirm ? '✅' : '❌'} Volumen bestätigt`,
-    `${flags.retest ? '✅' : '❌'} Retest erfolgreich`,
+    `${flags.relStrength ? '✅' : '❌'} Rel. strength vs MSCI World`,
+    `${flags.volumeConfirm ? '✅' : '❌'} Volume confirmed`,
+    `${flags.retest ? '✅' : '❌'} Retest successful`,
   ].join(' · ') : undefined
   const base = 'text-[10px] px-1.5 py-0.5 rounded font-semibold'
   if (score <= 2) return <span className={`${base} text-gray-300 bg-surface2`} title={tooltip}>{score}</span>
@@ -165,9 +172,20 @@ function MARow({ label, value, above, lastPrice }: { label: string; value: numbe
 
 // ─── Candidate row (non-winner ETFs in dedup group) ──────────────────────────
 
-function CandidateRow({ candidate, onLoad }: { candidate: any; onLoad: (isin: string) => void }) {
+function CandidateRow({
+  candidate,
+  onLoad,
+  hiddenKeys,
+  colCount,
+}: {
+  candidate: any
+  onLoad: (isin: string) => void
+  hiddenKeys: Set<string>
+  colCount: number
+}) {
   const [loading, setLoading] = useState(false)
   const hasPrices = candidate.priceFetched
+  const nameColSpan = Math.max(1, Math.min(colCount, 1))
 
   const handleLoad = async () => {
     setLoading(true)
@@ -178,64 +196,90 @@ function CandidateRow({ candidate, onLoad }: { candidate: any; onLoad: (isin: st
   return (
     <tr className="border-t border-border/20 bg-surface2/40 text-[11px] font-mono">
       {/* Name */}
-      <td className="px-3 py-1.5 text-left" colSpan={2}>
+      <td className="px-3 py-1.5 text-left" colSpan={nameColSpan}>
         <div className="truncate text-gray-400 max-w-[280px]" title={candidate.displayName}>
           {candidate.displayName}
         </div>
-        <div className="text-muted text-[10px]">
-          {candidate.isin}{candidate.currency && ` · ${candidate.currency}`}
-          {candidate.aum != null && ` · ${fmtAUM(candidate.aum)}`}
-          {candidate.ter != null && ` · ${fmtTER(candidate.ter)}`}
+        <div className="text-muted text-[10px] flex items-center gap-1.5">
+          <TypeBadge type={candidate.type} />
+          <span>
+            {candidate.isin}{candidate.currency && ` · ${candidate.currency}`}
+            {candidate.aum != null && ` · ${fmtAUM(candidate.aum)}`}
+            {candidate.ter != null && ` · ${fmtTER(candidate.ter)}`}
+          </span>
         </div>
       </td>
-      {/* Risk-Adjusted */}
-      <td className="px-3 py-1.5 text-right">
-        <ScoreCell score={candidate.riskAdjustedScore} rank={candidate.riskAdjustedRank} />
-      </td>
-      {/* Momentum */}
-      <td className="px-3 py-1.5 text-right">
-        <ScoreCell score={candidate.momentumScore} rank={candidate.momentumRank} />
-      </td>
-      {/* Combined */}
-      <td className="px-3 py-1.5 text-right">
-        <ScoreCell score={candidate.combinedScore} rank={candidate.combinedRank} />
-      </td>
-      {/* Returns */}
-      <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r1m)}`}>{fmtPct(candidate.r1m)}</td>
-      <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r3m)}`}>{fmtPct(candidate.r3m)}</td>
-      <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r6m)}`}>{fmtPct(candidate.r6m)}</td>
-      {/* Vola */}
-      <td className="px-3 py-1.5 text-right text-muted">{fmtVola(candidate.vola)}</td>
-      {/* MA – skip */}
-      <td className="px-3 py-1.5 text-right text-muted">—</td>
-      {/* Stop */}
-      <td className="px-3 py-1.5 text-right text-muted">—</td>
-      {/* AUM */}
-      <td className="px-3 py-1.5 text-right text-gray-400">{candidate.aum != null ? fmtAUM(candidate.aum) : '—'}</td>
-      {/* TER */}
-      <td className="px-3 py-1.5 text-right text-gray-400">{candidate.ter != null ? fmtTER(candidate.ter) : '—'}</td>
-      {/* P/E, P/B, Value */}
-      <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pe != null ? fmtPE(candidate.pe) : '—'}</td>
-      <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pb != null ? fmtRatio(candidate.pb) : '—'}</td>
-      <td className="px-3 py-1.5 text-right text-gray-300">
-        <MetricCell value={candidate.earningsYield} rank={candidate.earningsYieldRank} fmt={(v) => fmtPct(v)} />
-      </td>
-      <td className="px-3 py-1.5 text-right text-gray-300">
-        {!hasPrices ? (
-          <button
-            onClick={handleLoad}
-            disabled={loading}
-            className="btn-sm btn-muted disabled:opacity-50"
-          >
-            {loading ? '…' : '⬇ Load'}
-          </button>
-        ) : (
-          <MetricCell value={candidate.returnOnAssets} rank={candidate.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
-        )}
-      </td>
-      {/* Breakout columns */}
-      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
-      <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+      {!hiddenKeys.has('riskAdjustedScore') && (
+        <td className="px-3 py-1.5 text-right">
+          <ScoreCell score={candidate.riskAdjustedScore} rank={candidate.riskAdjustedRank} />
+        </td>
+      )}
+      {!hiddenKeys.has('momentumScore') && (
+        <td className="px-3 py-1.5 text-right">
+          <ScoreCell score={candidate.momentumScore} rank={candidate.momentumRank} />
+        </td>
+      )}
+      {!hiddenKeys.has('combinedScore') && (
+        <td className="px-3 py-1.5 text-right">
+          <ScoreCell score={candidate.combinedScore} rank={candidate.combinedRank} />
+        </td>
+      )}
+      {!hiddenKeys.has('r1m') && (
+        <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r1m)}`}>{fmtPct(candidate.r1m)}</td>
+      )}
+      {!hiddenKeys.has('r3m') && (
+        <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r3m)}`}>{fmtPct(candidate.r3m)}</td>
+      )}
+      {!hiddenKeys.has('r6m') && (
+        <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r6m)}`}>{fmtPct(candidate.r6m)}</td>
+      )}
+      {!hiddenKeys.has('vola') && (
+        <td className="px-3 py-1.5 text-right text-muted">{fmtVola(candidate.vola)}</td>
+      )}
+      {!hiddenKeys.has('ma') && (
+        <td className="px-3 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('sellingThreshold') && (
+        <td className="px-3 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('aum') && (
+        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.aum != null ? fmtAUM(candidate.aum) : '—'}</td>
+      )}
+      {!hiddenKeys.has('ter') && (
+        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.ter != null ? fmtTER(candidate.ter) : '—'}</td>
+      )}
+      {!hiddenKeys.has('pe') && (
+        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pe != null ? fmtPE(candidate.pe) : '—'}</td>
+      )}
+      {!hiddenKeys.has('pb') && (
+        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pb != null ? fmtRatio(candidate.pb) : '—'}</td>
+      )}
+      {!hiddenKeys.has('earningsYield') && (
+        <td className="px-3 py-1.5 text-right text-gray-300">
+          <MetricCell value={candidate.earningsYield} rank={candidate.earningsYieldRank} fmt={(v) => fmtPct(v)} />
+        </td>
+      )}
+      {!hiddenKeys.has('returnOnAssets') && (
+        <td className="px-3 py-1.5 text-right text-gray-300">
+          {!hasPrices ? (
+            <button
+              onClick={handleLoad}
+              disabled={loading}
+              className="btn-sm btn-muted disabled:opacity-50"
+            >
+              {loading ? '…' : '⬇ Load'}
+            </button>
+          ) : (
+            <MetricCell value={candidate.returnOnAssets} rank={candidate.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
+          )}
+        </td>
+      )}
+      {!hiddenKeys.has('breakoutScore') && (
+        <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+      )}
+      {!hiddenKeys.has('breakoutAgeDays') && (
+        <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+      )}
     </tr>
   )
 }
@@ -250,6 +294,8 @@ function ExpandedDetail({
   onLoadAnalyst,
   onTogglePortfolio,
   onRemove,
+  colSpan,
+  hiddenKeys,
 }: {
   inst: any
   atrMultiplier: number
@@ -258,6 +304,8 @@ function ExpandedDetail({
   onLoadAnalyst: (isin: string) => void
   onTogglePortfolio: (isin: string) => void
   onRemove: (isin: string) => void
+  colSpan: number
+  hiddenKeys: Set<string>
 }) {
   const lastPrice = inst.closes?.length > 0 ? inst.closes[inst.closes.length - 1] : undefined
   const referencePrice = inst.currentPrice ?? lastPrice
@@ -278,7 +326,7 @@ function ExpandedDetail({
     <>
       {/* Detail panel */}
       <tr className="border-b border-border bg-surface/70">
-        <td colSpan={COLUMNS.length} className="px-4 py-3">
+        <td colSpan={colSpan} className="px-4 py-3">
           <div className="text-[11px] text-muted grid grid-cols-3 gap-4">
             {/* Instrument details */}
             <div>
@@ -532,14 +580,14 @@ function ExpandedDetail({
       {candidates.length > 0 && (
         <>
           <tr className="bg-surface border-b border-border/40">
-            <td colSpan={COLUMNS.length} className="px-4 py-1">
+            <td colSpan={colSpan} className="px-4 py-1">
               <span className="text-[10px] text-muted font-mono">
-                {candidates.length} weitere ETF{candidates.length > 1 ? 's' : ''} in dieser Dedup-Gruppe — Preisdaten können einzeln nachgeladen werden
+                {candidates.length} more ETF{candidates.length > 1 ? 's' : ''} in this dedup group — price data can be loaded individually
               </span>
             </td>
           </tr>
           {candidates.map((c: any) => (
-            <CandidateRow key={c.isin} candidate={c} onLoad={onLoadPrices} />
+            <CandidateRow key={c.isin} candidate={c} onLoad={onLoadPrices} hiddenKeys={hiddenKeys} colCount={colSpan} />
           ))}
         </>
       )}
@@ -549,13 +597,17 @@ function ExpandedDetail({
 
 // ─── Main Table ───────────────────────────────────────────────────────────────
 
-export function RankingTable() {
+export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { state, dispatch } = useAppState()
   const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst } = usePipeline()
   const instruments = useDisplayedInstruments()
   const allInstruments = state.instruments   // full list incl. non-winners
   const { sortColumn, sortDirection } = state.tableState
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
+  const hiddenKeys = new Set(
+    state.tableState.hiddenColumnGroups.flatMap((g) => COLUMN_GROUPS[g])
+  )
+  const visibleColumns = COLUMNS.filter((col) => !hiddenKeys.has(col.key))
 
   const handleSort = (col: string) => {
     if (NON_SORTABLE.has(col)) return
@@ -575,8 +627,17 @@ export function RankingTable() {
 
   if (instruments.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted font-mono text-sm">
-        No instruments loaded. Use the input panel or load the Xetra universe.
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted font-mono">
+        <div className="text-sm">No instruments loaded.</div>
+        <div className="flex gap-3">
+          <button
+            onClick={onOpenSidebar}
+            className="px-3 py-2 text-xs border border-border rounded hover:border-accent/50 hover:text-accent transition-colors"
+          >
+            Load Xetra Universe
+          </button>
+          <span className="text-muted self-center">or enter tickers in the sidebar</span>
+        </div>
       </div>
     )
   }
@@ -586,7 +647,7 @@ export function RankingTable() {
       <table className="w-full text-xs font-mono border-collapse min-w-[1900px]">
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
-            {COLUMNS.map((col) => (
+            {visibleColumns.map((col) => (
               <th
                 key={col.key}
                 title={col.title}
@@ -613,7 +674,7 @@ export function RankingTable() {
                 <tr
                   id={`row-${inst.isin}`}
                   data-isin={inst.isin}
-                  className={`${rowBg} ${portfolioClass} hover:bg-surface2 border-b border-border/30 cursor-pointer`}
+                  className={`${rowBg} ${portfolioClass} hover:bg-surface2 border-b border-border/30 cursor-pointer group`}
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                 >
                   {/* Name */}
@@ -629,107 +690,126 @@ export function RankingTable() {
                       <span className="truncate text-gray-200" title={inst.displayName}>{inst.displayName}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin }) }}
-                        className="text-[11px] text-muted hover:text-red-400 ml-1"
+                        className="text-[11px] text-muted hover:text-red-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Hide/remove instrument"
                       >
                         ×
                       </button>
                       {hasGroup && (
-                        <span className="text-[9px] text-accent/70 ml-1 shrink-0" title={`${inst.dedupCandidates!.length} weitere ETFs in dieser Gruppe`}>
+                        <span className="text-[9px] text-accent/70 ml-1 shrink-0" title={`${inst.dedupCandidates!.length} more ETFs in this group`}>
                           +{inst.dedupCandidates!.length}
                         </span>
                       )}
                     </div>
-                    <div className="text-muted text-[10px] mt-0.5">
-                      {inst.isin}
-                      {inst.isin?.startsWith('WKN:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
-                      {inst.isin?.startsWith('TICKER:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
-                      {inst.currency && ` · ${inst.currency}`}
+                    <div className="text-muted text-[10px] mt-0.5 flex items-center gap-1.5">
+                      <TypeBadge type={inst.type} />
+                      <span>
+                        {inst.isin}
+                        {inst.isin?.startsWith('WKN:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
+                        {inst.isin?.startsWith('TICKER:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
+                        {inst.currency && ` · ${inst.currency}`}
+                      </span>
                     </div>
                   </td>
 
-                  {/* Type */}
-                  <td className="px-3 py-2 text-left"><TypeBadge type={inst.type} /></td>
+                  {!hiddenKeys.has('riskAdjustedScore') && (
+                    <td className="px-3 py-2 text-right">
+                      <ScoreCell score={inst.riskAdjustedScore} rank={inst.riskAdjustedRank} colorFn={scoreColor} />
+                    </td>
+                  )}
 
-                  {/* Risk-Adjusted Score */}
-                  <td className="px-3 py-2 text-right">
-                    <ScoreCell score={inst.riskAdjustedScore} rank={inst.riskAdjustedRank} colorFn={scoreColor} />
-                  </td>
+                  {!hiddenKeys.has('momentumScore') && (
+                    <td className="px-3 py-2 text-right">
+                      <ScoreCell score={inst.momentumScore} rank={inst.momentumRank} colorFn={scoreColor} />
+                    </td>
+                  )}
 
-                  {/* Momentum */}
-                  <td className="px-3 py-2 text-right">
-                    <ScoreCell score={inst.momentumScore} rank={inst.momentumRank} colorFn={scoreColor} />
-                  </td>
+                  {!hiddenKeys.has('combinedScore') && (
+                    <td className="px-3 py-2 text-right">
+                      <ScoreCell score={inst.combinedScore} rank={inst.combinedRank} colorFn={scoreColor} />
+                    </td>
+                  )}
 
-                  {/* Combined */}
-                  <td className="px-3 py-2 text-right">
-                    <ScoreCell score={inst.combinedScore} rank={inst.combinedRank} colorFn={scoreColor} />
-                  </td>
+                  {!hiddenKeys.has('r1m') && (
+                    <td className={`px-3 py-2 text-right ${returnColor(inst.r1m)}`}>{fmtPct(inst.r1m)}</td>
+                  )}
+                  {!hiddenKeys.has('r3m') && (
+                    <td className={`px-3 py-2 text-right ${returnColor(inst.r3m)}`}>{fmtPct(inst.r3m)}</td>
+                  )}
+                  {!hiddenKeys.has('r6m') && (
+                    <td className={`px-3 py-2 text-right ${returnColor(inst.r6m)}`}>{fmtPct(inst.r6m)}</td>
+                  )}
 
-                  {/* Returns */}
-                  <td className={`px-3 py-2 text-right ${returnColor(inst.r1m)}`}>{fmtPct(inst.r1m)}</td>
-                  <td className={`px-3 py-2 text-right ${returnColor(inst.r3m)}`}>{fmtPct(inst.r3m)}</td>
-                  <td className={`px-3 py-2 text-right ${returnColor(inst.r6m)}`}>{fmtPct(inst.r6m)}</td>
+                  {!hiddenKeys.has('vola') && (
+                    <td className="px-3 py-2 text-right text-muted">{fmtVola(inst.vola)}</td>
+                  )}
 
-                  {/* Vola */}
-                  <td className="px-3 py-2 text-right text-muted">{fmtVola(inst.vola)}</td>
+                  {!hiddenKeys.has('ma') && (
+                    <td className="px-3 py-2 text-right"><MaCell inst={inst} /></td>
+                  )}
 
-                  {/* MA flags */}
-                  <td className="px-3 py-2 text-right"><MaCell inst={inst} /></td>
+                  {!hiddenKeys.has('sellingThreshold') && (
+                    <td className="px-3 py-2 text-right">
+                      {inst.sellingThreshold != null ? (
+                        <span className="text-amber-400" title={`ATR(20): ${inst.atr20?.toFixed(4) ?? '—'}`}>
+                          {fmtPrice(inst.sellingThreshold)}
+                          {inst.closes?.length ? (
+                            <span className="text-muted text-[10px] ml-1">
+                              {fmtPct(inst.sellingThreshold / inst.closes[inst.closes.length - 1] - 1)}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : inst.priceFetched ? '—' : ''}
+                    </td>
+                  )}
 
-                  {/* Selling Threshold */}
-                  <td className="px-3 py-2 text-right">
-                    {inst.sellingThreshold != null ? (
-                      <span className="text-amber-400" title={`ATR(20): ${inst.atr20?.toFixed(4) ?? '—'}`}>
-                        {fmtPrice(inst.sellingThreshold)}
-                        {inst.closes?.length ? (
-                          <span className="text-muted text-[10px] ml-1">
-                            {fmtPct(inst.sellingThreshold / inst.closes[inst.closes.length - 1] - 1)}
-                          </span>
-                        ) : null}
-                      </span>
-                    ) : inst.priceFetched ? '—' : ''}
-                  </td>
+                  {!hiddenKeys.has('aum') && (
+                    <td className="px-3 py-2 text-right text-gray-300">
+                      {inst.aum != null ? fmtAUM(inst.aum) : (inst.justEtfFetched ? '—' : '')}
+                    </td>
+                  )}
 
-                  {/* AUM */}
-                  <td className="px-3 py-2 text-right text-gray-300">
-                    {inst.aum != null ? fmtAUM(inst.aum) : (inst.justEtfFetched ? '—' : '')}
-                  </td>
+                  {!hiddenKeys.has('ter') && (
+                    <td className="px-3 py-2 text-right text-gray-300">
+                      {inst.ter != null ? fmtTER(inst.ter) : (inst.justEtfFetched ? '—' : '')}
+                    </td>
+                  )}
 
-                  {/* TER */}
-                  <td className="px-3 py-2 text-right text-gray-300">
-                    {inst.ter != null ? fmtTER(inst.ter) : (inst.justEtfFetched ? '—' : '')}
-                  </td>
+                  {!hiddenKeys.has('pe') && (
+                    <td className="px-3 py-2 text-right text-gray-300">
+                      {inst.pe != null ? fmtPE(inst.pe) : (inst.fundamentalsFetched ? '—' : '')}
+                    </td>
+                  )}
 
-                  {/* P/E */}
-                  <td className="px-3 py-2 text-right text-gray-300">
-                    {inst.pe != null ? fmtPE(inst.pe) : (inst.fundamentalsFetched ? '—' : '')}
-                  </td>
+                  {!hiddenKeys.has('pb') && (
+                    <td className="px-3 py-2 text-right text-gray-300">
+                      {inst.pb != null ? fmtRatio(inst.pb) : (inst.fundamentalsFetched ? '—' : '')}
+                    </td>
+                  )}
 
-                  {/* P/B */}
-                  <td className="px-3 py-2 text-right text-gray-300">
-                    {inst.pb != null ? fmtRatio(inst.pb) : (inst.fundamentalsFetched ? '—' : '')}
-                  </td>
+                  {!hiddenKeys.has('earningsYield') && (
+                    <td className="px-3 py-2 text-right">
+                      <MetricCell value={inst.earningsYield} rank={inst.earningsYieldRank} fmt={(v) => fmtPct(v)} />
+                    </td>
+                  )}
 
-                  {/* Earnings Yield */}
-                  <td className="px-3 py-2 text-right">
-                    <MetricCell value={inst.earningsYield} rank={inst.earningsYieldRank} fmt={(v) => fmtPct(v)} />
-                  </td>
+                  {!hiddenKeys.has('returnOnAssets') && (
+                    <td className="px-3 py-2 text-right">
+                      <MetricCell value={inst.returnOnAssets} rank={inst.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
+                    </td>
+                  )}
 
-                  {/* ROA (Return on Assets) */}
-                  <td className="px-3 py-2 text-right">
-                    <MetricCell value={inst.returnOnAssets} rank={inst.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
-                  </td>
+                  {!hiddenKeys.has('breakoutScore') && (
+                    <td className="px-3 py-2 text-right">
+                      <BreakoutBadge score={inst.breakoutScore} flags={inst.breakoutFlags} />
+                    </td>
+                  )}
 
-                  {/* Breakout Score */}
-                  <td className="px-3 py-2 text-right">
-                    <BreakoutBadge score={inst.breakoutScore} flags={inst.breakoutFlags} />
-                  </td>
-
-                  {/* Breakout Age */}
-                  <td className="px-3 py-2 text-right text-gray-300">
-                    {fmtAge(inst.breakoutAgeDays)}
-                  </td>
+                  {!hiddenKeys.has('breakoutAgeDays') && (
+                    <td className="px-3 py-2 text-right text-gray-300">
+                      {fmtAge(inst.breakoutAgeDays)}
+                    </td>
+                  )}
                 </tr>
 
                 {isExpanded && (
@@ -741,6 +821,8 @@ export function RankingTable() {
                     onLoadAnalyst={fetchSingleInstrumentAnalyst}
                     onTogglePortfolio={(isin) => dispatch({ type: 'TOGGLE_PORTFOLIO', isin })}
                     onRemove={(isin) => dispatch({ type: 'REMOVE_INSTRUMENT', isin })}
+                    colSpan={visibleColumns.length}
+                    hiddenKeys={hiddenKeys}
                   />
                 )}
               </React.Fragment>
