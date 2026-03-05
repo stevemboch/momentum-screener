@@ -71,7 +71,7 @@ export function PortfolioPanel() {
                text-muted hover:text-gray-300 hover:border-accent/50 
                disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
       >
-        {loading ? '…analysiere' : '🔍 Portfolio analysieren'}
+        {loading ? 'Analysiere...' : '🔍 Portfolio analysieren'}
       </button>
 
       {result && (
