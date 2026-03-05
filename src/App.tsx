@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { ManualInput } from './components/ManualInput'
 import { PortfolioPanel } from './components/PortfolioPanel'
 import { XetraPanel } from './components/XetraPanel'
@@ -10,6 +10,8 @@ import { RegimeBanner } from './components/RegimeBanner'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [portfolioOpen, setPortfolioOpen] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
 
   return (
     <div className="h-screen flex flex-col bg-bg text-gray-200 font-sans overflow-hidden">
@@ -37,22 +39,32 @@ export default function App() {
           }`}
         >
           <div className="flex flex-col gap-4 p-4 overflow-y-auto flex-1 min-w-[256px]">
-            {/* Manual input section */}
-            <section className="rounded border border-border bg-bg/40 p-3">
-              <SectionHeader label="Manual Input" />
-              <ManualInput />
-            </section>
-
-            {/* Portfolio section */}
-            <section className="rounded border border-border bg-bg/40 p-3">
-              <SectionHeader label="Portfolio" />
-              <PortfolioPanel />
-            </section>
-
             {/* Xetra section */}
             <section className="rounded border border-border bg-bg/40 p-3">
               <SectionHeader label="Xetra Universe" />
               <XetraPanel />
+            </section>
+
+            {/* Portfolio section */}
+            <section className="rounded border border-border bg-bg/40 p-3">
+              <SectionHeader
+                label="Portfolio"
+                collapsible
+                open={portfolioOpen}
+                onToggle={() => setPortfolioOpen((v) => !v)}
+              />
+              {portfolioOpen && <PortfolioPanel />}
+            </section>
+
+            {/* Manual input section */}
+            <section className="rounded border border-border bg-bg/40 p-3">
+              <SectionHeader
+                label="Manual Input"
+                collapsible
+                open={manualOpen}
+                onToggle={() => setManualOpen((v) => !v)}
+              />
+              {manualOpen && <ManualInput />}
             </section>
           </div>
         </aside>
@@ -83,10 +95,35 @@ export default function App() {
   )
 }
 
-function SectionHeader({ label }: { label: string }) {
+function SectionHeader({
+  label,
+  collapsible,
+  open,
+  onToggle,
+}: {
+  label: string
+  collapsible?: boolean
+  open?: boolean
+  onToggle?: () => void
+}) {
+  if (!collapsible) {
+    return (
+      <div className="text-[10px] font-mono text-muted uppercase tracking-widest mb-2">
+        {label}
+      </div>
+    )
+  }
+
   return (
-    <div className="text-[10px] font-mono text-muted uppercase tracking-widest mb-2">
-      {label}
-    </div>
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`w-full flex items-center justify-between text-[10px] font-mono text-muted uppercase tracking-widest ${
+        open ? 'mb-2' : ''
+      }`}
+    >
+      <span>{label}</span>
+      {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+    </button>
   )
 }

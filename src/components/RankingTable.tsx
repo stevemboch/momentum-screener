@@ -14,12 +14,12 @@ const COLUMNS: Col[] = [
   { key: 'riskAdjustedScore', label: 'Risk-Adj.', title: 'Momentum ÷ annualized volatility (rank)' },
   { key: 'momentumScore', label: 'Momentum', title: 'Weighted return score (rank)' },
   { key: 'combinedScore', label: 'Combined', title: 'Average of Momentum + Sharpe score (rank)' },
+  { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
+  { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'r1m',           label: '1M',       title: '1-month return' },
   { key: 'r3m',           label: '3M',       title: '3-month return' },
   { key: 'r6m',           label: '6M',       title: '6-month return' },
   { key: 'vola',          label: 'Vola',     title: 'Annualised 6M volatility' },
-  { key: 'ma',            label: 'MA',       title: '10/50/100/200 MA flags (▲ above, ▼ below)', align: 'right' },
-  { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'aum',           label: 'AUM',      title: 'Assets under management' },
   { key: 'ter',           label: 'TER',      title: 'Total expense ratio' },
   { key: 'pe',            label: 'P/E',      title: 'Price / Earnings' },
@@ -43,12 +43,19 @@ const NON_SORTABLE = new Set(['displayName', 'ma', 'breakoutAgeDays'])
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function MaFlag({ above, label }: { above: boolean | null | undefined; label: string }) {
-  if (above === null || above === undefined)
-    return <span className="text-muted text-[9px]" title={`${label}: no data`}>·</span>
+  if (above === null || above === undefined) {
+    return (
+      <span
+        className="inline-flex w-2 h-2 rounded-full bg-surface2 border border-border"
+        title={`${label}: no data`}
+      />
+    )
+  }
   return (
-    <span className={`text-[9px] font-bold ${above ? 'text-green-400' : 'text-red-400'}`} title={`${label}: ${above ? 'above' : 'below'}`}>
-      {above ? '▲' : '▼'}
-    </span>
+    <span
+      className={`inline-flex w-2 h-2 rounded-full ${above ? 'bg-green-400' : 'bg-red-400'}`}
+      title={`${label}: ${above ? 'above' : 'below'}`}
+    />
   )
 }
 
@@ -196,8 +203,8 @@ function CandidateRow({
   return (
     <tr className="border-t border-border/20 bg-surface2/40 text-[11px] font-mono">
       {/* Name */}
-      <td className="px-3 py-1.5 text-left" colSpan={nameColSpan}>
-        <div className="truncate text-gray-400 max-w-[280px]" title={candidate.displayName}>
+      <td className="px-2 py-1.5 text-left" colSpan={nameColSpan}>
+        <div className="truncate text-gray-400 max-w-[240px]" title={candidate.displayName}>
           {candidate.displayName}
         </div>
         <div className="text-muted text-[10px] flex items-center gap-1.5">
@@ -210,57 +217,57 @@ function CandidateRow({
         </div>
       </td>
       {!hiddenKeys.has('riskAdjustedScore') && (
-        <td className="px-3 py-1.5 text-right">
+        <td className="px-2 py-1.5 text-right">
           <ScoreCell score={candidate.riskAdjustedScore} rank={candidate.riskAdjustedRank} />
         </td>
       )}
       {!hiddenKeys.has('momentumScore') && (
-        <td className="px-3 py-1.5 text-right">
+        <td className="px-2 py-1.5 text-right">
           <ScoreCell score={candidate.momentumScore} rank={candidate.momentumRank} />
         </td>
       )}
       {!hiddenKeys.has('combinedScore') && (
-        <td className="px-3 py-1.5 text-right">
+        <td className="px-2 py-1.5 text-right">
           <ScoreCell score={candidate.combinedScore} rank={candidate.combinedRank} />
         </td>
       )}
-      {!hiddenKeys.has('r1m') && (
-        <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r1m)}`}>{fmtPct(candidate.r1m)}</td>
-      )}
-      {!hiddenKeys.has('r3m') && (
-        <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r3m)}`}>{fmtPct(candidate.r3m)}</td>
-      )}
-      {!hiddenKeys.has('r6m') && (
-        <td className={`px-3 py-1.5 text-right ${returnColor(candidate.r6m)}`}>{fmtPct(candidate.r6m)}</td>
-      )}
-      {!hiddenKeys.has('vola') && (
-        <td className="px-3 py-1.5 text-right text-muted">{fmtVola(candidate.vola)}</td>
-      )}
       {!hiddenKeys.has('ma') && (
-        <td className="px-3 py-1.5 text-right text-muted">—</td>
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
       {!hiddenKeys.has('sellingThreshold') && (
-        <td className="px-3 py-1.5 text-right text-muted">—</td>
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('r1m') && (
+        <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r1m)}`}>{fmtPct(candidate.r1m)}</td>
+      )}
+      {!hiddenKeys.has('r3m') && (
+        <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r3m)}`}>{fmtPct(candidate.r3m)}</td>
+      )}
+      {!hiddenKeys.has('r6m') && (
+        <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r6m)}`}>{fmtPct(candidate.r6m)}</td>
+      )}
+      {!hiddenKeys.has('vola') && (
+        <td className="px-2 py-1.5 text-right text-muted">{fmtVola(candidate.vola)}</td>
       )}
       {!hiddenKeys.has('aum') && (
-        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.aum != null ? fmtAUM(candidate.aum) : '—'}</td>
+        <td className="px-2 py-1.5 text-right text-gray-400">{candidate.aum != null ? fmtAUM(candidate.aum) : '—'}</td>
       )}
       {!hiddenKeys.has('ter') && (
-        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.ter != null ? fmtTER(candidate.ter) : '—'}</td>
+        <td className="px-2 py-1.5 text-right text-gray-400">{candidate.ter != null ? fmtTER(candidate.ter) : '—'}</td>
       )}
       {!hiddenKeys.has('pe') && (
-        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pe != null ? fmtPE(candidate.pe) : '—'}</td>
+        <td className="px-2 py-1.5 text-right text-gray-400">{candidate.pe != null ? fmtPE(candidate.pe) : '—'}</td>
       )}
       {!hiddenKeys.has('pb') && (
-        <td className="px-3 py-1.5 text-right text-gray-400">{candidate.pb != null ? fmtRatio(candidate.pb) : '—'}</td>
+        <td className="px-2 py-1.5 text-right text-gray-400">{candidate.pb != null ? fmtRatio(candidate.pb) : '—'}</td>
       )}
       {!hiddenKeys.has('earningsYield') && (
-        <td className="px-3 py-1.5 text-right text-gray-300">
+        <td className="px-2 py-1.5 text-right text-gray-300">
           <MetricCell value={candidate.earningsYield} rank={candidate.earningsYieldRank} fmt={(v) => fmtPct(v)} />
         </td>
       )}
       {!hiddenKeys.has('returnOnAssets') && (
-        <td className="px-3 py-1.5 text-right text-gray-300">
+        <td className="px-2 py-1.5 text-right text-gray-300">
           {!hasPrices ? (
             <button
               onClick={handleLoad}
@@ -275,10 +282,10 @@ function CandidateRow({
         </td>
       )}
       {!hiddenKeys.has('breakoutScore') && (
-        <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+        <td className="px-2 py-1.5 text-right text-gray-400">—</td>
       )}
       {!hiddenKeys.has('breakoutAgeDays') && (
-        <td className="px-3 py-1.5 text-right text-gray-400">—</td>
+        <td className="px-2 py-1.5 text-right text-gray-400">—</td>
       )}
     </tr>
   )
@@ -644,7 +651,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   return (
     <div className="flex-1 overflow-auto">
-      <table className="w-full text-xs font-mono border-collapse min-w-[1900px]">
+      <table className="w-full text-xs font-mono border-collapse min-w-[1750px]">
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {visibleColumns.map((col) => (
@@ -652,7 +659,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                 key={col.key}
                 title={col.title}
                 onClick={() => handleSort(col.key)}
-                className={`px-3 py-2 font-semibold text-muted whitespace-nowrap
+                className={`px-2 py-1.5 font-semibold text-muted whitespace-nowrap
                   ${col.align === 'left' ? 'text-left' : 'text-right'}
                   ${!NON_SORTABLE.has(col.key) ? 'cursor-pointer hover:text-gray-300' : ''}
                   select-none`}
@@ -678,7 +685,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                 >
                   {/* Name */}
-                  <td className="px-3 py-2 text-left max-w-[220px]">
+                  <td className="px-2 py-1.5 text-left max-w-[200px]">
                     <div className="flex items-center gap-1">
                       <button
                         onClick={(e) => { e.stopPropagation(); dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin }) }}
@@ -713,43 +720,29 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   </td>
 
                   {!hiddenKeys.has('riskAdjustedScore') && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 text-right">
                       <ScoreCell score={inst.riskAdjustedScore} rank={inst.riskAdjustedRank} colorFn={scoreColor} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('momentumScore') && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 text-right">
                       <ScoreCell score={inst.momentumScore} rank={inst.momentumRank} colorFn={scoreColor} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('combinedScore') && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 text-right">
                       <ScoreCell score={inst.combinedScore} rank={inst.combinedRank} colorFn={scoreColor} />
                     </td>
                   )}
 
-                  {!hiddenKeys.has('r1m') && (
-                    <td className={`px-3 py-2 text-right ${returnColor(inst.r1m)}`}>{fmtPct(inst.r1m)}</td>
-                  )}
-                  {!hiddenKeys.has('r3m') && (
-                    <td className={`px-3 py-2 text-right ${returnColor(inst.r3m)}`}>{fmtPct(inst.r3m)}</td>
-                  )}
-                  {!hiddenKeys.has('r6m') && (
-                    <td className={`px-3 py-2 text-right ${returnColor(inst.r6m)}`}>{fmtPct(inst.r6m)}</td>
-                  )}
-
-                  {!hiddenKeys.has('vola') && (
-                    <td className="px-3 py-2 text-right text-muted">{fmtVola(inst.vola)}</td>
-                  )}
-
                   {!hiddenKeys.has('ma') && (
-                    <td className="px-3 py-2 text-right"><MaCell inst={inst} /></td>
+                    <td className="px-2 py-1.5 text-right"><MaCell inst={inst} /></td>
                   )}
 
                   {!hiddenKeys.has('sellingThreshold') && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 text-right">
                       {inst.sellingThreshold != null ? (
                         <span className="text-amber-400" title={`ATR(20): ${inst.atr20?.toFixed(4) ?? '—'}`}>
                           {fmtPrice(inst.sellingThreshold)}
@@ -763,50 +756,64 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     </td>
                   )}
 
+                  {!hiddenKeys.has('r1m') && (
+                    <td className={`px-2 py-1.5 text-right ${returnColor(inst.r1m)}`}>{fmtPct(inst.r1m)}</td>
+                  )}
+                  {!hiddenKeys.has('r3m') && (
+                    <td className={`px-2 py-1.5 text-right ${returnColor(inst.r3m)}`}>{fmtPct(inst.r3m)}</td>
+                  )}
+                  {!hiddenKeys.has('r6m') && (
+                    <td className={`px-2 py-1.5 text-right ${returnColor(inst.r6m)}`}>{fmtPct(inst.r6m)}</td>
+                  )}
+
+                  {!hiddenKeys.has('vola') && (
+                    <td className="px-2 py-1.5 text-right text-muted">{fmtVola(inst.vola)}</td>
+                  )}
+
                   {!hiddenKeys.has('aum') && (
-                    <td className="px-3 py-2 text-right text-gray-300">
+                    <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.aum != null ? fmtAUM(inst.aum) : (inst.justEtfFetched ? '—' : '')}
                     </td>
                   )}
 
                   {!hiddenKeys.has('ter') && (
-                    <td className="px-3 py-2 text-right text-gray-300">
+                    <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.ter != null ? fmtTER(inst.ter) : (inst.justEtfFetched ? '—' : '')}
                     </td>
                   )}
 
                   {!hiddenKeys.has('pe') && (
-                    <td className="px-3 py-2 text-right text-gray-300">
+                    <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.pe != null ? fmtPE(inst.pe) : (inst.fundamentalsFetched ? '—' : '')}
                     </td>
                   )}
 
                   {!hiddenKeys.has('pb') && (
-                    <td className="px-3 py-2 text-right text-gray-300">
+                    <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.pb != null ? fmtRatio(inst.pb) : (inst.fundamentalsFetched ? '—' : '')}
                     </td>
                   )}
 
                   {!hiddenKeys.has('earningsYield') && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 text-right">
                       <MetricCell value={inst.earningsYield} rank={inst.earningsYieldRank} fmt={(v) => fmtPct(v)} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('returnOnAssets') && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 text-right">
                       <MetricCell value={inst.returnOnAssets} rank={inst.returnOnAssetsRank} fmt={(v) => fmtPct(v)} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('breakoutScore') && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-1.5 text-right">
                       <BreakoutBadge score={inst.breakoutScore} flags={inst.breakoutFlags} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('breakoutAgeDays') && (
-                    <td className="px-3 py-2 text-right text-gray-300">
+                    <td className="px-2 py-1.5 text-right text-gray-300">
                       {fmtAge(inst.breakoutAgeDays)}
                     </td>
                   )}
