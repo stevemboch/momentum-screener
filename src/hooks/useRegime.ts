@@ -16,7 +16,13 @@ export function useRegime() {
 
     const instruments = overrides?.instruments ?? state.instruments
     const referenceR3m = overrides?.referenceR3m ?? state.referenceR3m
-    const inputs = computeRegimeInputs(instruments, referenceR3m)
+    const withPrices = instruments.filter(i => i.closes && i.closes.length > 0)
+    const withSignals = withPrices.filter(i => i.r3m != null && i.aboveMa200 != null)
+    if (withSignals.length < 10) return
+    const coverage = withSignals.length / (withPrices.length || 1)
+    if (coverage < 0.6) return
+
+    const inputs = computeRegimeInputs(withSignals, referenceR3m)
     if (inputs.instrumentCount < 10) return
 
     try {
