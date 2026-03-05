@@ -17,20 +17,16 @@ export function usePortfolioCheck() {
     if (portfolioInstruments.length === 0) return
 
     const payload = portfolioInstruments.map(i => ({
-      name:      i.displayName,
-      type:      i.type,
-      region:    i.dedupGroup?.match(/R:([^|]+)/)?.[1] ?? null,
-      subregion: i.dedupGroup?.match(/SR:([^|]+)/)?.[1] ?? null,
-      sector:    i.dedupGroup?.match(/S:([^|]+)/)?.[1] ?? null,
-      factors:   i.dedupGroup?.match(/F:([^|]+)/)?.[1] ?? null,
+      name:         i.displayName,
+      type:         i.type,
+      dedupKey:     i.dedupGroup ?? null,
+      currency:     i.currency ?? null,
       momentumRank:     i.momentumRank ?? null,
       riskAdjustedRank: i.riskAdjustedRank ?? null,
       valueRank:        i.valueRank ?? null,
-      r3m:      i.r3m ?? null,
-      r6m:      i.r6m ?? null,
-      vola:     i.vola ?? null,
-      isEsg:    i.dedupGroup?.includes('ESG') ?? false,
-      isHedged: i.dedupGroup?.includes('HEDGED') ?? false,
+      r3m:  i.r3m ?? null,
+      r6m:  i.r6m ?? null,
+      vola: i.vola ?? null,
     }))
 
     setLoading(true)
