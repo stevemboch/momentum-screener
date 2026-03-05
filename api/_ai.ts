@@ -7,7 +7,7 @@ export async function aiChat(
   geminiModel = 'gemini-2.5-flash'
 ): Promise<string> {
   try {
-    return await geminiChat(systemPrompt, userMessage, geminiModel)
+    return await geminiChat(systemPrompt, userMessage)
   } catch (err: any) {
     try {
       return await openrouterChat(systemPrompt, userMessage)

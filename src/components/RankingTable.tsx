@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
+import { useInstrumentContext } from '../hooks/useInstrumentContext'
 import type { SortColumn } from '../types'
 import {
   fmtAUM, fmtTER, fmtPct, fmtRatio, fmtVola, fmtPE, returnColor, scoreColor
@@ -263,6 +264,8 @@ function ExpandedDetail({
   const upside = (inst.targetPrice != null && referencePrice != null)
     ? (inst.targetPrice / referencePrice - 1)
     : null
+  const { result: ctx, loading: ctxLoading, load: loadCtx, invalidate } =
+    useInstrumentContext(inst.isin)
 
   // Resolve dedup candidates from full instrument list
   const candidates = (inst.dedupCandidates ?? [])
@@ -402,6 +405,101 @@ function ExpandedDetail({
               )}
             </div>
           </div>
+          {inst.type === 'Stock' && inst.yahooTicker && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-semibold text-gray-400 font-mono">
+                  🌐 Earnings & Makro-Kontext
+                </span>
+                <div className="flex items-center gap-2">
+                  {ctx && (
+                    <span className="text-[10px] text-muted font-mono">
+                      {new Date(ctx.fetchedAt).toLocaleTimeString('de-DE')}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (ctx) invalidate()
+                      else loadCtx(
+                        inst.yahooTicker,
+                        inst.displayName,
+                        lastPrice ?? null,
+                        inst.targetPrice ?? null
+                      )
+                    }}
+                    disabled={ctxLoading}
+                    className="text-[10px] font-mono text-muted hover:text-gray-300
+                       border border-border rounded px-1.5 py-0.5
+                       disabled:opacity-40 transition-colors"
+                  >
+                    {ctxLoading ? '…' : ctx ? '↺ Neu laden' : '⬇ Laden'}
+                  </button>
+                </div>
+              </div>
+
+              {ctx && !ctx.error && (
+                <div className="grid grid-cols-2 gap-4 text-[11px] font-mono">
+                  {/* Linke Spalte: Earnings */}
+                  <div className="space-y-1">
+                    {ctx.lastEarnings && (
+                      <>
+                        <div>
+                          <span className="text-muted">Letzte Earnings: </span>
+                          <span className="text-gray-300">{ctx.lastEarnings.date ?? '—'}</span>
+                          {ctx.lastEarnings.result && (
+                            <span className={`ml-1 ${
+                              ctx.lastEarnings.result === 'beat'   ? 'text-green-400' :
+                              ctx.lastEarnings.result === 'miss'   ? 'text-red-400'   :
+                                                                     'text-gray-400'
+                            }`}>
+                              · {ctx.lastEarnings.result.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        {ctx.lastEarnings.detail && (
+                          <div className="text-muted leading-snug">
+                            {ctx.lastEarnings.detail}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {ctx.nextEarnings && (
+                      <div>
+                        <span className="text-muted">Nächste Earnings: </span>
+                        <span className="text-gray-300">{ctx.nextEarnings}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rechte Spalte: News + Makro */}
+                  <div className="space-y-1">
+                    {ctx.news.map((n, i) => (
+                      <div key={i} className="flex items-start gap-1.5">
+                        <span className={`shrink-0 ${
+                          n.sentiment === 'positive' ? 'text-green-400' :
+                          n.sentiment === 'negative' ? 'text-red-400'   :
+                                                       'text-gray-400'
+                        }`}>●</span>
+                        <span className="text-gray-300 leading-snug">{n.headline}</span>
+                      </div>
+                    ))}
+                    {ctx.macroRisk && (
+                      <div className="flex items-start gap-1.5 mt-1">
+                        <span className="text-amber-400 shrink-0">⚠</span>
+                        <span className="text-amber-400 leading-snug">{ctx.macroRisk}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {ctx?.error && (
+                <div className="text-[11px] font-mono text-red-400">
+                  Fehler: {ctx.error}
+                </div>
+              )}
+            </div>
+          )}
         </td>
       </tr>
 
