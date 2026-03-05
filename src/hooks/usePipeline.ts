@@ -6,8 +6,8 @@ import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } f
 import { calculateReturns, recalculateAll } from '../utils/calculations'
 
 const YAHOO_CONCURRENCY_MIN = 3
-const YAHOO_CONCURRENCY_MAX = 8
-let yahooConcurrency = 5
+const YAHOO_CONCURRENCY_MAX = 12
+let yahooConcurrency = 8
 const OPENFIGI_BATCH = 150
 const OPENFIGI_DELAY = 100
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000

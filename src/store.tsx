@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer } from 'react'
+import React, { createContext, useContext, useEffect, useReducer } from 'react'
 import type {
   Instrument, AppSettings, FetchStatus, ETFGroup, TableState, MomentumWeights, RegimeResult, ColumnGroup,
 } from './types'
@@ -328,6 +328,24 @@ const AppContext = createContext<{ state: AppState; dispatch: React.Dispatch<Act
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, DEFAULT_STATE)
+  useEffect(() => {
+    const prefs = loadGroupPrefs()
+    if (!prefs) return
+    const etfSet = new Set(prefs.etf)
+    const stockSet = new Set(prefs.stock)
+    state.etfGroups.forEach((g) => {
+      const shouldEnable = etfSet.has(g.groupKey)
+      if (g.enabled !== shouldEnable) {
+        dispatch({ type: 'SET_ETF_GROUP', groupKey: g.groupKey, enabled: shouldEnable })
+      }
+    })
+    state.stockGroups.forEach((g) => {
+      const shouldEnable = stockSet.has(g.groupKey)
+      if (g.enabled !== shouldEnable) {
+        dispatch({ type: 'SET_STOCK_GROUP', groupKey: g.groupKey, enabled: shouldEnable })
+      }
+    })
+  }, [])
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>
 }
 

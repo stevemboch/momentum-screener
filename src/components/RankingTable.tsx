@@ -47,11 +47,14 @@ function MaFlag({ above, label }: { above: boolean | null | undefined; label: st
   const color = above === null || above === undefined
     ? '#2a3045'
     : (above ? '#4ade80' : '#f87171')
+  const borderColor = above === null || above === undefined
+    ? '#2a3045'
+    : 'rgba(255,255,255,0.45)'
   if (above === null || above === undefined) {
     return (
       <span
         className={base}
-        style={{ backgroundColor: color, borderColor: color }}
+        style={{ backgroundColor: color, borderColor }}
         title={`${label}: no data`}
       />
     )
@@ -59,7 +62,7 @@ function MaFlag({ above, label }: { above: boolean | null | undefined; label: st
   return (
     <span
       className={base}
-      style={{ backgroundColor: color, borderColor: color }}
+      style={{ backgroundColor: color, borderColor }}
       title={`${label}: ${above ? 'above' : 'below'}`}
     />
   )
