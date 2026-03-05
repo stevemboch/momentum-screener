@@ -154,7 +154,6 @@ export function FilterBar() {
                   style={{ width: `${Math.min(100, (fetchStatus.current / fetchStatus.total) * 100)}%` }}
                 />
               </div>
-              <span>{fetchStatus.current}/{fetchStatus.total}</span>
             </>
           )}
         </div>
