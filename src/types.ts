@@ -120,6 +120,16 @@ export interface AppSettings {
   riskFreeRate: number    // annualised, default 0.035 (3.5%)
 }
 
+export type MarketRegime = 'RISK_ON' | 'RISK_OFF' | 'SIDEWAYS' | 'TRANSITION'
+
+export interface RegimeResult {
+  regime: MarketRegime
+  confidence: number
+  summary: string
+  suggestion: string
+  computedAt: number
+}
+
 export type SortColumn =
   | 'momentumScore'
   | 'riskAdjustedScore'

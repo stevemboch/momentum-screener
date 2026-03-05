@@ -6,6 +6,7 @@ import { XetraPanel } from './components/XetraPanel'
 import { RankingTable } from './components/RankingTable'
 import { FilterBar } from './components/FilterBar'
 import { SettingsPanel } from './components/SettingsPanel'
+import { RegimeBanner } from './components/RegimeBanner'
 import { useAppState } from './store'
 
 export default function App() {
@@ -110,6 +111,8 @@ export default function App() {
           <div className="px-4 py-2 border-b border-border bg-surface shrink-0">
             <FilterBar />
           </div>
+
+          <RegimeBanner />
 
           {/* Table */}
           <RankingTable />

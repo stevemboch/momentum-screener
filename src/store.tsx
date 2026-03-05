@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer } from 'react'
 import type {
-  Instrument, AppSettings, FetchStatus, ETFGroup, TableState, MomentumWeights,
+  Instrument, AppSettings, FetchStatus, ETFGroup, TableState, MomentumWeights, RegimeResult,
 } from './types'
 import { ETF_GROUPS, STOCK_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
@@ -17,6 +17,7 @@ interface AppState {
   fetchStatus: FetchStatus
   xetraActive: boolean
   portfolioIsins: string[]
+  marketRegime: RegimeResult | null
 }
 
 const DEFAULT_WEIGHTS: MomentumWeights = { w1m: 1/3, w3m: 1/3, w6m: 1/3 }
@@ -122,6 +123,7 @@ const DEFAULT_STATE: AppState = {
   fetchStatus: { phase: 'idle', message: '', current: 0, total: 0 },
   xetraActive: false,
   portfolioIsins: persistedPortfolio,
+  marketRegime: null,
 }
 
 const SCORE_AFFECTING_KEYS = new Set<keyof Instrument>([
@@ -162,6 +164,7 @@ type Action =
   | { type: 'REMOVE_INSTRUMENT'; isin: string }
   | { type: 'CLEAR_XETRA' }
   | { type: 'TOGGLE_PORTFOLIO'; isin: string }
+  | { type: 'SET_MARKET_REGIME'; regime: RegimeResult | null }
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -279,6 +282,8 @@ function reducer(state: AppState, action: Action): AppState {
         ),
       }
     }
+    case 'SET_MARKET_REGIME':
+      return { ...state, marketRegime: action.regime }
     default:
       return state
   }

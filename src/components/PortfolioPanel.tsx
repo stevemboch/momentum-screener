@@ -1,9 +1,12 @@
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
+import { usePortfolioCheck } from '../hooks/usePortfolioCheck'
 
 export function PortfolioPanel() {
   const { state, dispatch } = useAppState()
   const { fetchPortfolioPrices, fetchSingleInstrumentPrices, processManualInput } = usePipeline()
+  const { result, loading, error, run, clear } = usePortfolioCheck()
+  const portfolioCount = state.portfolioIsins.length
 
   const portfolio = state.instruments.filter((i) => i.inPortfolio)
   const missingIsins = state.portfolioIsins.filter((isin) => !portfolio.find((i) => i.isin === isin))
@@ -61,6 +64,42 @@ export function PortfolioPanel() {
           </div>
         ))}
       </div>
+      <button
+        onClick={run}
+        disabled={loading || portfolioCount === 0}
+        className="w-full mt-3 px-2 py-1.5 text-xs font-mono border border-border 
+               text-muted hover:text-gray-300 hover:border-accent/50 
+               disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+      >
+        {loading ? '…analysiere' : '🔍 Portfolio analysieren'}
+      </button>
+
+      {result && (
+        <div className={`mt-2 p-2 rounded border text-[11px] font-mono ${
+          result.severity === 'ok'      ? 'border-green-400/30 bg-green-400/5' :
+          result.severity === 'warning' ? 'border-amber-400/30 bg-amber-400/5' :
+                                          'border-red-400/30 bg-red-400/5'
+        }`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className={
+              result.severity === 'ok'      ? 'text-green-400' :
+              result.severity === 'warning' ? 'text-amber-400' : 'text-red-400'
+            }>
+              {result.severity === 'ok' ? '✓ Ok' : result.severity === 'warning' ? '⚠ Warnung' : '✗ Kritisch'}
+            </span>
+            <button onClick={clear} className="text-muted hover:text-gray-300">×</button>
+          </div>
+          <ul className="space-y-1">
+            {result.findings.map((f, i) => (
+              <li key={i} className="text-gray-300 leading-snug">· {f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-2 text-[11px] font-mono text-red-400">Fehler: {error}</div>
+      )}
     </div>
   )
 }
