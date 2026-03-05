@@ -551,7 +551,7 @@ export function usePipeline() {
       const winners = finalEtfsAfter.filter((i) => i.isDedupWinner)
       dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(finalCombined, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: finalCombined.length, total: finalCombined.length } })
-      computeRegime()
+      computeRegime({ instruments: finalCombined, referenceR3m: refR3m ?? state.referenceR3m })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }

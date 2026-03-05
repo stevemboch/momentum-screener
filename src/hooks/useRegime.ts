@@ -1,19 +1,22 @@
 import { useCallback } from 'react'
 import { useAppState } from '../store'
 import { computeRegimeInputs } from '../utils/regimeInputs'
+import type { Instrument } from '../types'
 
 const REGIME_TTL = 60 * 60 * 1000  // 60 Minuten
 
 export function useRegime() {
   const { state, dispatch } = useAppState()
 
-  const compute = useCallback(async () => {
+  const compute = useCallback(async (overrides?: { instruments?: Instrument[]; referenceR3m?: number | null }) => {
     if (state.marketRegime) {
       const age = Date.now() - state.marketRegime.computedAt
       if (age < REGIME_TTL) return
     }
 
-    const inputs = computeRegimeInputs(state.instruments, state.referenceR3m)
+    const instruments = overrides?.instruments ?? state.instruments
+    const referenceR3m = overrides?.referenceR3m ?? state.referenceR3m
+    const inputs = computeRegimeInputs(instruments, referenceR3m)
     if (inputs.instrumentCount < 10) return
 
     try {
