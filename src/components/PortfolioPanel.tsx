@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { usePortfolioAnalysis } from '../hooks/usePortfolioAnalysis'
@@ -12,6 +13,7 @@ export function PortfolioPanel() {
     run,
     clear,
   } = usePortfolioAnalysis()
+  const [briefingExpanded, setBriefingExpanded] = useState(false)
   const portfolioCount = state.portfolioIsins.length
 
   const portfolio = state.instruments.filter((i) => i.inPortfolio)
@@ -167,12 +169,21 @@ export function PortfolioPanel() {
             <span className="text-[10px] text-muted uppercase tracking-wider font-mono">
               Market Briefing
             </span>
-            <span className="text-[10px] text-muted font-mono ml-auto">
-              {new Date(briefingResult.fetchedAt).toLocaleTimeString('en-GB')}
-              {briefingIsStale && (
-                <span className="text-amber-400 ml-1">(stale)</span>
-              )}
-            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[10px] text-muted font-mono">
+                {new Date(briefingResult.fetchedAt).toLocaleTimeString('en-GB')}
+                {briefingIsStale && (
+                  <span className="text-amber-400 ml-1">(stale)</span>
+                )}
+              </span>
+              <button
+                onClick={() => setBriefingExpanded(true)}
+                className="text-[10px] font-mono text-muted hover:text-gray-300"
+                title="Expand briefing"
+              >
+                ⤢ expand
+              </button>
+            </div>
           </div>
 
           {briefingResult.macroContext && (
@@ -233,6 +244,94 @@ export function PortfolioPanel() {
       {briefingError && briefingStatus === 'error' && (
         <div className="mt-2 text-[11px] font-mono text-red-400">
           Briefing error: {briefingError}
+        </div>
+      )}
+
+      {briefingExpanded && briefingResult && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setBriefingExpanded(false)}
+        >
+          <div
+            className="w-full max-w-3xl max-h-[85vh] overflow-hidden rounded border border-border bg-surface2 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+              <span className="text-[11px] text-muted uppercase tracking-wider font-mono">
+                Market Briefing
+              </span>
+              <span className="text-[10px] text-muted font-mono ml-auto">
+                {new Date(briefingResult.fetchedAt).toLocaleTimeString('en-GB')}
+                {briefingIsStale && (
+                  <span className="text-amber-400 ml-1">(stale)</span>
+                )}
+              </span>
+              <button
+                onClick={() => setBriefingExpanded(false)}
+                className="text-[11px] font-mono text-muted hover:text-red-400"
+                title="Close"
+              >
+                × close
+              </button>
+            </div>
+
+            <div className="p-3 overflow-y-auto max-h-[80vh]">
+              {briefingResult.macroContext && (
+                <div className="px-2 py-1.5 rounded border border-border bg-surface2/40
+                        text-[11px] font-mono text-muted leading-snug italic">
+                  {briefingResult.macroContext}
+                </div>
+              )}
+
+              <div className="mt-2 flex flex-col gap-2">
+                {briefingResult.findings.map((f, i) => (
+                  <div
+                    key={i}
+                    className={`p-2 rounded border text-[11px] font-mono ${
+                      f.priority === 'high'
+                        ? f.sentiment === 'negative'
+                          ? 'border-red-400/30 bg-red-400/5'
+                          : f.sentiment === 'positive'
+                          ? 'border-green-400/30 bg-green-400/5'
+                          : 'border-amber-400/30 bg-amber-400/5'
+                        : 'border-border bg-surface2/30'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <div className="flex flex-wrap gap-1">
+                        {f.instruments.map((name, j) => (
+                          <span
+                            key={j}
+                            className="text-[10px] px-1 py-0.5 rounded bg-surface2
+                             border border-border text-gray-400"
+                          >
+                            {name.length > 20 ? name.substring(0, 20) + '…' : name}
+                          </span>
+                        ))}
+                      </div>
+                      <span className={`shrink-0 text-[10px] ${
+                        f.priority === 'high'   ? 'text-red-400' :
+                        f.priority === 'medium' ? 'text-amber-400' : 'text-muted'
+                      }`}>
+                        {f.priority}
+                      </span>
+                    </div>
+
+                    <div className={`font-semibold mb-0.5 ${
+                      f.sentiment === 'positive' ? 'text-green-400' :
+                      f.sentiment === 'negative' ? 'text-red-400'   : 'text-gray-300'
+                    }`}>
+                      {f.sentiment === 'positive' ? '↑ ' :
+                       f.sentiment === 'negative' ? '↓ ' : '· '}
+                      {f.headline}
+                    </div>
+
+                    <div className="text-muted leading-snug">{f.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
