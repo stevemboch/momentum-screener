@@ -13,8 +13,8 @@ const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
 export function FilterBar() {
   const { state, dispatch } = useAppState()
   const displayed = useDisplayedInstruments()
-  const { typeFilter, showDeduped, filterBelowRiskFree, filterBelowAllMAs, hiddenColumnGroups } = state.tableState
-  const { fetchStatus, settings } = state
+  const { typeFilter, filterBelowAllMAs, hiddenColumnGroups } = state.tableState
+  const { fetchStatus } = state
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -70,21 +70,6 @@ export function FilterBar() {
           </button>
         ))}
       </div>
-
-      {/* Dedup toggle */}
-      {toggleSwitch(
-        showDeduped,
-        () => dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } }),
-        'Deduplicated'
-      )}
-
-      {/* Risk-free filter toggle */}
-      {toggleSwitch(
-        filterBelowRiskFree,
-        () => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowRiskFree: !filterBelowRiskFree } }),
-        `> Risk-Free (${(settings.riskFreeRate * 100).toFixed(1)}%)`,
-        `Hide instruments whose annualised return is below the risk-free rate (${(settings.riskFreeRate * 100).toFixed(1)}% p.a.)`
-      )}
 
       {/* MA filter toggle */}
       {toggleSwitch(

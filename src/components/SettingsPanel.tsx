@@ -7,6 +7,7 @@ export function SettingsPanel() {
   const [open, setOpen] = useState(false)
   const { state, dispatch } = useAppState()
   const { weights, aumFloor, atrMultiplier, riskFreeRate } = state.settings
+  const { showDeduped, filterBelowRiskFree } = state.tableState
 
   const raw = {
     w1m: weights.w1m * 10,
@@ -88,6 +89,22 @@ export function SettingsPanel() {
               </div>
             </Section>
 
+            {/* Filters */}
+            <Section label="Filters">
+              <ToggleRow
+                label="Deduplicated ETFs"
+                hint="Hide non-winners in each dedup group"
+                active={showDeduped}
+                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } })}
+              />
+              <ToggleRow
+                label="> Risk-Free"
+                hint={`Hide instruments below ${(riskFreeRate * 100).toFixed(1)}% p.a. (annualised)`}
+                active={filterBelowRiskFree}
+                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowRiskFree: !filterBelowRiskFree } })}
+              />
+            </Section>
+
             {/* ATR Multiplier */}
             <Section label="Selling Threshold (ATR)" hint="Last Price − a × ATR(20)">
               <div className="flex items-center gap-3">
@@ -137,6 +154,40 @@ function WeightSlider({ label, value, effective, onChange }: { label: string; va
         className="flex-1 accent-blue-500 h-1"
       />
       <span className="text-xs font-mono text-gray-300 w-8 text-right">{effective}</span>
+    </div>
+  )
+}
+
+function ToggleRow({
+  label,
+  hint,
+  active,
+  onToggle,
+}: {
+  label: string
+  hint?: string
+  active: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 mb-3">
+      <div className="min-w-0">
+        <div className="text-xs font-mono text-gray-300 truncate">{label}</div>
+        {hint && <div className="text-[10px] text-muted font-mono mt-0.5">{hint}</div>}
+      </div>
+      <button
+        onClick={onToggle}
+        aria-pressed={active}
+        className={`flex items-center px-2 py-1 text-xs font-mono rounded border transition-colors ${
+          active
+            ? 'bg-green-400/10 text-green-400 border-green-400/30'
+            : 'text-muted border-border hover:text-gray-300'
+        }`}
+      >
+        <span className={`relative inline-flex w-7 h-3.5 rounded-full transition-colors ${active ? 'bg-green-400' : 'bg-surface2 border border-border'}`}>
+          <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${active ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+        </span>
+      </button>
     </div>
   )
 }
