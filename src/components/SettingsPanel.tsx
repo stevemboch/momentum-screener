@@ -57,19 +57,40 @@ export function SettingsPanel() {
               </div>
             </Section>
 
-            {/* AUM Floor */}
-            <Section label="AUM Floor (ETFs)">
-              <div className="flex items-center gap-2">
-                <span className="text-muted text-xs font-mono">€</span>
+            {/* ATR Multiplier */}
+            <Section label="Selling Threshold (ATR)" hint="Last Price − a × ATR(20)">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono text-muted w-4">a</span>
                 <input
-                  type="number"
-                  value={aumFloor / 1_000_000}
-                  onChange={(e) => dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })}
-                  className="w-32 bg-bg border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 outline-none focus:border-accent"
-                  min={0} step={10}
+                  type="range" min={3} max={5} step={0.25} value={atrMultiplier}
+                  onChange={(e) => dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: Number(e.target.value) })}
+                  className="flex-1 accent-blue-500 h-1"
                 />
-                <span className="text-muted text-xs font-mono">M</span>
+                <span className="text-xs font-mono text-gray-300 w-8 text-right">{atrMultiplier.toFixed(2)}</span>
               </div>
+              <div className="text-[10px] text-muted font-mono mt-1">
+                3 = tight stop · 5 = wide stop · current: {atrMultiplier}× ATR(20)
+              </div>
+            </Section>
+
+            {/* Dedup Filter */}
+            <Section label="Dedup Filter">
+              <ToggleRow
+                label="Deduplicated ETFs"
+                hint="Hide non-winners in each dedup group"
+                active={showDeduped}
+                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } })}
+              />
+            </Section>
+
+            {/* Risk-Free Filter */}
+            <Section label="Risk-Free Filter">
+              <ToggleRow
+                label="> Risk-Free"
+                hint={`Hide instruments below ${(riskFreeRate * 100).toFixed(1)}% p.a. (annualised)`}
+                active={filterBelowRiskFree}
+                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowRiskFree: !filterBelowRiskFree } })}
+              />
             </Section>
 
             {/* Risk-Free Rate */}
@@ -89,35 +110,18 @@ export function SettingsPanel() {
               </div>
             </Section>
 
-            {/* Filters */}
-            <Section label="Filters">
-              <ToggleRow
-                label="Deduplicated ETFs"
-                hint="Hide non-winners in each dedup group"
-                active={showDeduped}
-                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } })}
-              />
-              <ToggleRow
-                label="> Risk-Free"
-                hint={`Hide instruments below ${(riskFreeRate * 100).toFixed(1)}% p.a. (annualised)`}
-                active={filterBelowRiskFree}
-                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowRiskFree: !filterBelowRiskFree } })}
-              />
-            </Section>
-
-            {/* ATR Multiplier */}
-            <Section label="Selling Threshold (ATR)" hint="Last Price − a × ATR(20)">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-muted w-4">a</span>
+            {/* AUM Floor */}
+            <Section label="AUM Floor (ETFs)">
+              <div className="flex items-center gap-2">
+                <span className="text-muted text-xs font-mono">€</span>
                 <input
-                  type="range" min={3} max={5} step={0.25} value={atrMultiplier}
-                  onChange={(e) => dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: Number(e.target.value) })}
-                  className="flex-1 accent-blue-500 h-1"
+                  type="number"
+                  value={aumFloor / 1_000_000}
+                  onChange={(e) => dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })}
+                  className="w-32 bg-bg border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 outline-none focus:border-accent"
+                  min={0} step={10}
                 />
-                <span className="text-xs font-mono text-gray-300 w-8 text-right">{atrMultiplier.toFixed(2)}</span>
-              </div>
-              <div className="text-[10px] text-muted font-mono mt-1">
-                3 = tight stop · 5 = wide stop · current: {atrMultiplier}× ATR(20)
+                <span className="text-muted text-xs font-mono">M</span>
               </div>
             </Section>
 
