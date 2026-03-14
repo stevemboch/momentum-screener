@@ -133,6 +133,7 @@ const DEFAULT_STATE: AppState = {
     typeFilter: 'all',
     showDeduped: true,
     filterBelowRiskFree: true,  // ← ON by default
+    filterBelowAllMAs: false,
     hiddenColumnGroups: persistedHiddenColumns,
   },
   referenceR3m: null,
@@ -401,6 +402,16 @@ export function useDisplayedInstruments() {
         return i.r3m * 4 >= rfr  // annualise 3M return
       }
       return true // no data → keep
+    })
+  }
+
+  // MA filter — keeps only instruments above all computed MAs (10/50/100/200)
+  if (tableState.filterBelowAllMAs) {
+    filtered = filtered.filter((i) => {
+      const flags = [i.aboveMa10, i.aboveMa50, i.aboveMa100, i.aboveMa200]
+      const hasAny = flags.some((v) => v !== null && v !== undefined)
+      if (!hasAny) return true
+      return flags.every((v) => v == null || v === true)
     })
   }
 

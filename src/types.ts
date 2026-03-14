@@ -153,6 +153,7 @@ export interface TableState {
   typeFilter: TypeFilter
   showDeduped: boolean
   filterBelowRiskFree: boolean
+  filterBelowAllMAs: boolean
   hiddenColumnGroups: ColumnGroup[]
 }
 

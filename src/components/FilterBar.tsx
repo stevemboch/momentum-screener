@@ -13,7 +13,7 @@ const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
 export function FilterBar() {
   const { state, dispatch } = useAppState()
   const displayed = useDisplayedInstruments()
-  const { typeFilter, showDeduped, filterBelowRiskFree, hiddenColumnGroups } = state.tableState
+  const { typeFilter, showDeduped, filterBelowRiskFree, filterBelowAllMAs, hiddenColumnGroups } = state.tableState
   const { fetchStatus, settings } = state
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
@@ -86,21 +86,13 @@ export function FilterBar() {
         `Hide instruments whose annualised return is below the risk-free rate (${(settings.riskFreeRate * 100).toFixed(1)}% p.a.)`
       )}
 
-      <div className="flex items-center gap-1.5 text-xs font-mono text-muted">
-        <span>Stop</span>
-        <input
-          type="range"
-          min={3} max={5} step={0.25}
-          value={settings.atrMultiplier}
-          onChange={(e) => dispatch({
-            type: 'SET_ATR_MULTIPLIER',
-            multiplier: Number(e.target.value),
-          })}
-          className="w-16 accent-blue-500 h-1"
-          title={`ATR Multiplier: ${settings.atrMultiplier}× — Selling threshold = Last Price − ${settings.atrMultiplier}× ATR(20)`}
-        />
-        <span className="text-gray-300 w-6">{settings.atrMultiplier}×</span>
-      </div>
+      {/* MA filter toggle */}
+      {toggleSwitch(
+        filterBelowAllMAs,
+        () => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowAllMAs: !filterBelowAllMAs } }),
+        'Above All MAs',
+        'Hide instruments whose last price is not above all computed MAs (10/50/100/200)'
+      )}
 
       {/* Instrument count */}
       <span className="text-xs font-mono text-muted ml-1">
