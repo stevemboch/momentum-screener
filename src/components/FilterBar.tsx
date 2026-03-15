@@ -8,12 +8,13 @@ const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
   technical: 'Technical',
   fundamentals: 'Fundamentals',
   breakout: 'Breakout',
+  tfa: 'TFA',
 }
 
 export function FilterBar() {
   const { state, dispatch } = useAppState()
   const displayed = useDisplayedInstruments()
-  const { typeFilter, filterBelowAllMAs, hiddenColumnGroups } = state.tableState
+  const { typeFilter, filterBelowAllMAs, hiddenColumnGroups, tfaMode } = state.tableState
   const { fetchStatus } = state
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
@@ -77,6 +78,17 @@ export function FilterBar() {
         () => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowAllMAs: !filterBelowAllMAs } }),
         'Above All MAs',
         'Hide instruments whose last price is not above all computed MAs (10/50/100/200)'
+      )}
+
+      {/* TFA mode toggle */}
+      {toggleSwitch(
+        tfaMode,
+        () => dispatch({ type: 'SET_TABLE_STATE', updates: {
+          tfaMode: !tfaMode,
+          typeFilter: !tfaMode ? 'stock' : typeFilter,
+        } }),
+        'TFA Mode',
+        'Zeigt nur Turnaround-Kandidaten: −40% bis −80% unter 52W-Hoch'
       )}
 
       {/* Instrument count */}

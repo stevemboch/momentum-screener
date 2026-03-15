@@ -103,6 +103,17 @@ export interface Instrument {
   valueScore?: number | null
   valueRank?: number
   valueScoreModel?: 'etf' | 'magic-formula' | 'fallback'
+
+  // TFA – Turnaround Formula
+  rsi14?: number | null
+  drawFromHigh?: number | null   // % unter 52W-Hoch, negativ
+  levyRS?: number | null         // Kurs / 26W-GD
+  tfaTScore?: number | null      // 0–1, technische Bodensignale
+  tfaFScore?: number | null      // 0–1, fundamentale Intaktheit
+  tfaEScore?: number | null      // 0–1, Katalysatoren (Gemini)
+  tfaScore?: number | null       // 0–1, Gesamtscore
+  tfaKO?: boolean                // true = disqualifiziert
+  tfaFetched?: boolean
 }
 
 // ─── App State ──────────────────────────────────────────────────────────────
@@ -140,12 +151,13 @@ export type SortColumn =
   | 'combinedScore'
   | 'breakoutScore'
   | 'sellingThreshold'
+  | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS'
 
 export type SortDirection = 'asc' | 'desc'
 export type TypeFilter = 'all' | 'etf' | 'stock'
 
 export type ColumnGroup =
-  'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout'
+  'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout' | 'tfa'
 
 export interface TableState {
   sortColumn: SortColumn
@@ -154,6 +166,7 @@ export interface TableState {
   showDeduped: boolean
   filterBelowRiskFree: boolean
   filterBelowAllMAs: boolean
+  tfaMode: boolean
   hiddenColumnGroups: ColumnGroup[]
 }
 

@@ -97,7 +97,7 @@ function loadHiddenColumnGroups(): ColumnGroup[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    const allowed: ColumnGroup[] = ['scores', 'returns', 'technical', 'fundamentals', 'breakout']
+    const allowed: ColumnGroup[] = ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa']
     return parsed.filter((v) => allowed.includes(v))
   } catch {
     return []
@@ -134,6 +134,7 @@ const DEFAULT_STATE: AppState = {
     showDeduped: true,
     filterBelowRiskFree: true,  // ← ON by default
     filterBelowAllMAs: false,
+    tfaMode: false,
     hiddenColumnGroups: persistedHiddenColumns,
   },
   referenceR3m: null,
@@ -164,6 +165,7 @@ const SCORE_AFFECTING_KEYS = new Set<keyof Instrument>([
   'ebitda',
   'enterpriseValue',
   'returnOnAssets',
+  'analystRating',
 ])
 
 function updatesAffectScores(updates: Partial<Instrument>): boolean {
@@ -371,6 +373,15 @@ export function useDisplayedInstruments() {
     filtered = filtered.filter((i) =>
       i.type === 'Stock' || (i.type === 'Unknown' && i.source === 'manual')
     )
+  }
+
+  // TFA mode — only stocks in the -40%..-80% drawdown window, excluding KO
+  if (tableState.tfaMode) {
+    filtered = filtered.filter((i) => i.type === 'Stock')
+    filtered = filtered.filter((i) =>
+      i.drawFromHigh != null && i.drawFromHigh <= -0.40 && i.drawFromHigh >= -0.80
+    )
+    filtered = filtered.filter((i) => i.tfaKO !== true)
   }
 
   // Dedup filter — hides non-winners when enabled

@@ -3,7 +3,7 @@ import { useAppState } from '../store'
 import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
-import { calculateReturns, recalculateAll } from '../utils/calculations'
+import { calculateReturns, recalculateAll, calculateTfaTScore, calculateTfaFScore } from '../utils/calculations'
 
 const YAHOO_CONCURRENCY_MIN = 3
 const YAHOO_CONCURRENCY_MAX = 12
@@ -119,6 +119,7 @@ export function usePipeline() {
   const { state, dispatch } = useAppState()
   const abortRef = useRef(false)
   const xetraBuffer = useRef<Instrument[]>([])
+  const tfaInFlight = useRef<Set<string>>(new Set())
 
   const setStatus = (message: string, current = 0, total = 0) =>
     dispatch({ type: 'SET_FETCH_STATUS', status: { message, current, total } })
@@ -628,6 +629,58 @@ export function usePipeline() {
         updates.fundamentalsFetched = true
       }
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
+
+      const tScore = inst.tfaTScore ?? calculateTfaTScore(
+        inst.closes ?? [],
+        inst.volumes,
+        inst.rsi14 ?? null,
+        inst.aboveMa50 ?? null,
+        inst.drawFromHigh ?? null
+      )
+      const fScore = calculateTfaFScore(
+        inst.pb,
+        inst.earningsYield,
+        inst.returnOnAssets,
+        inst.pe,
+        updates.analystRating ?? null
+      )
+
+      if (
+        inst.type === 'Stock'
+        && (tScore ?? 0) > 0.4
+        && (fScore ?? 0) > 0.4
+        && !inst.tfaFetched
+        && !tfaInFlight.current.has(inst.isin)
+      ) {
+        tfaInFlight.current.add(inst.isin)
+        try {
+          const res = await fetch('/api/tfa-catalyst', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ticker: inst.yahooTicker,
+              name: inst.displayName,
+              drawFromHigh: inst.drawFromHigh,
+            }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            const finalScore = (tScore! * 0.35) + (fScore! * 0.40) + (data.eScore * 0.25)
+            dispatch({
+              type: 'UPDATE_INSTRUMENT',
+              isin: inst.isin,
+              updates: {
+                tfaEScore: data.eScore,
+                tfaScore: data.ko_risk ? null : finalScore,
+                tfaKO: data.ko_risk,
+                tfaFetched: true,
+              },
+            })
+          }
+        } finally {
+          tfaInFlight.current.delete(inst.isin)
+        }
+      }
     } catch (err: any) {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message } })
     }

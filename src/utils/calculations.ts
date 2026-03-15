@@ -75,6 +75,145 @@ export function calculateMAs(closes: number[]): {
   }
 }
 
+// ─── RSI(14) ──────────────────────────────────────────────────────────────────
+
+export function calculateRSI(closes: number[], period = 14): number | null {
+  if (closes.length < period + 1) return null
+  const slice = closes.slice(closes.length - (period * 3))
+  let gains = 0, losses = 0
+
+  // Erste Periode: einfacher Durchschnitt
+  for (let i = 1; i <= period; i++) {
+    const diff = slice[i] - slice[i - 1]
+    if (diff > 0) gains += diff
+    else losses -= diff
+  }
+  let avgGain = gains / period
+  let avgLoss = losses / period
+
+  // Wilder Smoothing (EMA)
+  for (let i = period + 1; i < slice.length; i++) {
+    const diff = slice[i] - slice[i - 1]
+    avgGain = (avgGain * (period - 1) + Math.max(diff, 0)) / period
+    avgLoss = (avgLoss * (period - 1) + Math.max(-diff, 0)) / period
+  }
+  if (avgLoss === 0) return 100
+  const rs = avgGain / avgLoss
+  return 100 - 100 / (1 + rs)
+}
+
+// ─── Draw from 52W High ───────────────────────────────────────────────────────
+// Gibt negativen Wert zurück: z.B. -0.55 = 55% unter 52W-Hoch
+export function calculateDrawFromHigh(closes: number[]): number | null {
+  const n = closes.length
+  if (n < 2) return null
+  const slice = closes.slice(Math.max(0, n - 252))
+  const high52w = Math.max(...slice)
+  const last = closes[n - 1]
+  if (high52w === 0) return null
+  return (last - high52w) / high52w
+}
+
+// ─── Higher Low Detection ─────────────────────────────────────────────────────
+// Prüft ob die letzten 2 lokalen Tiefs steigen (einfache Annäherung)
+export function calculateHigherLow(closes: number[], lookback = 60): boolean {
+  const n = closes.length
+  if (n < lookback) return false
+  const slice = closes.slice(n - lookback)
+  const lows: { idx: number; val: number }[] = []
+  for (let i = 1; i < slice.length - 1; i++) {
+    if (slice[i] < slice[i - 1] && slice[i] < slice[i + 1]) {
+      lows.push({ idx: i, val: slice[i] })
+    }
+  }
+  if (lows.length < 2) return false
+  return lows[lows.length - 1].val > lows[lows.length - 2].val
+}
+
+// ─── Levy Relative Strength ───────────────────────────────────────────────────
+// Kurs / 26-Wochen-GD. Wert > 1.0 = über Halbjahres-Trend
+export function calculateLevyRS(closes: number[], period = 130): number | null {
+  const ma = calculateMA(closes, period)
+  if (ma === null || ma === 0) return null
+  return closes[closes.length - 1] / ma
+}
+
+// ─── TFA Technical Score (T_Score) ───────────────────────────────────────────
+// 5 binäre Signale → normalisiert auf 0–1
+export function calculateTfaTScore(
+  closes: number[],
+  volumes: number[] | undefined,
+  rsi14: number | null,
+  aboveMa50: boolean | null,
+  drawFromHigh: number | null,
+): number | null {
+  if (!closes || closes.length < 50) return null
+
+  // T1: RSI war unter 30 und dreht nach oben
+  let t1 = 0
+  if (rsi14 !== null) {
+    const prevRSI = calculateRSI(closes.slice(0, -5)) // RSI vor 5 Tagen
+    if (prevRSI !== null && prevRSI < 35 && rsi14 > prevRSI) t1 = 1
+  }
+
+  // T2: Kurs über MA50 nach Phase darunter
+  const t2 = aboveMa50 === true ? 1 : 0
+
+  // T3: Higher Low gebildet
+  const t3 = calculateHigherLow(closes) ? 1 : 0
+
+  // T4: Volumen beim letzten Anstieg überdurchschnittlich
+  let t4 = 0
+  if (volumes && volumes.length >= 21) {
+    const n = volumes.length
+    const avgVol = volumes.slice(n - 21, n - 1).reduce((a, b) => a + b, 0) / 20
+    const lastUp = closes[n - 1] > closes[n - 2]
+    if (lastUp && volumes[n - 1] > avgVol * 1.2) t4 = 1
+  }
+
+  // T5: Rückgang im TFA-Fenster (−40% bis −80%)
+  const t5 = drawFromHigh !== null && drawFromHigh < -0.40 && drawFromHigh > -0.85 ? 1 : 0
+
+  return (t1 + t2 + t3 + t4 + t5) / 5
+}
+
+// ─── TFA Fundamental Score (F_Score) ─────────────────────────────────────────
+// Nutzt bereits vorhandene Felder: pb, earningsYield, returnOnAssets, pe
+export function calculateTfaFScore(
+  pb: number | null | undefined,
+  earningsYield: number | null | undefined,
+  returnOnAssets: number | null | undefined,
+  pe: number | null | undefined,
+  analystRating: number | null | undefined, // 1=Strong Buy … 5=Sell
+): number | null {
+  let signals = 0
+  let count = 0
+
+  // F1: Günstige Bewertung (KBV unter 1.5 oder stark unter historisch)
+  if (pb !== null && pb !== undefined) {
+    signals += pb < 1.5 ? 1 : pb < 2.5 ? 0.5 : 0; count++
+  }
+  // F2: Earnings Yield positiv und überdurchschnittlich (>6%)
+  if (earningsYield !== null && earningsYield !== undefined) {
+    signals += earningsYield > 0.06 ? 1 : earningsYield > 0.03 ? 0.5 : 0; count++
+  }
+  // F3: Profitabilität vorhanden
+  if (returnOnAssets !== null && returnOnAssets !== undefined) {
+    signals += returnOnAssets > 0.05 ? 1 : returnOnAssets > 0 ? 0.5 : 0; count++
+  }
+  // F4: Nicht extrem überteuert (kein KGV > 100)
+  if (pe !== null && pe !== undefined) {
+    signals += (pe > 0 && pe < 30) ? 1 : (pe > 0 && pe < 60) ? 0.5 : 0; count++
+  }
+  // F5: Analysten bullish (aus bestehendem analystRating 1-5)
+  if (analystRating !== null && analystRating !== undefined) {
+    signals += analystRating < 2.5 ? 1 : analystRating < 3.5 ? 0.5 : 0; count++
+  }
+
+  if (count === 0) return null
+  return signals / count
+}
+
 // ─── ATR(20) ─────────────────────────────────────────────────────────────────
 // True Range uses high/low when available, falls back to close-only approximation
 
@@ -310,6 +449,11 @@ export function recalculateAll(
       updated.aboveMa100 = mas.aboveMa100
       updated.aboveMa200 = mas.aboveMa200
 
+      // TFA technical inputs
+      updated.rsi14 = calculateRSI(inst.closes)
+      updated.drawFromHigh = calculateDrawFromHigh(inst.closes)
+      updated.levyRS = calculateLevyRS(inst.closes)
+
       // ATR + Selling Threshold
       const { atr20, sellingThreshold } = calculateSellingThreshold(
         inst.closes, atrMultiplier, inst.highs, inst.lows
@@ -326,6 +470,29 @@ export function recalculateAll(
       } else {
         updated.earningsYield = null
       }
+    }
+
+    const tfaTScore = calculateTfaTScore(
+      inst.closes ?? [],
+      inst.volumes,
+      updated.rsi14 ?? null,
+      updated.aboveMa50 ?? null,
+      updated.drawFromHigh ?? null
+    )
+    const tfaFScore = calculateTfaFScore(
+      inst.pb,
+      updated.earningsYield,
+      inst.returnOnAssets,
+      inst.pe,
+      inst.analystRating
+    )
+    updated.tfaTScore = tfaTScore
+    updated.tfaFScore = tfaFScore
+    if (tfaTScore !== null && tfaFScore !== null) {
+      const base = tfaTScore * 0.35 + tfaFScore * 0.40
+      updated.tfaScore = updated.tfaEScore != null ? base + (updated.tfaEScore * 0.25) : base
+    } else {
+      updated.tfaScore = null
     }
 
     // Breakout score (uses last 60 days, MA200/MA50, volume, and URTH reference)
