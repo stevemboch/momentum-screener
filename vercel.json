@@ -9,6 +9,7 @@
     { "source": "/((?!api).*)", "destination": "/index.html" }
   ],
   "functions": {
-  "api/xetra-stats.ts": { "maxDuration": 60 }
-}
+    "api/xetra-stats.ts": { "maxDuration": 60 },
+    "api/tfa-catalyst.ts": { "maxDuration": 45 }
+  }
 }

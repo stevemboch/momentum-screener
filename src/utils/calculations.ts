@@ -47,6 +47,95 @@ export function calculateMA(closes: number[], period: number): number | null {
   return slice.reduce((a, b) => a + b, 0) / period
 }
 
+export function buildMAHistory(closes: number[], period: number): (number | null)[] {
+  const n = closes.length
+  const result: (number | null)[] = new Array(n).fill(null)
+  if (n < period) return result
+  let sum = 0
+  for (let i = 0; i < n; i++) {
+    sum += closes[i]
+    if (i >= period) sum -= closes[i - period]
+    if (i >= period - 1) result[i] = sum / period
+  }
+  return result
+}
+
+export function calculateMACrossover(
+  closes: number[],
+  maValues: (number | null)[],
+  lookback = 10
+): boolean {
+  const n = closes.length
+  if (n < lookback + 1 || maValues.length !== n) return false
+  const start = Math.max(1, n - lookback)
+  for (let i = start; i < n; i++) {
+    const maCurr = maValues[i]
+    const maPrev = maValues[i - 1]
+    if (maCurr == null || maPrev == null) continue
+    if (closes[i] > maCurr && closes[i - 1] <= maPrev) return true
+  }
+  return false
+}
+
+export function daysSinceMACrossover(
+  closes: number[],
+  maValues: (number | null)[],
+  lookback = 30
+): number | null {
+  const n = closes.length
+  if (n < 2 || maValues.length !== n) return null
+  const start = Math.max(1, n - lookback)
+  for (let i = n - 1; i >= start; i--) {
+    const maCurr = maValues[i]
+    const maPrev = maValues[i - 1]
+    if (maCurr == null || maPrev == null) continue
+    if (closes[i] > maCurr && closes[i - 1] <= maPrev) {
+      return n - 1 - i
+    }
+  }
+  return null
+}
+
+export function calculateTfaMACrossoverSignals(
+  closes: number[],
+  ma50History: (number | null)[],
+  ma100History: (number | null)[],
+  ma200History: (number | null)[],
+): {
+  ma50: boolean
+  ma100: boolean
+  ma200: boolean
+  any: boolean
+  risingMa: 'ma50' | 'ma100' | 'ma200' | null
+  daysAgo: number | null
+  stillValid: boolean
+} {
+  if (!closes || closes.length < 2) {
+    return { ma50: false, ma100: false, ma200: false, any: false, risingMa: null, daysAgo: null, stillValid: false }
+  }
+  const ma50Cross = calculateMACrossover(closes, ma50History, 10)
+  const ma100Cross = calculateMACrossover(closes, ma100History, 10)
+  const ma200Cross = calculateMACrossover(closes, ma200History, 10)
+  const any = ma50Cross || ma100Cross || ma200Cross
+
+  const risingMa: 'ma50' | 'ma100' | 'ma200' | null =
+    ma200Cross ? 'ma200' : ma100Cross ? 'ma100' : ma50Cross ? 'ma50' : null
+
+  const daysAgo200 = ma200Cross ? daysSinceMACrossover(closes, ma200History, 30) : null
+  const daysAgo100 = ma100Cross ? daysSinceMACrossover(closes, ma100History, 30) : null
+  const daysAgo50 = ma50Cross ? daysSinceMACrossover(closes, ma50History, 30) : null
+  const daysAgo = daysAgo200 ?? daysAgo100 ?? daysAgo50 ?? null
+
+  const n = closes.length
+  const lastClose = closes[n - 1]
+  const stillValid =
+    (ma50Cross && ma50History[n - 1] != null && lastClose > (ma50History[n - 1] as number)) ||
+    (ma100Cross && ma100History[n - 1] != null && lastClose > (ma100History[n - 1] as number)) ||
+    (ma200Cross && ma200History[n - 1] != null && lastClose > (ma200History[n - 1] as number))
+
+  return { ma50: ma50Cross, ma100: ma100Cross, ma200: ma200Cross, any, risingMa, daysAgo, stillValid }
+}
+
 export function calculateMAs(closes: number[]): {
   ma10: number | null
   ma50: number | null
@@ -239,53 +328,46 @@ export function calculateTfaTScore(
 // Nutzt bereits vorhandene Felder: pb, earningsYield, returnOnAssets, pe
 export function calculateTfaFDetails(
   pb: number | null | undefined,
-  earningsYield: number | null | undefined,
-  returnOnAssets: number | null | undefined,
-  pe: number | null | undefined,
-  analystRating: number | null | undefined, // 1=Strong Buy … 5=Sell
-): { score: number | null; signals: { f1: number; f2: number; f3: number; f4: number; f5: number } | null } {
+  ebitda: number | null | undefined,
+  enterpriseValue: number | null | undefined,
+  analystRating: number | null | undefined,
+  targetPrice: number | null | undefined,
+  currentPrice: number | null | undefined,
+): { score: number | null; signals: { f1: number; f2: number; f3: number } | null } {
   let signals = 0
   let count = 0
-  let f1 = 0, f2 = 0, f3 = 0, f4 = 0, f5 = 0
+  let f1 = 0, f2 = 0, f3 = 0
 
-  // F1: Günstige Bewertung (KBV unter 1.5 oder stark unter historisch)
-  if (pb !== null && pb !== undefined) {
-    f1 = pb < 1.5 ? 1 : pb < 2.5 ? 0.5 : 0
+  if (pb != null) {
+    f1 = pb < 1.0 ? 1 : pb < 1.8 ? 0.5 : 0
     signals += f1; count++
   }
-  // F2: Earnings Yield positiv und überdurchschnittlich (>6%)
-  if (earningsYield !== null && earningsYield !== undefined) {
-    f2 = earningsYield > 0.06 ? 1 : earningsYield > 0.03 ? 0.5 : 0
+
+  if (ebitda != null && enterpriseValue != null && ebitda > 0 && enterpriseValue > 0) {
+    const evEbitda = enterpriseValue / ebitda
+    f2 = evEbitda < 10 ? 1 : evEbitda < 18 ? 0.5 : 0
     signals += f2; count++
   }
-  // F3: Profitabilität vorhanden
-  if (returnOnAssets !== null && returnOnAssets !== undefined) {
-    f3 = returnOnAssets > 0.05 ? 1 : returnOnAssets > 0 ? 0.5 : 0
+
+  if (targetPrice != null && currentPrice != null && currentPrice > 0) {
+    const upside = (targetPrice - currentPrice) / currentPrice
+    f3 = upside > 0.40 ? 1 : upside > 0.25 ? 0.5 : 0
     signals += f3; count++
-  }
-  // F4: Nicht extrem überteuert (kein KGV > 100)
-  if (pe !== null && pe !== undefined) {
-    f4 = (pe > 0 && pe < 30) ? 1 : (pe > 0 && pe < 60) ? 0.5 : 0
-    signals += f4; count++
-  }
-  // F5: Analysten bullish (aus bestehendem analystRating 1-5)
-  if (analystRating !== null && analystRating !== undefined) {
-    f5 = analystRating < 2.5 ? 1 : analystRating < 3.5 ? 0.5 : 0
-    signals += f5; count++
   }
 
   if (count === 0) return { score: null, signals: null }
-  return { score: signals / count, signals: { f1, f2, f3, f4, f5 } }
+  return { score: signals / count, signals: { f1, f2, f3 } }
 }
 
 export function calculateTfaFScore(
   pb: number | null | undefined,
-  earningsYield: number | null | undefined,
-  returnOnAssets: number | null | undefined,
-  pe: number | null | undefined,
-  analystRating: number | null | undefined, // 1=Strong Buy … 5=Sell
+  ebitda: number | null | undefined,
+  enterpriseValue: number | null | undefined,
+  analystRating: number | null | undefined,
+  targetPrice: number | null | undefined,
+  currentPrice: number | null | undefined,
 ): number | null {
-  return calculateTfaFDetails(pb, earningsYield, returnOnAssets, pe, analystRating).score
+  return calculateTfaFDetails(pb, ebitda, enterpriseValue, analystRating, targetPrice, currentPrice).score
 }
 
 // ─── TFA Technical Score (5Y/7Y Szenarien, Wochendaten) ─────────────────────
@@ -380,60 +462,68 @@ export function calculateTfaFDetails5Y(
 }
 
 // ─── TFA Phase 1 Gate (ohne Fundamentals) ────────────────────────────────────
-export function calculateTfaPhase1Gate(inst: Instrument): { passes: boolean; scenario: '52w' | '5y' | '7y' | null; reason?: string } {
-  // ── Szenario 1: 52W-Crash ─────────────────────────────────────────────────
+export function isTfaZombie(
+  returnOnAssets: number | null | undefined,
+  pb: number | null | undefined
+): boolean {
+  return (
+    returnOnAssets != null && pb != null &&
+    returnOnAssets < -0.20 && pb < 0.40
+  )
+}
+
+export function calculateTfaPhase1Gate(inst: Instrument): {
+  phase: 'monitoring' | 'watch' | 'none'
+  scenario: '52w' | '5y' | '7y' | null
+  reason?: string
+} {
+  if (inst.marketCap != null && inst.marketCap < 50_000_000) {
+    return { phase: 'none', scenario: null, reason: 'Marktkapitalisierung < 50M' }
+  }
+
+  if (isTfaZombie(inst.returnOnAssets, inst.pb)) {
+    return { phase: 'none', scenario: null, reason: 'Zombie: ROA < -20% + PB < 0.4' }
+  }
+
+  let scenario: '52w' | '5y' | '7y' | null = null
+
   const draw52w = inst.drawFromHigh
-  if (draw52w != null && draw52w < -0.40 && draw52w > -0.90) {
-    const hasSomeStabilization =
-      (inst.tfaTSignals?.t1 ?? 0) >= 1 ||
-      inst.aboveMa50 === true ||
-      inst.higherLow === true
-    if (hasSomeStabilization) {
-      return { passes: true, scenario: '52w' }
-    }
-    // Kein Stabilisierungssignal → 5Y/7Y prüfen
-  }
-
-  // ── Szenario 2: 5Y-Konsolidierung ─────────────────────────────────────────
-  const draw5y = inst.drawFrom5YHigh
-  if (draw5y != null && draw5y < -0.50 && draw5y > -0.90) {
-    const hasConsolidation =
-      (inst.weeklyVolaRatio != null && inst.weeklyVolaRatio < 0.85) ||
-      inst.weeklyHigherLow === true ||
-      (inst.tfaTSignals5Y?.t1 ?? 0) >= 1
-    if (hasConsolidation) {
-      return { passes: true, scenario: '5y' }
+  if (draw52w != null && draw52w < -0.30 && draw52w > -0.90) {
+    scenario = '52w'
+  } else {
+    const draw5y = inst.drawFrom5YHigh
+    if (draw5y != null && draw5y < -0.50 && draw5y > -0.90) {
+      scenario = '5y'
+    } else {
+      const draw7y = inst.drawFrom7YHigh
+      if (draw7y != null && draw7y < -0.60 && draw7y > -0.90) {
+        scenario = '7y'
+      }
     }
   }
 
-  // ── Szenario 3: 7Y Capped ATH ─────────────────────────────────────────────
-  const draw7y = inst.drawFrom7YHigh
-  if (draw7y != null && draw7y < -0.60 && draw7y > -0.90) {
-    const hasConsolidation =
-      (inst.weeklyVolaRatio != null && inst.weeklyVolaRatio < 0.85) ||
-      inst.weeklyHigherLow === true ||
-      (inst.tfaTSignals5Y?.t1 ?? 0) >= 1
-    if (hasConsolidation) {
-      return { passes: true, scenario: '7y' }
-    }
-    return { passes: false, scenario: null, reason: '7Y-Kandidat: keine Konsolidierung erkennbar' }
+  if (scenario === null) {
+    return { phase: 'none', scenario: null, reason: 'Kein Drawdown im TFA-Fenster' }
   }
 
-  return { passes: false, scenario: null, reason: 'Kein TFA-Rückgang in 52W, 5Y oder 7Y' }
+  const crossover = inst.maCrossover
+  const hasCrossover = !!(crossover && (crossover.ma50 || crossover.ma100 || crossover.ma200) && crossover.stillValid === true)
+  if (hasCrossover) {
+    return { phase: 'watch', scenario }
+  }
+
+  return { phase: 'monitoring', scenario }
 }
 
 // ─── TFA Phase 2 Gate (mit Fundamentals) ─────────────────────────────────────
-export function calculateTfaPhase2Gate(inst: Instrument, scenario: '52w' | '5y' | '7y'): { passes: boolean; reason?: string } {
-  // Echter Zombie-Filter: nur wenn ROA stark negativ UND PB extrem niedrig
-  const roa = inst.returnOnAssets
-  const pb = inst.pb
-  if (roa != null && pb != null && roa < -0.20 && pb < 0.40) {
-    return { passes: false, reason: 'Zombie: ROA < -20% + PB < 0.4' }
+export function calculateTfaPhase2Gate(
+  inst: Instrument,
+  scenario: '52w' | '5y' | '7y'
+): { passes: boolean; reason?: string } {
+  if ((scenario === '5y' || scenario === '7y') &&
+      inst.tfaFScore5Y != null && inst.tfaFScore5Y < 0.15) {
+    return { passes: false, reason: `${scenario.toUpperCase()} F-Score unbrauchbar` }
   }
-  if ((scenario === '5y' || scenario === '7y') && inst.tfaFScore5Y != null && inst.tfaFScore5Y < 0.15) {
-    return { passes: false, reason: `${scenario.toUpperCase()} F-Score: fundamentale Daten unbrauchbar` }
-  }
-
   return { passes: true }
 }
 
@@ -672,6 +762,24 @@ export function recalculateAll(
       updated.aboveMa100 = mas.aboveMa100
       updated.aboveMa200 = mas.aboveMa200
 
+      const ma50Hist = buildMAHistory(inst.closes, 50)
+      const ma100Hist = buildMAHistory(inst.closes, 100)
+      const ma200Hist = buildMAHistory(inst.closes, 200)
+      const crossoverSignals = calculateTfaMACrossoverSignals(
+        inst.closes,
+        ma50Hist,
+        ma100Hist,
+        ma200Hist,
+      )
+      updated.maCrossover = {
+        ma50: crossoverSignals.ma50,
+        ma100: crossoverSignals.ma100,
+        ma200: crossoverSignals.ma200,
+        risingMa: crossoverSignals.risingMa,
+        stillValid: crossoverSignals.stillValid,
+      }
+      updated.tfaCrossoverDaysAgo = crossoverSignals.daysAgo
+
       // TFA technical inputs
       updated.rsi14 = calculateRSI(inst.closes)
       updated.drawFromHigh = calculateDrawFromHigh(inst.closes)
@@ -704,12 +812,16 @@ export function recalculateAll(
       updated.drawFromHigh ?? null,
       updated.higherLow ?? null
     )
+    const currentPrice = inst.closes && inst.closes.length > 0
+      ? inst.closes[inst.closes.length - 1]
+      : null
     const fDetails = calculateTfaFDetails(
       inst.pb,
-      updated.earningsYield,
-      inst.returnOnAssets,
-      inst.pe,
-      inst.analystRating
+      inst.ebitda,
+      inst.enterpriseValue,
+      inst.analystRating,
+      inst.targetPriceAdj ?? inst.targetPrice,
+      currentPrice,
     )
     updated.tfaTScore = tDetails.score
     updated.tfaTSignals = tDetails.signals
@@ -760,16 +872,18 @@ export function recalculateAll(
 
     if (updated.type === 'Stock') {
       const phase1 = calculateTfaPhase1Gate(updated)
-      if (!phase1.passes) {
+
+      if (phase1.phase === 'none') {
         updated.tfaPhase = 'none'
         updated.tfaScenario = null
         updated.tfaRejectReason = phase1.reason
-      } else if (updated.analystFetched !== true) {
+      } else if (phase1.phase === 'monitoring') {
+        updated.tfaPhase = 'monitoring'
         updated.tfaScenario = phase1.scenario
-        updated.tfaPhase = 'pending'
         updated.tfaRejectReason = undefined
       } else {
         updated.tfaScenario = phase1.scenario
+
         if (phase1.scenario === '7y' && inst.closesWeekly && inst.closesWeekly.length >= 26) {
           const t7yDetails = calculateTfaTDetails5Y(
             inst.closesWeekly,
@@ -783,19 +897,25 @@ export function recalculateAll(
           updated.tfaTScore5Y = t7yDetails.score
           updated.tfaTSignals5Y = t7yDetails.signals
         }
-        const phase2 = calculateTfaPhase2Gate(updated, phase1.scenario!)
-        if (!phase2.passes) {
-          updated.tfaPhase = 'rejected'
-          updated.tfaRejectReason = phase2.reason
-        } else if (updated.tfaKO === true) {
-          updated.tfaPhase = 'ko'
-          updated.tfaRejectReason = undefined
-        } else if (updated.tfaFetched) {
-          updated.tfaPhase = 'qualified'
+
+        if (!updated.analystFetched) {
+          updated.tfaPhase = 'watch'
           updated.tfaRejectReason = undefined
         } else {
-          updated.tfaPhase = 'pending'
-          updated.tfaRejectReason = undefined
+          const phase2 = calculateTfaPhase2Gate(updated, phase1.scenario!)
+          if (!phase2.passes) {
+            updated.tfaPhase = 'rejected'
+            updated.tfaRejectReason = phase2.reason
+          } else if (updated.tfaKO === true) {
+            updated.tfaPhase = 'ko'
+            updated.tfaRejectReason = undefined
+          } else if (updated.tfaFetched) {
+            updated.tfaPhase = 'qualified'
+            updated.tfaRejectReason = undefined
+          } else {
+            updated.tfaPhase = 'watch'
+            updated.tfaRejectReason = undefined
+          }
         }
       }
     } else {

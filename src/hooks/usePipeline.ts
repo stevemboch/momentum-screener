@@ -254,6 +254,7 @@ export function usePipeline() {
         timestampsWeekly: r.timestampsWeekly ?? updated[idx].timestampsWeekly ?? [],
         priceCurrency: r.currency ?? updated[idx].priceCurrency ?? null,
         currency: updated[idx].currency ?? r.currency ?? null,
+        marketCap: r.marketCap ?? updated[idx].marketCap ?? null,
         pe: r.pe ?? null, pb: r.pb ?? null,
         ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
         returnOnAssets: r.returnOnAssets ?? null,
@@ -603,7 +604,7 @@ export function usePipeline() {
   const fetchSingleInstrumentAnalyst = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
-    if (inst.tfaPhase === 'pending') {
+    if (inst.tfaPhase === 'watch') {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
     }
     try {
@@ -677,29 +678,25 @@ export function usePipeline() {
         inst.higherLow ?? null
       )
       const effectivePb = updates.pb ?? inst.pb
-      const effectivePe = updates.pe ?? inst.pe
       const effectiveRoA = updates.returnOnAssets ?? inst.returnOnAssets
       const effectiveEbitda = updates.ebitda ?? inst.ebitda
       const effectiveEV = updates.enterpriseValue ?? inst.enterpriseValue
-      const effectiveEY =
-        effectiveEbitda != null && effectiveEV != null && effectiveEV > 0
-          ? (effectiveEbitda / effectiveEV)
-          : inst.earningsYield
-
-      const fDetails = calculateTfaFDetails(
-        effectivePb,
-        effectiveEY,
-        effectiveRoA,
-        effectivePe,
-        updates.analystRating ?? null
-      )
-
-      updates.tfaFScore = fDetails.score ?? null
-      updates.tfaFSignals = fDetails.signals
 
       const currentPrice = inst.closes && inst.closes.length > 0
         ? inst.closes[inst.closes.length - 1]
         : null
+
+      const fDetails = calculateTfaFDetails(
+        effectivePb,
+        effectiveEbitda,
+        effectiveEV,
+        updates.analystRating ?? null,
+        updates.targetPriceAdj ?? updates.targetPrice ?? inst.targetPriceAdj ?? inst.targetPrice ?? null,
+        currentPrice,
+      )
+
+      updates.tfaFScore = fDetails.score ?? null
+      updates.tfaFSignals = fDetails.signals
 
       const f5yDetails = calculateTfaFDetails5Y(
         effectivePb,
@@ -728,7 +725,7 @@ export function usePipeline() {
       }, phase1.scenario || '52w')
 
       const scenario = phase1.scenario
-      if (phase1.passes && (scenario === '5y' || scenario === '7y')) {
+      if (phase1.phase !== 'none' && (scenario === '5y' || scenario === '7y')) {
         const tScore5y = inst.tfaTScore5Y ?? null
         const fScore5y = f5yDetails.score ?? null
         if (tScore5y !== null && fScore5y !== null) {
@@ -736,20 +733,30 @@ export function usePipeline() {
         }
       }
 
-      if (!phase1.passes) {
+      updates.tfaScenario = phase1.scenario ?? null
+      if (phase1.phase === 'none') {
         updates.tfaPhase = 'none'
         updates.tfaRejectReason = phase1.reason
+      } else if (phase1.phase === 'monitoring') {
+        updates.tfaPhase = 'monitoring'
+        updates.tfaRejectReason = undefined
       } else if (!phase2.passes) {
         updates.tfaPhase = 'rejected'
         updates.tfaRejectReason = phase2.reason
       } else {
-        updates.tfaPhase = 'pending'
+        updates.tfaPhase = 'watch'
         updates.tfaRejectReason = undefined
       }
 
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
 
-      if (inst.type === 'Stock' && phase1.passes && phase2.passes && !inst.tfaFetched && !tfaInFlight.current.has(inst.isin)) {
+      const updatedPhase = updates.tfaPhase
+      if (
+        inst.type === 'Stock' &&
+        (updatedPhase === 'watch' || inst.tfaPhase === 'watch') &&
+        !inst.tfaFetched &&
+        !tfaInFlight.current.has(inst.isin)
+      ) {
         tfaInFlight.current.add(inst.isin)
         try {
           dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'fetching' } })
@@ -770,7 +777,7 @@ export function usePipeline() {
               }),
             })
             if (!res.ok) {
-              dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'pending' } })
+              dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'watch' } })
               return
             }
             data = await res.json()
@@ -779,29 +786,42 @@ export function usePipeline() {
 
           const scenario = phase1.scenario
           const baseT = (scenario === '5y' || scenario === '7y')
-            ? (inst.tfaTScore5Y ?? tDetails.score ?? 0)
-            : (tDetails.score ?? 0)
+            ? (inst.tfaTScore5Y ?? tDetails.score ?? null)
+            : (tDetails.score ?? null)
           const baseF = (scenario === '5y' || scenario === '7y')
-            ? (f5yDetails.score ?? fDetails.score ?? 0)
-            : (fDetails.score ?? 0)
-          const finalScore = (baseT * 0.35) + (baseF * 0.40) + (data.eScore * 0.25)
+            ? (f5yDetails.score ?? fDetails.score ?? null)
+            : (fDetails.score ?? null)
+          const rawEScore = data.eScore ?? null
+          let finalScore: number | null = null
+          if (!data.koRisk) {
+            if (rawEScore != null && baseT != null && baseF != null) {
+              finalScore = (baseT * 0.35) + (baseF * 0.40) + (rawEScore * 0.25)
+            } else if (baseT != null && baseF != null) {
+              finalScore = (baseT * 0.35 + baseF * 0.40) / 0.75
+            } else if (baseT != null) {
+              finalScore = baseT
+            }
+          }
           dispatch({
             type: 'UPDATE_INSTRUMENT',
             isin: inst.isin,
             updates: {
-              tfaEScore: data.eScore,
-              tfaScore: data.ko_risk ? null : finalScore,
-              tfaKO: data.ko_risk,
+              tfaEScore: rawEScore,
+              tfaScore: data.koRisk ? null : finalScore,
+              tfaKO: data.koRisk ?? false,
               tfaCatalyst: {
-                insiderBuying: data.insider_buying ?? null,
-                shortSqueeze: data.short_squeeze ?? null,
-                restructuring: data.restructuring ?? null,
-                sectorCatalyst: data.sector_catalyst ?? null,
-                koRisk: data.ko_risk ?? null,
+                earningsBeatRecent: data.signals?.earnings_beat_recent ?? null,
+                earningsBeatPrior: data.signals?.earnings_beat_prior ?? null,
+                guidanceRaised: data.signals?.guidance_raised ?? null,
+                analystUpgrade: data.signals?.analyst_upgrade ?? null,
+                insiderBuying: data.signals?.insider_buying ?? null,
+                restructuring: data.signals?.restructuring ?? null,
+                koRisk: data.signals?.ko_risk ?? null,
+                eScore: data.eScore ?? null,
                 summary: data.summary ?? null,
                 fetchedAt: Date.now(),
               },
-              tfaPhase: data.ko_risk ? 'ko' : 'qualified',
+              tfaPhase: data.koRisk ? 'ko' : 'qualified',
               tfaFetched: true,
             },
           })
@@ -810,7 +830,7 @@ export function usePipeline() {
         }
       }
     } catch (err: any) {
-      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message, tfaPhase: 'pending' } })
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message, tfaPhase: 'watch' } })
     }
   }, [state.instruments])
 
@@ -820,7 +840,7 @@ export function usePipeline() {
     if (!['done', 'idle'].includes(state.fetchStatus.phase)) return
     const pending = displayedInstruments.filter((i) =>
       i.type === 'Stock'
-      && i.tfaPhase === 'pending'
+      && i.tfaPhase === 'watch'
       && !i.analystFetched
       && !i.analystError
     )

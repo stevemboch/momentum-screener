@@ -11,6 +11,7 @@ interface PriceResult {
   timestamps: number[]
   closesWeekly: number[]
   timestampsWeekly: number[]
+  marketCap: number | null
   pe: number | null
   pb: number | null
   ebitda: number | null
@@ -24,7 +25,7 @@ interface PriceResult {
 async function fetchOneTicker(ticker: string): Promise<PriceResult> {
   const base: PriceResult = {
     ticker, longName: null, currency: null, closes: [], highs: [], lows: [], timestamps: [],
-    volumes: [], closesWeekly: [], timestampsWeekly: [],
+    volumes: [], closesWeekly: [], timestampsWeekly: [], marketCap: null,
     pe: null, pb: null, ebitda: null, enterpriseValue: null,
     returnOnAssets: null, aum: null, ter: null,
   }
@@ -98,6 +99,7 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
         const sd = summary.summaryDetail || {}
         const fp = summary.fundProfile || {}
         base.longName = price.longName ?? price.shortName ?? base.longName
+        base.marketCap = price.marketCap?.raw ?? null
         base.pe = sd.trailingPE?.raw ?? ks.trailingPE?.raw ?? null
         base.pb = ks.priceToBook?.raw ?? null
         base.ebitda = fd.ebitda?.raw ?? null

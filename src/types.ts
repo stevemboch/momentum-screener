@@ -78,6 +78,7 @@ export interface Instrument {
   targetHighAdj?: number | null
   targetFxRate?: number | null
   targetFxApplied?: boolean
+  marketCap?: number | null
   analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
   analystFetched?: boolean
   analystError?: string
@@ -119,15 +120,18 @@ export interface Instrument {
   higherLow?: boolean | null
   tfaTSignals?: { t1: number; t2: number; t3: number; t4: number; t5: number } | null
   tfaTScore?: number | null      // 0–1, technische Bodensignale
-  tfaFSignals?: { f1: number; f2: number; f3: number; f4: number; f5: number } | null
+  tfaFSignals?: { f1: number; f2: number; f3: number } | null
   tfaFScore?: number | null      // 0–1, fundamentale Intaktheit
   tfaEScore?: number | null      // 0–1, Katalysatoren (Gemini)
   tfaCatalyst?: {
-    insiderBuying: number | null
-    shortSqueeze: number | null
-    restructuring: number | null
-    sectorCatalyst: number | null
-    koRisk: boolean | null
+    earningsBeatRecent: { value: number; confidence: string; source: string | null } | null
+    earningsBeatPrior: { value: number; confidence: string; source: string | null } | null
+    guidanceRaised: { value: number; confidence: string; source: string | null } | null
+    analystUpgrade: { value: number; confidence: string; source: string | null } | null
+    insiderBuying: { value: number; confidence: string; source: string | null } | null
+    restructuring: { value: number; confidence: string; source: string | null } | null
+    koRisk: { value: boolean; confidence: string; source: string | null } | null
+    eScore: number | null
     summary: string | null
     fetchedAt: number | null
   } | null
@@ -136,6 +140,14 @@ export interface Instrument {
   tfaRejectReason?: string
   tfaKO?: boolean                // true = disqualifiziert
   tfaFetched?: boolean
+  maCrossover?: {
+    ma50: boolean | null
+    ma100: boolean | null
+    ma200: boolean | null
+    risingMa: 'ma50' | 'ma100' | 'ma200' | null
+    stillValid: boolean
+  } | null
+  tfaCrossoverDaysAgo?: number | null
 
   // TFA – Mehrjahres-Erweiterung (Wochendaten)
   closesWeekly?: number[]
@@ -184,6 +196,7 @@ export type SortColumn =
   | 'r1m' | 'r3m' | 'r6m'
   | 'vola'
   | 'aum' | 'ter'
+  | 'marketCap'
   | 'pe' | 'pb' | 'earningsYield' | 'returnOnAssets'
   | 'combinedScore'
   | 'breakoutScore'
@@ -191,6 +204,7 @@ export type SortColumn =
   | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS' | 'tfaTScore' | 'tfaFScore'
   | 'drawFrom5YHigh' | 'drawFrom7YHigh' | 'weeklyRsi14' | 'weeklyVolaRatio'
   | 'tfaTScore5Y' | 'tfaFScore5Y'
+  | 'tfaCrossoverDaysAgo'
 
 export type SortDirection = 'asc' | 'desc'
 export type TypeFilter = 'all' | 'etf' | 'stock'
@@ -200,7 +214,8 @@ export type ColumnGroup =
 
 export type TfaPhase =
   | 'none'
-  | 'pending'
+  | 'monitoring'
+  | 'watch'
   | 'fetching'
   | 'qualified'
   | 'rejected'

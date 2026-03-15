@@ -18,6 +18,9 @@ export function FilterBar() {
   const { fetchStatus } = state
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
+  const monitoring = displayed.filter((i) => i.tfaPhase === 'monitoring').length
+  const watch = displayed.filter((i) => i.tfaPhase === 'watch').length
+  const qualified = displayed.filter((i) => i.tfaPhase === 'qualified').length
 
   const setTypeFilter = (f: TypeFilter) =>
     dispatch({ type: 'SET_TABLE_STATE', updates: { typeFilter: f } })
@@ -89,7 +92,7 @@ export function FilterBar() {
           sortColumn: !tfaMode ? 'tfaScore' : 'combinedScore',
           sortDirection: 'desc',
         } }),
-        'TFA Mode',
+        `TFA Mode ${tfaMode ? `(${monitoring} monitor / ${watch} watch / ${qualified} ✓)` : ''}`,
         'Zeigt nur Turnaround-Kandidaten: −40% bis −90% unter 52W-Hoch'
       )}
 

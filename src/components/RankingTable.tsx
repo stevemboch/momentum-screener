@@ -39,6 +39,7 @@ const COLUMNS: Col[] = [
   { key: 'tfaFScore5Y',   label: 'F5Y',     title: 'TFA F-Score 5Y/7Y relaxiert (0–1)' },
   { key: 'tfaScore',      label: 'TFA ⭐',   title: 'TFA Gesamtscore (0–1)' },
   { key: 'tfaPhase',      label: 'TFA Status', title: 'TFA Pipeline Status' },
+  { key: 'tfaCrossoverDaysAgo', label: 'Cross', title: 'Tage seit MA-Crossover' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
   { key: 'breakoutAgeDays', label: 'Breakout Age', title: 'Days since breakout' },
 ]
@@ -50,6 +51,7 @@ const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
   tfa:          [
     'drawFromHigh', 'rsi14', 'levyRS', 'tfaTScore', 'tfaFScore', 'tfaScore', 'tfaPhase',
+    'tfaCrossoverDaysAgo',
     'drawFrom5YHigh', 'drawFrom7YHigh', 'weeklyRsi14', 'weeklyVolaRatio', 'tfaTScore5Y', 'tfaFScore5Y',
   ],
   breakout:     ['breakoutScore', 'breakoutAgeDays'],
@@ -146,15 +148,22 @@ function SignalValue({ value }: { value: number | null | undefined }) {
 }
 
 function TfaPhaseBadge({ phase, reason }: { phase: string | null | undefined; reason?: string }) {
-  const label = phase ?? 'none'
-  const cls =
-    label === 'qualified' ? 'text-green-400' :
-    label === 'pending'   ? 'text-amber-300' :
-    label === 'fetching'  ? 'text-blue-300' :
-    label === 'rejected'  ? 'text-red-400' :
-    label === 'ko'        ? 'text-red-500' :
-                            'text-muted'
-  return <span className={cls} title={reason}>{label === 'none' ? '—' : label}</span>
+  switch (phase) {
+    case 'monitoring':
+      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-gray-400/10 text-gray-400 border border-gray-400/20" title={reason}>👁 Monitoring</span>
+    case 'watch':
+      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-yellow-400/10 text-yellow-400 border border-yellow-400/20" title={reason}>⚡ Watch</span>
+    case 'fetching':
+      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-blue-400/10 text-blue-300 border border-blue-400/20" title={reason}>⏳ Fetching</span>
+    case 'qualified':
+      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-green-400/10 text-green-400 border border-green-400/20" title={reason}>✓ Qualified</span>
+    case 'rejected':
+      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-red-400/10 text-red-400 border border-red-400/20" title={reason}>✗ Rejected</span>
+    case 'ko':
+      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-red-500/10 text-red-500 border border-red-500/20" title={reason}>⛔ KO</span>
+    default:
+      return <span className="text-muted" title={reason}>—</span>
+  }
 }
 
 function fmtPrice(v: number | null | undefined): string {
@@ -763,10 +772,8 @@ function ExpandedDetail({
                   <div className="text-gray-400 font-semibold">F-Score (Fundamental)</div>
                   <div>Score: <span className="text-gray-300">{inst.tfaFScore != null ? inst.tfaFScore.toFixed(2) : '—'}</span></div>
                   <div>F1 PB: <SignalValue value={inst.tfaFSignals?.f1} /></div>
-                  <div>F2 EY: <SignalValue value={inst.tfaFSignals?.f2} /></div>
-                  <div>F3 ROA: <SignalValue value={inst.tfaFSignals?.f3} /></div>
-                  <div>F4 PE: <SignalValue value={inst.tfaFSignals?.f4} /></div>
-                  <div>F5 Analyst: <SignalValue value={inst.tfaFSignals?.f5} /></div>
+                  <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals?.f2} /></div>
+                  <div>F3 Upside: <SignalValue value={inst.tfaFSignals?.f3} /></div>
                   <div className="text-gray-400 font-semibold mt-2">
                     F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxiert)
                   </div>
@@ -779,26 +786,67 @@ function ExpandedDetail({
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">E-Score (Catalysts)</div>
-                  <div>Score: <span className="text-gray-300">{inst.tfaEScore != null ? inst.tfaEScore.toFixed(2) : '—'}</span></div>
-                  <div>Final TFA: <span className="text-gray-300">{inst.tfaScore != null ? inst.tfaScore.toFixed(2) : '—'}</span></div>
-                  <div>Insider: <SignalValue value={inst.tfaCatalyst?.insiderBuying} /></div>
-                  <div>Short squeeze: <SignalValue value={inst.tfaCatalyst?.shortSqueeze} /></div>
-                  <div>Restructuring: <SignalValue value={inst.tfaCatalyst?.restructuring} /></div>
-                  <div>Sector catalyst: <SignalValue value={inst.tfaCatalyst?.sectorCatalyst} /></div>
-                  <div>KO Risk: <span className={inst.tfaCatalyst?.koRisk ? 'text-red-400' : 'text-green-400'}>
-                    {inst.tfaCatalyst?.koRisk == null ? '—' : (inst.tfaCatalyst.koRisk ? 'Yes' : 'No')}
+                  <div className="text-gray-400 font-semibold">E-Score (Gemini)</div>
+                  <div>E-Score: <span className={
+                    inst.tfaEScore == null ? 'text-muted'
+                      : inst.tfaEScore > 0.6 ? 'text-green-400'
+                      : inst.tfaEScore > 0.3 ? 'text-yellow-400' : 'text-orange-400'
+                  }>
+                    {inst.tfaEScore == null ? 'keine Daten' : inst.tfaEScore.toFixed(2)}
                   </span></div>
-                  {inst.tfaFetched !== true && (
-                    <div className="text-muted">Not loaded</div>
+                  <div>Final TFA: <span className="text-gray-300">{inst.tfaScore != null ? inst.tfaScore.toFixed(2) : '—'}</span></div>
+                  {inst.maCrossover?.risingMa && (
+                    <div className="text-yellow-400">
+                      ⚡ {inst.maCrossover.risingMa.toUpperCase()} Cross
+                      {inst.tfaCrossoverDaysAgo != null ? ` (vor ${inst.tfaCrossoverDaysAgo}d)` : ''}
+                    </div>
+                  )}
+                  {(inst.maCrossover?.ma50 || inst.maCrossover?.ma100 || inst.maCrossover?.ma200) && !inst.maCrossover?.stillValid && (
+                    <div className="text-orange-400 text-[10px]">
+                      ⚠ Cross erkannt aber Kurs wieder unter MA — Signal abgelaufen
+                    </div>
+                  )}
+                  {(['earningsBeatRecent','earningsBeatPrior','guidanceRaised','analystUpgrade','insiderBuying','restructuring'] as const).map((key) => {
+                    const sig = inst.tfaCatalyst?.[key]
+                    const label: Record<string, string> = {
+                      earningsBeatRecent: 'Earnings Beat (aktuell)',
+                      earningsBeatPrior: 'Earnings Beat (vorig)',
+                      guidanceRaised: 'Guidance erhöht',
+                      analystUpgrade: 'Analyst-Upgrade',
+                      insiderBuying: 'Insider-Kauf',
+                      restructuring: 'Restrukturierung',
+                    }
+                    const confColor = !sig ? 'text-muted'
+                      : sig.confidence === 'high' ? 'text-green-400'
+                      : sig.confidence === 'medium' ? 'text-yellow-400'
+                      : sig.confidence === 'low' ? 'text-orange-400'
+                      : 'text-muted'
+                    return (
+                      <div key={key} className="text-[10px]">
+                        <span className="text-gray-500">{label[key]}: </span>
+                        <span className={confColor}>
+                          {!sig ? '—' : sig.confidence === 'not_found' ? 'n/a'
+                            : `${sig.value} (${sig.confidence})`}
+                        </span>
+                      </div>
+                    )
+                  })}
+                  {inst.tfaCatalyst?.koRisk?.value && (
+                    <div className="text-red-400 font-semibold">
+                      ⛔ KO-Risiko ({inst.tfaCatalyst.koRisk.confidence})
+                    </div>
+                  )}
+                  {inst.tfaCatalyst?.summary && (
+                    <div className="text-muted text-[10px] leading-snug mt-1">{inst.tfaCatalyst.summary}</div>
+                  )}
+                  {inst.tfaPhase === 'watch' && !inst.tfaFetched && (
+                    <div className="text-yellow-400 text-[10px]">Gemini noch nicht geladen</div>
+                  )}
+                  {inst.tfaPhase === 'monitoring' && (
+                    <div className="text-gray-500 text-[10px]">Warte auf MA-Crossover</div>
                   )}
                 </div>
               </div>
-              {inst.tfaCatalyst?.summary && (
-                <div className="mt-2 text-[11px] text-muted leading-snug">
-                  Gemini Summary: {inst.tfaCatalyst.summary}
-                </div>
-              )}
             </div>
           )}
         </td>
@@ -1096,6 +1144,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('tfaPhase') && (
                     <td className="px-2 py-1.5 text-right">
                       <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('tfaCrossoverDaysAgo') && (
+                    <td className="px-2 py-1.5 text-right text-gray-300">
+                      {fmtAge(inst.tfaCrossoverDaysAgo)}
                     </td>
                   )}
 
