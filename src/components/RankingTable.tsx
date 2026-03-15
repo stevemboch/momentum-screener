@@ -399,9 +399,17 @@ function ExpandedDetail({
   hiddenKeys: Set<string>
 }) {
   const lastPrice = inst.closes?.length > 0 ? inst.closes[inst.closes.length - 1] : undefined
-  const referencePrice = inst.currentPrice ?? lastPrice
-  const upside = (inst.targetPrice != null && referencePrice != null)
-    ? (inst.targetPrice / referencePrice - 1)
+  const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
+  const analystCurrency = inst.analystCurrency ?? null
+  const currencyMismatch = analystCurrency != null && priceCurrency != null && analystCurrency !== priceCurrency
+  const targetDisplay = inst.targetPriceAdj ?? inst.targetPrice
+  const targetDisplayCurrency = inst.targetPriceAdj != null ? priceCurrency : (analystCurrency ?? priceCurrency)
+  const targetForUpside = inst.targetPriceAdj != null
+    ? inst.targetPriceAdj
+    : (analystCurrency && priceCurrency && analystCurrency !== priceCurrency ? null : inst.targetPrice)
+  const referencePrice = lastPrice
+  const upside = (targetForUpside != null && referencePrice != null)
+    ? (targetForUpside / referencePrice - 1)
     : null
   const { result: ctx, loading: ctxLoading, load: loadCtx, invalidate } =
     useInstrumentContext(inst.isin)
@@ -525,7 +533,7 @@ function ExpandedDetail({
                             inst.yahooTicker,
                             inst.displayName,
                             lastPrice ?? null,
-                            inst.targetPrice ?? null
+                            targetForUpside ?? null
                           ),
                         ])
                       } finally {
@@ -571,7 +579,8 @@ function ExpandedDetail({
                             )}
                           </div>
                           <div>Target: <span className="text-gray-300" title={inst.analystSource ? `Source: ${inst.analystSource}` : undefined}>
-                            {inst.targetPrice != null ? inst.targetPrice.toFixed(2) : '—'}
+                            {targetDisplay != null ? targetDisplay.toFixed(2) : '—'}
+                            {targetDisplayCurrency ? ` ${targetDisplayCurrency}` : ''}
                           </span>
                             {upside != null && (
                               <span className={upside >= 0 ? 'text-green-400' : 'text-red-400'}>
@@ -579,9 +588,30 @@ function ExpandedDetail({
                               </span>
                             )}
                           </div>
-                          {(inst.targetLow != null || inst.targetHigh != null) && (
+                          {(inst.targetLowAdj != null || inst.targetHighAdj != null || inst.targetLow != null || inst.targetHigh != null) && (
                             <div className="text-muted">
-                              Range: {inst.targetLow != null ? inst.targetLow.toFixed(2) : '—'} – {inst.targetHigh != null ? inst.targetHigh.toFixed(2) : '—'}
+                              Range: {inst.targetLowAdj != null ? inst.targetLowAdj.toFixed(2) : (inst.targetLow != null ? inst.targetLow.toFixed(2) : '—')}
+                              {' – '}
+                              {inst.targetHighAdj != null ? inst.targetHighAdj.toFixed(2) : (inst.targetHigh != null ? inst.targetHigh.toFixed(2) : '—')}
+                              {targetDisplayCurrency ? ` ${targetDisplayCurrency}` : ''}
+                            </div>
+                          )}
+                          {inst.targetFxApplied && inst.targetFxRate != null && (
+                            <div className="text-muted text-[10px]">
+                              FX adjusted ×{inst.targetFxRate.toFixed(3)}
+                              {analystCurrency && priceCurrency && analystCurrency !== priceCurrency
+                                ? ` (${analystCurrency} → ${priceCurrency})`
+                                : ''}
+                            </div>
+                          )}
+                          {inst.targetFxApplied && inst.targetPrice != null && analystCurrency && (
+                            <div className="text-muted text-[10px]">
+                              Original: {inst.targetPrice.toFixed(2)} {analystCurrency}
+                            </div>
+                          )}
+                          {currencyMismatch && !inst.targetFxApplied && (
+                            <div className="text-amber-300 text-[10px]">
+                              Currency mismatch: {analystCurrency} target vs {priceCurrency} price
                             </div>
                           )}
                           {inst.analystError && <div className="text-red-400 mt-1">Error: {inst.analystError}</div>}

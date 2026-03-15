@@ -9,6 +9,7 @@ interface AnalystResult {
   targetLowPrice: number | null
   targetHighPrice: number | null
   currentPrice: number | null
+  currency?: string | null
   ebitda?: number | null
   enterpriseValue?: number | null
   returnOnAssets?: number | null
@@ -57,6 +58,16 @@ function parseNumberWithSuffix(text: string | null): number | null {
   const suffix = match[2]?.toUpperCase()
   const mult = suffix === 'K' ? 1e3 : suffix === 'M' ? 1e6 : suffix === 'B' ? 1e9 : suffix === 'T' ? 1e12 : 1
   return num * mult
+}
+
+function inferCurrency(text: string | null): string | null {
+  if (!text) return null
+  const codeMatch = text.match(/\b[A-Z]{3}\b/)
+  if (codeMatch) return codeMatch[0].toUpperCase()
+  if (text.includes('€')) return 'EUR'
+  if (text.includes('$')) return 'USD'
+  if (text.includes('£')) return 'GBP'
+  return null
 }
 
 function getFromPairs(map: Map<string, string>, ...labels: string[]) {
@@ -328,6 +339,7 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     targetHighPrice: parseMoney(highText),
     targetLowPrice: parseMoney(lowText),
     currentPrice: parseMoney(lastText),
+    currency: inferCurrency(lastText) || inferCurrency(avgText) || inferCurrency(highText) || inferCurrency(lowText),
     ebitda,
     enterpriseValue,
     returnOnAssets,
@@ -372,10 +384,11 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     targetLowPrice: null,
     targetHighPrice: null,
     currentPrice: null,
+    currency: null,
   }
 
   try {
-    const urlBase = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=financialData,recommendationTrend`
+    const urlBase = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=financialData,recommendationTrend,price`
     const headers = {
       'User-Agent': 'Mozilla/5.0 (compatible)',
       'Accept': 'application/json',
@@ -395,6 +408,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     if (!summary) return base
 
     const fd = summary.financialData || {}
+    const price = summary.price || {}
     const rt = summary.recommendationTrend || {}
     const trend0 = Array.isArray(rt.trend) ? rt.trend[0] : null
 
@@ -405,6 +419,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     base.targetLowPrice = fd.targetLowPrice?.raw ?? null
     base.targetHighPrice = fd.targetHighPrice?.raw ?? null
     base.currentPrice = fd.currentPrice?.raw ?? null
+    base.currency = price.currency ?? null
     base.source = 'yahoo'
   } catch (err: any) {
     // Fallback 1: MarketScreener (search by ticker)

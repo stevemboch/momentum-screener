@@ -250,6 +250,8 @@ export function usePipeline() {
         lows: r.lows || [],
         volumes: r.volumes || [],
         timestamps: r.timestamps || [],
+        priceCurrency: r.currency ?? updated[idx].priceCurrency ?? null,
+        currency: updated[idx].currency ?? r.currency ?? null,
         pe: r.pe ?? null, pb: r.pb ?? null,
         ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
         returnOnAssets: r.returnOnAssets ?? null,
@@ -603,7 +605,7 @@ export function usePipeline() {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
     }
     try {
-      const cacheKey = `cache:analyst:${inst.yahooTicker}`
+      const cacheKey = `cache:analyst:v2:${inst.yahooTicker}`
       let r = cacheGet<any>(cacheKey, ANALYST_TTL_MS)
       if (!r) {
         r = await fetch('/api/yahoo-analyst', {
@@ -624,6 +626,8 @@ export function usePipeline() {
         targetPrice: r.targetMeanPrice ?? null,
         targetLow: r.targetLowPrice ?? null,
         targetHigh: r.targetHighPrice ?? null,
+        analystCurrency: r.currency ?? null,
+        analystCurrentPrice: r.currentPrice ?? null,
         analystSource: r.source ?? null,
         analystFetched: true,
         analystError: r.error ?? null,
@@ -635,6 +639,31 @@ export function usePipeline() {
       if (r.returnOnAssets != null) updates.returnOnAssets = r.returnOnAssets
       if (r.pe != null || r.pb != null || r.ebitda != null || r.enterpriseValue != null || r.returnOnAssets != null) {
         updates.fundamentalsFetched = true
+      }
+
+      const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
+      const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
+      const analystCurrency = r.currency ?? null
+      const analystCurrent = r.currentPrice ?? null
+      const fxRate = (lastPrice != null && analystCurrent != null && analystCurrent > 0)
+        ? (lastPrice / analystCurrent)
+        : null
+      const currencyMismatch = priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency
+      const ratioMismatch = fxRate != null && (fxRate < 0.85 || fxRate > 1.15)
+      const shouldAdjust = fxRate != null && (currencyMismatch || ratioMismatch)
+
+      if (shouldAdjust) {
+        updates.targetFxRate = fxRate
+        updates.targetFxApplied = true
+        updates.targetPriceAdj = r.targetMeanPrice != null ? r.targetMeanPrice * fxRate : null
+        updates.targetLowAdj = r.targetLowPrice != null ? r.targetLowPrice * fxRate : null
+        updates.targetHighAdj = r.targetHighPrice != null ? r.targetHighPrice * fxRate : null
+      } else {
+        updates.targetFxRate = null
+        updates.targetFxApplied = false
+        updates.targetPriceAdj = null
+        updates.targetLowAdj = null
+        updates.targetHighAdj = null
       }
 
       const tDetails = calculateTfaTDetails(

@@ -12,6 +12,7 @@ export interface Instrument {
   type: InstrumentType
   source: InputSource
   currency?: string
+  priceCurrency?: string | null
   firstTradingDate?: string
   xetraGroup?: string
 
@@ -70,6 +71,13 @@ export interface Instrument {
   targetPrice?: number | null
   targetLow?: number | null
   targetHigh?: number | null
+  analystCurrency?: string | null
+  analystCurrentPrice?: number | null
+  targetPriceAdj?: number | null
+  targetLowAdj?: number | null
+  targetHighAdj?: number | null
+  targetFxRate?: number | null
+  targetFxApplied?: boolean
   analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
   analystFetched?: boolean
   analystError?: string

@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 interface PriceResult {
   ticker: string
   longName: string | null
+  currency: string | null
   closes: number[]
   highs: number[]
   lows: number[]
@@ -20,7 +21,7 @@ interface PriceResult {
 
 async function fetchOneTicker(ticker: string): Promise<PriceResult> {
   const base: PriceResult = {
-    ticker, longName: null, closes: [], highs: [], lows: [], timestamps: [],
+    ticker, longName: null, currency: null, closes: [], highs: [], lows: [], timestamps: [],
     volumes: [],
     pe: null, pb: null, ebitda: null, enterpriseValue: null,
     returnOnAssets: null, aum: null, ter: null,
@@ -42,6 +43,8 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
       const chartData = await chartRes.json()
       const result = chartData?.chart?.result?.[0]
       if (result) {
+        const metaCurrency = result?.meta?.currency
+        if (metaCurrency) base.currency = metaCurrency
         const timestamps: number[] = result.timestamp || []
         const quote = result.indicators?.quote?.[0] || {}
         const closesRaw: (number | null)[] = quote.close || []
