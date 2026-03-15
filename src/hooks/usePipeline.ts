@@ -3,7 +3,7 @@ import { useAppState, useDisplayedInstruments } from '../store'
 import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
-import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails } from '../utils/calculations'
+import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails, calculateTfaFDetails5Y } from '../utils/calculations'
 
 const YAHOO_CONCURRENCY_MIN = 3
 const YAHOO_CONCURRENCY_MAX = 12
@@ -211,7 +211,7 @@ export function usePipeline() {
     const cachedResults: any[] = new Array(withTickers.length)
     const tasks: { idx: number; ticker: string }[] = []
     withTickers.forEach((inst, idx) => {
-      const key = `cache:yahoo:${inst.yahooTicker}`
+      const key = `cache:yahoo:v2:${inst.yahooTicker}`
       const cached = cacheGet<any>(key, YAHOO_TTL_MS)
       if (cached) cachedResults[idx] = cached
       else tasks.push({ idx, ticker: inst.yahooTicker })
@@ -228,7 +228,7 @@ export function usePipeline() {
     fetched.forEach((r: any, i: number) => {
       const t = tasks[i]
       results[t.idx] = r
-      if (r) cacheSet(`cache:yahoo:${t.ticker}`, r, YAHOO_TTL_MS)
+      if (r) cacheSet(`cache:yahoo:v2:${t.ticker}`, r, YAHOO_TTL_MS)
     })
 
     const errorCount = fetched.filter((r: any) => !r || r.error).length
@@ -250,6 +250,8 @@ export function usePipeline() {
         lows: r.lows || [],
         volumes: r.volumes || [],
         timestamps: r.timestamps || [],
+        closesWeekly: r.closesWeekly ?? updated[idx].closesWeekly ?? [],
+        timestampsWeekly: r.timestampsWeekly ?? updated[idx].timestampsWeekly ?? [],
         priceCurrency: r.currency ?? updated[idx].priceCurrency ?? null,
         currency: updated[idx].currency ?? r.currency ?? null,
         pe: r.pe ?? null, pb: r.pb ?? null,
@@ -695,6 +697,22 @@ export function usePipeline() {
       updates.tfaFScore = fDetails.score ?? null
       updates.tfaFSignals = fDetails.signals
 
+      const currentPrice = inst.closes && inst.closes.length > 0
+        ? inst.closes[inst.closes.length - 1]
+        : null
+
+      const f5yDetails = calculateTfaFDetails5Y(
+        effectivePb,
+        effectiveEbitda,
+        effectiveEV,
+        effectiveRoA,
+        updates.analystRating ?? null,
+        updates.targetPriceAdj ?? updates.targetPrice ?? inst.targetPrice ?? null,
+        currentPrice,
+      )
+      updates.tfaFScore5Y = f5yDetails.score ?? null
+      updates.tfaFSignals5Y = f5yDetails.signals
+
       const phase1 = calculateTfaPhase1Gate({
         ...inst,
         returnOnAssets: effectiveRoA ?? null,
@@ -706,7 +724,17 @@ export function usePipeline() {
         returnOnAssets: effectiveRoA ?? null,
         tfaTScore: tDetails.score ?? null,
         tfaFScore: fDetails.score ?? null,
-      })
+        tfaFScore5Y: f5yDetails.score ?? null,
+      }, phase1.scenario || '52w')
+
+      const scenario = phase1.scenario
+      if (phase1.passes && (scenario === '5y' || scenario === '7y')) {
+        const tScore5y = inst.tfaTScore5Y ?? null
+        const fScore5y = f5yDetails.score ?? null
+        if (tScore5y !== null && fScore5y !== null) {
+          updates.tfaScore = (tScore5y * 0.35 + fScore5y * 0.40) / 0.75
+        }
+      }
 
       if (!phase1.passes) {
         updates.tfaPhase = 'none'
@@ -736,6 +764,9 @@ export function usePipeline() {
                 ticker: inst.yahooTicker,
                 name: inst.displayName,
                 drawFromHigh: inst.drawFromHigh,
+                drawFrom5YHigh: inst.drawFrom5YHigh ?? null,
+                drawFrom7YHigh: inst.drawFrom7YHigh ?? null,
+                scenario: phase1.scenario ?? inst.tfaScenario ?? '52w',
               }),
             })
             if (!res.ok) {
@@ -746,7 +777,14 @@ export function usePipeline() {
             cacheSet(catalystCacheKey, data, TFA_CATALYST_TTL_MS)
           }
 
-          const finalScore = (tDetails.score! * 0.35) + (fDetails.score! * 0.40) + (data.eScore * 0.25)
+          const scenario = phase1.scenario
+          const baseT = (scenario === '5y' || scenario === '7y')
+            ? (inst.tfaTScore5Y ?? tDetails.score ?? 0)
+            : (tDetails.score ?? 0)
+          const baseF = (scenario === '5y' || scenario === '7y')
+            ? (f5yDetails.score ?? fDetails.score ?? 0)
+            : (fDetails.score ?? 0)
+          const finalScore = (baseT * 0.35) + (baseF * 0.40) + (data.eScore * 0.25)
           dispatch({
             type: 'UPDATE_INSTRUMENT',
             isin: inst.isin,

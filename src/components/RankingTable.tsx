@@ -27,10 +27,16 @@ const COLUMNS: Col[] = [
   { key: 'earningsYield', label: 'EY',       title: 'Earnings Yield (rank)' },
   { key: 'returnOnAssets', label: 'ROA',     title: 'Return on Assets — Net income / total assets (rank)' },
   { key: 'drawFromHigh',  label: '52W',      title: '% unter 52W-Hoch' },
+  { key: 'drawFrom5YHigh', label: '5Y',      title: '% unter 5-Jahres-Hoch (Wochenbasis)' },
+  { key: 'drawFrom7YHigh', label: '7Y',      title: '% unter 7-Jahres-Hoch (Capped ATH)' },
   { key: 'rsi14',         label: 'RSI',      title: 'RSI(14)' },
+  { key: 'weeklyRsi14',   label: 'RSI(W)',   title: 'RSI(14) auf Wochenbasis' },
   { key: 'levyRS',        label: 'Levy',     title: 'Levy RS (Kurs / 26W-GD)' },
+  { key: 'weeklyVolaRatio', label: 'VolaR',  title: 'Vola-Ratio 3M/1J wöchentlich (< 0.7 = Kompression)' },
   { key: 'tfaTScore',     label: 'T-Score',  title: 'TFA Technisch (0–1)' },
   { key: 'tfaFScore',     label: 'F-Score',  title: 'TFA Fundamental (0–1)' },
+  { key: 'tfaTScore5Y',   label: 'T5Y',     title: 'TFA T-Score 5Y/7Y (0–1)' },
+  { key: 'tfaFScore5Y',   label: 'F5Y',     title: 'TFA F-Score 5Y/7Y relaxiert (0–1)' },
   { key: 'tfaScore',      label: 'TFA ⭐',   title: 'TFA Gesamtscore (0–1)' },
   { key: 'tfaPhase',      label: 'TFA Status', title: 'TFA Pipeline Status' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
@@ -42,7 +48,10 @@ const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   returns:      ['r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
-  tfa:          ['drawFromHigh', 'rsi14', 'levyRS', 'tfaTScore', 'tfaFScore', 'tfaScore', 'tfaPhase'],
+  tfa:          [
+    'drawFromHigh', 'rsi14', 'levyRS', 'tfaTScore', 'tfaFScore', 'tfaScore', 'tfaPhase',
+    'drawFrom5YHigh', 'drawFrom7YHigh', 'weeklyRsi14', 'weeklyVolaRatio', 'tfaTScore5Y', 'tfaFScore5Y',
+  ],
   breakout:     ['breakoutScore', 'breakoutAgeDays'],
 }
 
@@ -699,7 +708,22 @@ function ExpandedDetail({
             <div className="mt-3 pt-3 border-t border-border">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-semibold text-gray-400 font-mono">🧭 TFA Breakdown</span>
-                <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} />
+                <div className="flex items-center gap-2">
+                  {inst.tfaScenario && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold border ${
+                      inst.tfaScenario === '7y'
+                        ? 'bg-indigo-400/10 text-indigo-400 border-indigo-400/20'
+                        : inst.tfaScenario === '5y'
+                          ? 'bg-purple-400/10 text-purple-400 border-purple-400/20'
+                          : 'bg-orange-400/10 text-orange-400 border-orange-400/20'
+                    }`}>
+                      {inst.tfaScenario === '7y' ? '7Y Deep Value'
+                        : inst.tfaScenario === '5y' ? '5Y Konsolidierung'
+                          : '52W Crash'}
+                    </span>
+                  )}
+                  <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} />
+                </div>
               </div>
               {inst.tfaRejectReason && (
                 <div className={`text-[10px] mb-2 ${inst.tfaPhase === 'rejected' || inst.tfaPhase === 'none' ? 'text-red-400' : 'text-muted'}`}>
@@ -734,6 +758,15 @@ function ExpandedDetail({
                   <div>F3 ROA: <SignalValue value={inst.tfaFSignals?.f3} /></div>
                   <div>F4 PE: <SignalValue value={inst.tfaFSignals?.f4} /></div>
                   <div>F5 Analyst: <SignalValue value={inst.tfaFSignals?.f5} /></div>
+                  <div className="text-gray-400 font-semibold mt-2">
+                    F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxiert)
+                  </div>
+                  <div>Score: <span className="text-gray-300">{inst.tfaFScore5Y != null ? inst.tfaFScore5Y.toFixed(2) : '—'}</span></div>
+                  <div>F1 PB: <SignalValue value={inst.tfaFSignals5Y?.f1} /></div>
+                  <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals5Y?.f2} /></div>
+                  <div>F3 ROA: <SignalValue value={inst.tfaFSignals5Y?.f3} /></div>
+                  <div>F4 Analyst: <SignalValue value={inst.tfaFSignals5Y?.f4} /></div>
+                  <div>F5 Upside: <SignalValue value={inst.tfaFSignals5Y?.f5} /></div>
                 </div>
 
                 <div className="space-y-1">
@@ -989,15 +1022,35 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     <td className={`px-2 py-1.5 text-right ${returnColor(inst.drawFromHigh)}`}>{fmtPct(inst.drawFromHigh)}</td>
                   )}
 
+                  {!hiddenKeys.has('drawFrom5YHigh') && (
+                    <td className={`px-2 py-1.5 text-right ${returnColor(inst.drawFrom5YHigh)}`}>{fmtPct(inst.drawFrom5YHigh)}</td>
+                  )}
+
+                  {!hiddenKeys.has('drawFrom7YHigh') && (
+                    <td className={`px-2 py-1.5 text-right ${returnColor(inst.drawFrom7YHigh)}`}>{fmtPct(inst.drawFrom7YHigh)}</td>
+                  )}
+
                   {!hiddenKeys.has('rsi14') && (
                     <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}
                     </td>
                   )}
 
+                  {!hiddenKeys.has('weeklyRsi14') && (
+                    <td className="px-2 py-1.5 text-right text-gray-300">
+                      {inst.weeklyRsi14 != null ? inst.weeklyRsi14.toFixed(1) : '—'}
+                    </td>
+                  )}
+
                   {!hiddenKeys.has('levyRS') && (
                     <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.levyRS != null ? inst.levyRS.toFixed(2) : '—'}
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('weeklyVolaRatio') && (
+                    <td className="px-2 py-1.5 text-right text-gray-300">
+                      {inst.weeklyVolaRatio != null ? inst.weeklyVolaRatio.toFixed(2) : '—'}
                     </td>
                   )}
 
@@ -1010,6 +1063,18 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('tfaFScore') && (
                     <td className="px-2 py-1.5 text-right">
                       {inst.tfaFScore != null ? inst.tfaFScore.toFixed(2) : <span className="text-muted">—</span>}
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('tfaTScore5Y') && (
+                    <td className="px-2 py-1.5 text-right">
+                      {inst.tfaTScore5Y != null ? inst.tfaTScore5Y.toFixed(2) : <span className="text-muted">—</span>}
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('tfaFScore5Y') && (
+                    <td className="px-2 py-1.5 text-right">
+                      {inst.tfaFScore5Y != null ? inst.tfaFScore5Y.toFixed(2) : <span className="text-muted">—</span>}
                     </td>
                   )}
 

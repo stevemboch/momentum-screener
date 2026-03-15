@@ -3,23 +3,41 @@ import { geminiSearchChat, parseJSON } from './_gemini'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const { ticker, name, drawFromHigh } = req.body
+  const { ticker, name, drawFromHigh, drawFrom5YHigh, drawFrom7YHigh, scenario } = req.body
 
-  const systemPrompt = `You are a turnaround investment analyst. 
-Search for current information about a stock that has fallen significantly.
-Assess if there are catalysts for a recovery. Answer as valid JSON only.`
+  const scenarioDescription = scenario === '7y'
+    ? `This is a STRUCTURAL DEEP-VALUE candidate. The stock is ${
+      drawFrom7YHigh != null ? Math.abs(drawFrom7YHigh * 100).toFixed(0) + '%' : 'significantly'
+    } below its 7-year high and has been underperforming for years.
+Focus on structural recovery catalysts: new management, business model transformation,
+industry cycle turn, major debt restructuring, or strategic asset sales.`
+    : scenario === '5y'
+      ? `This is a MULTI-YEAR turnaround candidate. The stock is ${
+        drawFrom5YHigh != null ? Math.abs(drawFrom5YHigh * 100).toFixed(0) + '%' : 'significantly'
+      } below its 5-year high and has been in a prolonged downtrend.
+Focus on medium-term catalysts: new management, cost restructuring,
+sector recovery, regulatory tailwinds, or improved capital allocation.`
+      : `This is a SHORT-TERM reversal candidate. The stock has fallen ${
+        drawFromHigh != null ? Math.abs(drawFromHigh * 100).toFixed(0) + '%' : 'sharply'
+      } from its 52-week high.
+Focus on near-term catalysts: earnings recovery, short squeeze potential,
+sector rotation, or resolution of a specific negative event.`
+
+  const systemPrompt = `You are a turnaround investment analyst.
+Search for current information about a stock that has significantly underperformed.
+Assess whether credible catalysts exist for a recovery. Answer as valid JSON only.`
 
   const userMessage =
 `Stock: ${name} (${ticker})
-Current drawdown from 52W high: ${drawFromHigh != null ? (drawFromHigh * 100).toFixed(1) + '%' : 'unknown'}
+${scenarioDescription}
 
-Search and evaluate these turnaround catalysts (each 0=absent, 0.5=weak, 1=strong):
+Evaluate these turnaround catalysts (each 0=absent, 0.5=weak signal, 1=strong signal):
 
-1. insider_buying: Recent insider purchases (last 90 days)?
-2. short_squeeze: Short interest > 10%? High borrow costs?
-3. restructuring: New management, cost cuts, or strategic pivot announced?
-4. sector_catalyst: Positive regulatory or macro shift for this sector?
-5. ko_risk: Signs of insolvency risk, massive insider selling, or accounting issues?
+1. insider_buying: Recent insider purchases in the last 90 days?
+2. short_squeeze: Short interest above 10%? High borrow costs or squeeze potential?
+3. restructuring: New management, cost cuts, spin-off, or strategic pivot announced?
+4. sector_catalyst: Positive regulatory change, macro tailwind, or industry cycle turn?
+5. ko_risk: Any signs of insolvency risk, covenant breach, massive insider selling, or accounting issues?
 
 Answer as JSON:
 {

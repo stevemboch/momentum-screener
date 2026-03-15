@@ -114,6 +114,25 @@ export function calculateDrawFromHigh(closes: number[]): number | null {
   return (last - high52w) / high52w
 }
 
+// ─── Drawdown vom N-Jahres-Hoch (Wochendaten) ────────────────────────────────
+// Gibt negativen Wert zurück: z.B. -0.65 = 65% unter N-Jahres-Hoch
+export function calculateDrawFromNYHigh(closesWeekly: number[], weeks: number): number | null {
+  if (!closesWeekly || closesWeekly.length < 4) return null
+  const slice = closesWeekly.slice(Math.max(0, closesWeekly.length - weeks))
+  const highNY = Math.max(...slice)
+  const last = closesWeekly[closesWeekly.length - 1]
+  if (highNY === 0) return null
+  return (last - highNY) / highNY
+}
+
+export function calculateDrawFrom5YHigh(closesWeekly: number[]): number | null {
+  return calculateDrawFromNYHigh(closesWeekly, 260)
+}
+
+export function calculateDrawFrom7YHigh(closesWeekly: number[]): number | null {
+  return calculateDrawFromNYHigh(closesWeekly, 364)
+}
+
 // ─── Higher Low Detection ─────────────────────────────────────────────────────
 // Prüft ob die letzten 2 lokalen Tiefs steigen (einfache Annäherung)
 export function calculateHigherLow(closes: number[], lookback = 60): boolean {
@@ -136,6 +155,33 @@ export function calculateLevyRS(closes: number[], period = 130): number | null {
   const ma = calculateMA(closes, period)
   if (ma === null || ma === 0) return null
   return closes[closes.length - 1] / ma
+}
+
+// ─── Weekly Vola Ratio (3M / 1Y) ────────────────────────────────────────────
+// Wert < 0.7 = Vola-Kompression
+export function calculateWeeklyVolaRatio(closesWeekly: number[]): number | null {
+  const n = closesWeekly.length
+  if (n < 52) return null
+
+  const weeklyReturns: number[] = []
+  for (let i = 1; i < n; i++) {
+    if (closesWeekly[i - 1] > 0) {
+      weeklyReturns.push((closesWeekly[i] - closesWeekly[i - 1]) / closesWeekly[i - 1])
+    }
+  }
+  if (weeklyReturns.length < 13) return null
+
+  const calcVola = (returns: number[]) => {
+    if (returns.length < 2) return 0
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length
+    const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / (returns.length - 1)
+    return Math.sqrt(variance)
+  }
+
+  const vola3m = calcVola(weeklyReturns.slice(-13))
+  const vola1y = calcVola(weeklyReturns.slice(-52))
+  if (vola1y === 0) return null
+  return vola3m / vola1y
 }
 
 // ─── TFA Technical Score (T_Score) ───────────────────────────────────────────
@@ -242,32 +288,150 @@ export function calculateTfaFScore(
   return calculateTfaFDetails(pb, earningsYield, returnOnAssets, pe, analystRating).score
 }
 
+// ─── TFA Technical Score (5Y/7Y Szenarien, Wochendaten) ─────────────────────
+export function calculateTfaTDetails5Y(
+  closesWeekly: number[],
+  weeklyRsi14: number | null,
+  weeklyLevyRS: number | null,
+  weeklyHigherLow: boolean | null,
+  weeklyVolaRatio: number | null,
+  drawdownForT5: number | null,
+  t5Min: number,
+): { score: number | null; signals: { t1: number; t2: number; t3: number; t4: number; t5: number } | null } {
+  if (!closesWeekly || closesWeekly.length < 26) return { score: null, signals: null }
+
+  let t1 = 0
+  if (weeklyRsi14 !== null) {
+    const prevRsi = calculateRSI(closesWeekly.slice(0, -4))
+    if (prevRsi !== null && prevRsi < 38 && weeklyRsi14 > prevRsi && weeklyRsi14 < 55) t1 = 1
+  }
+
+  let t2 = 0
+  if (weeklyLevyRS !== null) {
+    t2 = (weeklyLevyRS > 0.80 && weeklyLevyRS < 1.10) ? 1
+      : weeklyLevyRS > 0.70 ? 0.5
+      : 0
+  }
+
+  const t3 = weeklyHigherLow === true ? 1 : 0
+
+  let t4 = 0
+  if (weeklyVolaRatio !== null) {
+    t4 = weeklyVolaRatio < 0.70 ? 1
+      : weeklyVolaRatio < 0.85 ? 0.5
+      : 0
+  }
+
+  const t5 = drawdownForT5 !== null
+    && drawdownForT5 < t5Min
+    && drawdownForT5 > -0.90
+    ? 1 : 0
+
+  const score = (t1 + t2 + t3 + t4 + t5) / 5
+  return { score, signals: { t1, t2, t3, t4, t5 } }
+}
+
+// ─── TFA Fundamental Score (5Y/7Y Szenarien, relaxiert) ─────────────────────
+export function calculateTfaFDetails5Y(
+  pb: number | null | undefined,
+  ebitda: number | null | undefined,
+  enterpriseValue: number | null | undefined,
+  returnOnAssets: number | null | undefined,
+  analystRating: number | null | undefined,
+  targetPrice: number | null | undefined,
+  currentPrice: number | null | undefined,
+): { score: number | null; signals: { f1: number; f2: number; f3: number; f4: number; f5: number } | null } {
+  let signals = 0
+  let count = 0
+  let f1 = 0, f2 = 0, f3 = 0, f4 = 0, f5 = 0
+
+  if (pb != null) {
+    f1 = pb < 0.8 ? 1 : pb < 1.2 ? 0.5 : 0
+    signals += f1; count++
+  }
+
+  if (ebitda != null && enterpriseValue != null && ebitda > 0 && enterpriseValue > 0) {
+    const evEbitda = enterpriseValue / ebitda
+    f2 = evEbitda < 8 ? 1 : evEbitda < 15 ? 0.5 : 0
+    signals += f2; count++
+  }
+
+  if (returnOnAssets != null) {
+    f3 = returnOnAssets > 0.02 ? 1
+      : returnOnAssets > -0.05 ? 0.7
+      : returnOnAssets > -0.10 ? 0.3
+      : 0
+    signals += f3; count++
+  }
+
+  if (analystRating != null) {
+    f4 = analystRating < 2.5 ? 1 : analystRating < 3.5 ? 0.6 : 0
+    signals += f4; count++
+  }
+
+  if (targetPrice != null && currentPrice != null && currentPrice > 0) {
+    const upside = (targetPrice - currentPrice) / currentPrice
+    f5 = upside > 0.40 ? 1 : upside > 0.25 ? 0.5 : 0
+    signals += f5; count++
+  }
+
+  if (count === 0) return { score: null, signals: null }
+  return { score: signals / count, signals: { f1, f2, f3, f4, f5 } }
+}
+
 // ─── TFA Phase 1 Gate (ohne Fundamentals) ────────────────────────────────────
-export function calculateTfaPhase1Gate(inst: Instrument): { passes: boolean; reason?: string } {
-  // Hard Gate 1: Rückgang im Fenster
-  if (inst.drawFromHigh == null || inst.drawFromHigh > -0.40 || inst.drawFromHigh < -0.90) {
-    return { passes: false, reason: 'Kein TFA-Rückgang (−40%..−90%)' }
+export function calculateTfaPhase1Gate(inst: Instrument): { passes: boolean; scenario: '52w' | '5y' | '7y' | null; reason?: string } {
+  // ── Szenario 1: 52W-Crash ─────────────────────────────────────────────────
+  const draw52w = inst.drawFromHigh
+  if (draw52w != null && draw52w < -0.40 && draw52w > -0.90) {
+    const hasSomeStabilization =
+      (inst.tfaTSignals?.t1 ?? 0) >= 1 ||
+      inst.aboveMa50 === true ||
+      inst.higherLow === true
+    if (hasSomeStabilization) {
+      return { passes: true, scenario: '52w' }
+    }
+    // Kein Stabilisierungssignal → 5Y/7Y prüfen
   }
 
-  // Hard Gate 2 (relaxed): mindestens EINES von {RSI dreht, über MA50, Higher Low}
-  const hasSomeStabilization =
-    (inst.tfaTSignals?.t1 ?? 0) >= 1 ||
-    inst.aboveMa50 === true ||
-    inst.higherLow === true
-  if (!hasSomeStabilization) {
-    return { passes: false, reason: 'Kein Stabilisierungssignal (RSI/MA50/HigherLow)' }
+  // ── Szenario 2: 5Y-Konsolidierung ─────────────────────────────────────────
+  const draw5y = inst.drawFrom5YHigh
+  if (draw5y != null && draw5y < -0.50 && draw5y > -0.90) {
+    const hasConsolidation =
+      (inst.weeklyVolaRatio != null && inst.weeklyVolaRatio < 0.85) ||
+      inst.weeklyHigherLow === true ||
+      (inst.tfaTSignals5Y?.t1 ?? 0) >= 1
+    if (hasConsolidation) {
+      return { passes: true, scenario: '5y' }
+    }
   }
 
-  return { passes: true }
+  // ── Szenario 3: 7Y Capped ATH ─────────────────────────────────────────────
+  const draw7y = inst.drawFrom7YHigh
+  if (draw7y != null && draw7y < -0.60 && draw7y > -0.90) {
+    const hasConsolidation =
+      (inst.weeklyVolaRatio != null && inst.weeklyVolaRatio < 0.85) ||
+      inst.weeklyHigherLow === true ||
+      (inst.tfaTSignals5Y?.t1 ?? 0) >= 1
+    if (hasConsolidation) {
+      return { passes: true, scenario: '7y' }
+    }
+    return { passes: false, scenario: null, reason: '7Y-Kandidat: keine Konsolidierung erkennbar' }
+  }
+
+  return { passes: false, scenario: null, reason: 'Kein TFA-Rückgang in 52W, 5Y oder 7Y' }
 }
 
 // ─── TFA Phase 2 Gate (mit Fundamentals) ─────────────────────────────────────
-export function calculateTfaPhase2Gate(inst: Instrument): { passes: boolean; reason?: string } {
+export function calculateTfaPhase2Gate(inst: Instrument, scenario: '52w' | '5y' | '7y'): { passes: boolean; reason?: string } {
   // Echter Zombie-Filter: nur wenn ROA stark negativ UND PB extrem niedrig
   const roa = inst.returnOnAssets
   const pb = inst.pb
   if (roa != null && pb != null && roa < -0.20 && pb < 0.40) {
     return { passes: false, reason: 'Zombie: ROA < -20% + PB < 0.4' }
+  }
+  if ((scenario === '5y' || scenario === '7y') && inst.tfaFScore5Y != null && inst.tfaFScore5Y < 0.15) {
+    return { passes: false, reason: `${scenario.toUpperCase()} F-Score: fundamentale Daten unbrauchbar` }
   }
 
   return { passes: true }
@@ -563,16 +727,63 @@ export function recalculateAll(
     } else {
       updated.tfaScore = null
     }
+
+    if (inst.closesWeekly && inst.closesWeekly.length >= 26) {
+      updated.drawFrom5YHigh = calculateDrawFrom5YHigh(inst.closesWeekly)
+      updated.drawFrom7YHigh = calculateDrawFrom7YHigh(inst.closesWeekly)
+      updated.weeklyRsi14 = calculateRSI(inst.closesWeekly)
+      updated.weeklyLevyRS = calculateLevyRS(inst.closesWeekly, 130)
+      updated.weeklyHigherLow = calculateHigherLow(inst.closesWeekly, 26)
+      updated.weeklyVolaRatio = calculateWeeklyVolaRatio(inst.closesWeekly)
+
+      const t5yDetails = calculateTfaTDetails5Y(
+        inst.closesWeekly,
+        updated.weeklyRsi14 ?? null,
+        updated.weeklyLevyRS ?? null,
+        updated.weeklyHigherLow ?? null,
+        updated.weeklyVolaRatio ?? null,
+        updated.drawFrom5YHigh ?? null,
+        -0.50,
+      )
+      updated.tfaTScore5Y = t5yDetails.score
+      updated.tfaTSignals5Y = t5yDetails.signals
+    } else {
+      updated.drawFrom5YHigh = null
+      updated.drawFrom7YHigh = null
+      updated.weeklyRsi14 = null
+      updated.weeklyLevyRS = null
+      updated.weeklyHigherLow = null
+      updated.weeklyVolaRatio = null
+      updated.tfaTScore5Y = null
+      updated.tfaTSignals5Y = null
+    }
+
     if (updated.type === 'Stock') {
       const phase1 = calculateTfaPhase1Gate(updated)
       if (!phase1.passes) {
         updated.tfaPhase = 'none'
+        updated.tfaScenario = null
         updated.tfaRejectReason = phase1.reason
       } else if (updated.analystFetched !== true) {
+        updated.tfaScenario = phase1.scenario
         updated.tfaPhase = 'pending'
         updated.tfaRejectReason = undefined
       } else {
-        const phase2 = calculateTfaPhase2Gate(updated)
+        updated.tfaScenario = phase1.scenario
+        if (phase1.scenario === '7y' && inst.closesWeekly && inst.closesWeekly.length >= 26) {
+          const t7yDetails = calculateTfaTDetails5Y(
+            inst.closesWeekly,
+            updated.weeklyRsi14 ?? null,
+            updated.weeklyLevyRS ?? null,
+            updated.weeklyHigherLow ?? null,
+            updated.weeklyVolaRatio ?? null,
+            updated.drawFrom7YHigh ?? null,
+            -0.60,
+          )
+          updated.tfaTScore5Y = t7yDetails.score
+          updated.tfaTSignals5Y = t7yDetails.signals
+        }
+        const phase2 = calculateTfaPhase2Gate(updated, phase1.scenario!)
         if (!phase2.passes) {
           updated.tfaPhase = 'rejected'
           updated.tfaRejectReason = phase2.reason
@@ -589,6 +800,7 @@ export function recalculateAll(
       }
     } else {
       updated.tfaPhase = 'none'
+      updated.tfaScenario = null
       updated.tfaRejectReason = undefined
     }
 

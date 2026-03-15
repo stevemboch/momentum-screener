@@ -136,6 +136,21 @@ export interface Instrument {
   tfaRejectReason?: string
   tfaKO?: boolean                // true = disqualifiziert
   tfaFetched?: boolean
+
+  // TFA – Mehrjahres-Erweiterung (Wochendaten)
+  closesWeekly?: number[]
+  timestampsWeekly?: number[]
+  drawFrom5YHigh?: number | null
+  drawFrom7YHigh?: number | null
+  weeklyRsi14?: number | null
+  weeklyLevyRS?: number | null
+  weeklyHigherLow?: boolean | null
+  weeklyVolaRatio?: number | null
+  tfaScenario?: '52w' | '5y' | '7y' | null
+  tfaTScore5Y?: number | null
+  tfaFScore5Y?: number | null
+  tfaTSignals5Y?: { t1: number; t2: number; t3: number; t4: number; t5: number } | null
+  tfaFSignals5Y?: { f1: number; f2: number; f3: number; f4: number; f5: number } | null
 }
 
 // ─── App State ──────────────────────────────────────────────────────────────
@@ -174,6 +189,8 @@ export type SortColumn =
   | 'breakoutScore'
   | 'sellingThreshold'
   | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS' | 'tfaTScore' | 'tfaFScore'
+  | 'drawFrom5YHigh' | 'drawFrom7YHigh' | 'weeklyRsi14' | 'weeklyVolaRatio'
+  | 'tfaTScore5Y' | 'tfaFScore5Y'
 
 export type SortDirection = 'asc' | 'desc'
 export type TypeFilter = 'all' | 'etf' | 'stock'

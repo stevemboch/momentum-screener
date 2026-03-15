@@ -9,6 +9,8 @@ interface PriceResult {
   lows: number[]
   volumes: number[]
   timestamps: number[]
+  closesWeekly: number[]
+  timestampsWeekly: number[]
   pe: number | null
   pb: number | null
   ebitda: number | null
@@ -22,19 +24,23 @@ interface PriceResult {
 async function fetchOneTicker(ticker: string): Promise<PriceResult> {
   const base: PriceResult = {
     ticker, longName: null, currency: null, closes: [], highs: [], lows: [], timestamps: [],
-    volumes: [],
+    volumes: [], closesWeekly: [], timestampsWeekly: [],
     pe: null, pb: null, ebitda: null, enterpriseValue: null,
     returnOnAssets: null, aum: null, ter: null,
   }
 
   try {
-    const [chartRes, quoteRes] = await Promise.all([
+    const [chartRes, quoteRes, weeklyRes] = await Promise.all([
       fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
       fetch(
         `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price,defaultKeyStatistics,financialData,summaryDetail,fundProfile`,
+        { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
+      ),
+      fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=10y&interval=1wk&includePrePost=false`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
     ])
@@ -62,6 +68,23 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
         base.highs      = validIdxs.map(({ i }) => highsRaw[i] ?? closesRaw[i]!)
         base.lows       = validIdxs.map(({ i }) => lowsRaw[i]  ?? closesRaw[i]!)
         base.volumes    = validIdxs.map(({ i }) => volumesRaw[i] ?? 0)
+      }
+    }
+
+    if (weeklyRes.ok) {
+      const weeklyData = await weeklyRes.json()
+      const result = weeklyData?.chart?.result?.[0]
+      if (result) {
+        const timestamps: number[] = result.timestamp || []
+        const quote = result.indicators?.quote?.[0] || {}
+        const closesRaw: (number | null)[] = quote.close || []
+
+        const validIdxs = timestamps
+          .map((t: number, i: number) => ({ t, i }))
+          .filter(({ i }) => closesRaw[i] != null && !isNaN(closesRaw[i]!))
+
+        base.timestampsWeekly = validIdxs.map(({ t }) => t)
+        base.closesWeekly = validIdxs.map(({ i }) => closesRaw[i]!)
       }
     }
 
