@@ -676,6 +676,15 @@ function ExpandedDetail({
                   {inst.tfaRejectReason}
                 </div>
               )}
+              <div className="text-[10px] text-muted mb-2">
+                Stabilisierung: {
+                  [
+                    (inst.tfaTSignals?.t1 ?? 0) >= 1 ? 'RSI' : null,
+                    inst.aboveMa50 === true ? 'MA50' : null,
+                    inst.higherLow === true ? 'HigherLow' : null,
+                  ].filter(Boolean).join(', ') || '—'
+                }
+              </div>
               <div className="grid grid-cols-3 gap-4 text-[11px] font-mono">
                 <div className="space-y-1">
                   <div className="text-gray-400 font-semibold">T-Score (Technisch)</div>

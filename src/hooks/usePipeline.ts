@@ -16,6 +16,7 @@ const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
 const TFA_AUTO_FUNDAMENTALS_LIMIT = 25
+const TFA_CATALYST_TTL_MS = 24 * 60 * 60 * 1000
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 
@@ -694,41 +695,48 @@ export function usePipeline() {
         tfaInFlight.current.add(inst.isin)
         try {
           dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'fetching' } })
-          const res = await fetch('/api/tfa-catalyst', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ticker: inst.yahooTicker,
-              name: inst.displayName,
-              drawFromHigh: inst.drawFromHigh,
-            }),
-          })
-          if (res.ok) {
-            const data = await res.json()
-            const finalScore = (tDetails.score! * 0.35) + (fDetails.score! * 0.40) + (data.eScore * 0.25)
-            dispatch({
-              type: 'UPDATE_INSTRUMENT',
-              isin: inst.isin,
-              updates: {
-                tfaEScore: data.eScore,
-                tfaScore: data.ko_risk ? null : finalScore,
-                tfaKO: data.ko_risk,
-                tfaCatalyst: {
-                  insiderBuying: data.insider_buying ?? null,
-                  shortSqueeze: data.short_squeeze ?? null,
-                  restructuring: data.restructuring ?? null,
-                  sectorCatalyst: data.sector_catalyst ?? null,
-                  koRisk: data.ko_risk ?? null,
-                  summary: data.summary ?? null,
-                  fetchedAt: Date.now(),
-                },
-                tfaPhase: data.ko_risk ? 'ko' : 'qualified',
-                tfaFetched: true,
-              },
+          const catalystCacheKey = `cache:tfa-catalyst:${inst.yahooTicker}`
+          let data = cacheGet<any>(catalystCacheKey, TFA_CATALYST_TTL_MS)
+
+          if (!data) {
+            const res = await fetch('/api/tfa-catalyst', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ticker: inst.yahooTicker,
+                name: inst.displayName,
+                drawFromHigh: inst.drawFromHigh,
+              }),
             })
-          } else {
-            dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'pending' } })
+            if (!res.ok) {
+              dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'pending' } })
+              return
+            }
+            data = await res.json()
+            cacheSet(catalystCacheKey, data, TFA_CATALYST_TTL_MS)
           }
+
+          const finalScore = (tDetails.score! * 0.35) + (fDetails.score! * 0.40) + (data.eScore * 0.25)
+          dispatch({
+            type: 'UPDATE_INSTRUMENT',
+            isin: inst.isin,
+            updates: {
+              tfaEScore: data.eScore,
+              tfaScore: data.ko_risk ? null : finalScore,
+              tfaKO: data.ko_risk,
+              tfaCatalyst: {
+                insiderBuying: data.insider_buying ?? null,
+                shortSqueeze: data.short_squeeze ?? null,
+                restructuring: data.restructuring ?? null,
+                sectorCatalyst: data.sector_catalyst ?? null,
+                koRisk: data.ko_risk ?? null,
+                summary: data.summary ?? null,
+                fetchedAt: Date.now(),
+              },
+              tfaPhase: data.ko_risk ? 'ko' : 'qualified',
+              tfaFetched: true,
+            },
+          })
         } finally {
           tfaInFlight.current.delete(inst.isin)
         }

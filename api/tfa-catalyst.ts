@@ -28,7 +28,6 @@ Answer as JSON:
   "restructuring": 0 | 0.5 | 1,
   "sector_catalyst": 0 | 0.5 | 1,
   "ko_risk": true | false,
-  "eScore": number,
   "summary": string
 }`
 

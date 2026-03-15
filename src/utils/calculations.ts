@@ -172,8 +172,8 @@ export function calculateTfaTDetails(
     if (lastUp && volumes[n - 1] > avgVol * 1.2) t4 = 1
   }
 
-  // T5: Rückgang im TFA-Fenster (−40% bis −85%)
-  const t5 = drawFromHigh !== null && drawFromHigh < -0.40 && drawFromHigh > -0.85 ? 1 : 0
+  // T5: Rückgang im TFA-Fenster (−40% bis −90%)
+  const t5 = drawFromHigh !== null && drawFromHigh < -0.40 && drawFromHigh > -0.90 ? 1 : 0
 
   const score = (t1 + t2 + t3 + t4 + t5) / 5
   return { score, signals: { t1, t2, t3, t4, t5 } }
@@ -245,18 +245,17 @@ export function calculateTfaFScore(
 // ─── TFA Phase 1 Gate (ohne Fundamentals) ────────────────────────────────────
 export function calculateTfaPhase1Gate(inst: Instrument): { passes: boolean; reason?: string } {
   // Hard Gate 1: Rückgang im Fenster
-  if (inst.drawFromHigh == null || inst.drawFromHigh > -0.40 || inst.drawFromHigh < -0.85) {
-    return { passes: false, reason: 'Kein TFA-Rückgang' }
+  if (inst.drawFromHigh == null || inst.drawFromHigh > -0.40 || inst.drawFromHigh < -0.90) {
+    return { passes: false, reason: 'Kein TFA-Rückgang (−40%..−90%)' }
   }
 
-  // Hard Gate 2: Trendbruch-Signal
-  if (inst.aboveMa50 !== true && inst.higherLow !== true) {
-    return { passes: false, reason: 'Kein Trendbruch-Signal' }
-  }
-
-  // Soft Gate: T_Score Mindestwert
-  if ((inst.tfaTScore ?? 0) < 0.30) {
-    return { passes: false, reason: 'T_Score zu schwach' }
+  // Hard Gate 2 (relaxed): mindestens EINES von {RSI dreht, über MA50, Higher Low}
+  const hasSomeStabilization =
+    (inst.tfaTSignals?.t1 ?? 0) >= 1 ||
+    inst.aboveMa50 === true ||
+    inst.higherLow === true
+  if (!hasSomeStabilization) {
+    return { passes: false, reason: 'Kein Stabilisierungssignal (RSI/MA50/HigherLow)' }
   }
 
   return { passes: true }
@@ -264,20 +263,11 @@ export function calculateTfaPhase1Gate(inst: Instrument): { passes: boolean; rea
 
 // ─── TFA Phase 2 Gate (mit Fundamentals) ─────────────────────────────────────
 export function calculateTfaPhase2Gate(inst: Instrument): { passes: boolean; reason?: string } {
-  // Zombie-Filter
-  if (inst.returnOnAssets != null && inst.returnOnAssets < -0.10) {
-    return { passes: false, reason: 'ROA < −10%: Zombie-Aktie' }
-  }
-
-  // F_Score vorhanden und zu schwach?
-  if (inst.tfaFScore != null) {
-    if (inst.tfaFScore < 0.30) {
-      return { passes: false, reason: 'F_Score zu schwach' }
-    }
-    const combined = (inst.tfaTScore ?? 0) * 0.35 + inst.tfaFScore * 0.40
-    if (combined < 0.35) {
-      return { passes: false, reason: 'T+F kombiniert zu schwach' }
-    }
+  // Echter Zombie-Filter: nur wenn ROA stark negativ UND PB extrem niedrig
+  const roa = inst.returnOnAssets
+  const pb = inst.pb
+  if (roa != null && pb != null && roa < -0.20 && pb < 0.40) {
+    return { passes: false, reason: 'Zombie: ROA < -20% + PB < 0.4' }
   }
 
   return { passes: true }
@@ -561,9 +551,15 @@ export function recalculateAll(
     updated.tfaTSignals = tDetails.signals
     updated.tfaFScore = fDetails.score
     updated.tfaFSignals = fDetails.signals
-    if (tDetails.score !== null && fDetails.score !== null) {
-      const base = tDetails.score * 0.35 + fDetails.score * 0.40
-      updated.tfaScore = updated.tfaEScore != null ? base + (updated.tfaEScore * 0.25) : base
+    const tScore = tDetails.score
+    const fScore = fDetails.score
+    const eScore = updated.tfaEScore ?? null
+    if (tScore !== null && fScore !== null && eScore !== null) {
+      updated.tfaScore = tScore * 0.35 + fScore * 0.40 + eScore * 0.25
+    } else if (tScore !== null && fScore !== null) {
+      updated.tfaScore = (tScore * 0.35 + fScore * 0.40) / 0.75
+    } else if (tScore !== null) {
+      updated.tfaScore = tScore
     } else {
       updated.tfaScore = null
     }

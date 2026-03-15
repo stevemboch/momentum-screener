@@ -86,9 +86,11 @@ export function FilterBar() {
         () => dispatch({ type: 'SET_TABLE_STATE', updates: {
           tfaMode: !tfaMode,
           typeFilter: !tfaMode ? 'stock' : typeFilter,
+          sortColumn: !tfaMode ? 'tfaScore' : 'combinedScore',
+          sortDirection: 'desc',
         } }),
         'TFA Mode',
-        'Zeigt nur Turnaround-Kandidaten: −40% bis −85% unter 52W-Hoch'
+        'Zeigt nur Turnaround-Kandidaten: −40% bis −90% unter 52W-Hoch'
       )}
 
       {/* Instrument count */}

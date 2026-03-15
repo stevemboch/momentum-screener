@@ -108,7 +108,7 @@ export interface Instrument {
   rsi14?: number | null
   drawFromHigh?: number | null   // % unter 52W-Hoch, negativ
   levyRS?: number | null         // Kurs / 26W-GD
-  higherLow?: boolean
+  higherLow?: boolean | null
   tfaTSignals?: { t1: number; t2: number; t3: number; t4: number; t5: number } | null
   tfaTScore?: number | null      // 0–1, technische Bodensignale
   tfaFSignals?: { f1: number; f2: number; f3: number; f4: number; f5: number } | null

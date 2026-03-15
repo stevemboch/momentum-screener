@@ -429,8 +429,14 @@ export function useDisplayedInstruments() {
   const col = tableState.sortColumn
   const dir = tableState.sortDirection === 'desc' ? -1 : 1
   const sorted = [...filtered].sort((a, b) => {
-    const avRaw = (a as any)[col]
-    const bvRaw = (b as any)[col]
+    const getVal = (inst: Instrument) => {
+      if (col === 'tfaScore' && tableState.tfaMode) {
+        return (inst as any).tfaScore ?? (inst as any).tfaTScore ?? null
+      }
+      return (inst as any)[col] ?? null
+    }
+    const avRaw = getVal(a)
+    const bvRaw = getVal(b)
     if (avRaw == null && bvRaw == null) return a.displayName.localeCompare(b.displayName)
     if (avRaw == null) return 1
     if (bvRaw == null) return -1
