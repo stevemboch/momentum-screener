@@ -87,6 +87,10 @@ export function generateTfaSummary(inst: Instrument): string {
   }
 
   if (phase === 'monitoring') {
+    // Sonderfall: vorher qualifiziert, Cross abgelaufen
+    if (inst.tfaFetched && inst.tfaRejectReason?.includes('abgelaufen')) {
+      return `${name}: Cross abgelaufen — Kurs unter MA zurückgefallen. Kandidat bleibt auf Watchlist.`
+    }
     const parts: string[] = []
     if (drawdown && drawdownLabel) {
       parts.push(`${drawdown} unter dem ${drawdownLabel}`)
