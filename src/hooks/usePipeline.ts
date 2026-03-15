@@ -634,7 +634,6 @@ export function usePipeline() {
       if (r.pe != null || r.pb != null || r.ebitda != null || r.enterpriseValue != null || r.returnOnAssets != null) {
         updates.fundamentalsFetched = true
       }
-      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
 
       const tDetails = calculateTfaTDetails(
         inst.closes ?? [],
@@ -662,6 +661,9 @@ export function usePipeline() {
         updates.analystRating ?? null
       )
 
+      updates.tfaFScore = fDetails.score ?? null
+      updates.tfaFSignals = fDetails.signals
+
       const phase1 = calculateTfaPhase1Gate({
         ...inst,
         returnOnAssets: effectiveRoA ?? null,
@@ -674,6 +676,19 @@ export function usePipeline() {
         tfaTScore: tDetails.score ?? null,
         tfaFScore: fDetails.score ?? null,
       })
+
+      if (!phase1.passes) {
+        updates.tfaPhase = 'none'
+        updates.tfaRejectReason = phase1.reason
+      } else if (!phase2.passes) {
+        updates.tfaPhase = 'rejected'
+        updates.tfaRejectReason = phase2.reason
+      } else {
+        updates.tfaPhase = 'pending'
+        updates.tfaRejectReason = undefined
+      }
+
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
 
       if (inst.type === 'Stock' && phase1.passes && phase2.passes && !inst.tfaFetched && !tfaInFlight.current.has(inst.isin)) {
         tfaInFlight.current.add(inst.isin)
