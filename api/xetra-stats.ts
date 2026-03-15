@@ -54,8 +54,22 @@ async function fetchXlsxSheet(buf: Buffer, sheetFile: string, strings: string[])
   const rows: string[][] = []
   for (const rowMatch of wsXml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
     const cells: { col: number; val: string }[] = []
-    for (const cm of rowMatch[1].matchAll(/<c\b r="([A-Z]+)\d+"(?:[^>]*\bt="([^"]*)")?[^>]*>(?:<v>([^<]*)<\/v>)?/g)) {
-      const val = (cm[2] ?? '') === 's' ? (strings[parseInt(cm[3] ?? '')] ?? '') : (cm[3] ?? '')
+    for (const cm of rowMatch[1].matchAll(/<c\b[^>]*r="([A-Z]+)\d+"([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const attrs = cm[2] || ''
+      const body = cm[3] || ''
+      const typeMatch = attrs.match(/\bt="([^"]+)"/)
+      const cellType = typeMatch ? typeMatch[1] : null
+      let val = ''
+      if (cellType === 's') {
+        const vMatch = body.match(/<v>([^<]*)<\/v>/)
+        const idx = vMatch ? parseInt(vMatch[1] || '') : NaN
+        val = Number.isFinite(idx) ? (strings[idx] ?? '') : ''
+      } else if (cellType === 'inlineStr') {
+        val = [...body.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map(t => t[1]).join('')
+      } else {
+        const vMatch = body.match(/<v>([^<]*)<\/v>/)
+        val = vMatch ? vMatch[1] : ''
+      }
       cells.push({ col: colIndex(cm[1]), val })
     }
     if (cells.length === 0) continue
@@ -92,6 +106,64 @@ function parseETCSheet(rows: string[][]): Map<string, { name: string | null; aum
     const name = row[2]?.trim() || null
     const aumRaw = parseFloat(row[9])
     const aum = isFinite(aumRaw) && aumRaw > 0 ? Math.round(aumRaw * 1_000_000) : null
+    map.set(isin, { name, aum })
+  }
+  return map
+}
+
+function parseNumberSmart(raw: string): number | null {
+  const cleaned = raw.replace(/\u00a0/g, ' ').trim()
+  if (!cleaned) return null
+  const hasComma = cleaned.includes(',')
+  const hasDot = cleaned.includes('.')
+  let normalized = cleaned.replace(/\s/g, '')
+  if (hasComma && hasDot) {
+    if (normalized.lastIndexOf(',') > normalized.lastIndexOf('.')) {
+      normalized = normalized.replace(/\./g, '').replace(',', '.')
+    } else {
+      normalized = normalized.replace(/,/g, '')
+    }
+  } else if (hasComma && !hasDot) {
+    normalized = normalized.replace(',', '.')
+  }
+  const val = Number(normalized)
+  return Number.isFinite(val) ? val : null
+}
+
+function parseStatsSheet(rows: string[][]): Map<string, { name: string | null; aum: number | null }> {
+  const map = new Map<string, { name: string | null; aum: number | null }>()
+  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  const isinRe = /^[A-Z]{2}[A-Z0-9]{10}$/
+  let headerIdx = -1
+  let idxIsin = -1
+  let idxName = -1
+  let idxAum = -1
+
+  const maxScan = Math.min(rows.length, 25)
+  for (let r = 0; r < maxScan; r++) {
+    const row = rows[r]
+    if (!row) continue
+    const norm = row.map((c) => normalize(c || ''))
+    norm.forEach((cell, i) => {
+      if (idxIsin === -1 && /isin/.test(cell)) idxIsin = i
+      if (idxName === -1 && /(name|instrument|product)/.test(cell)) idxName = i
+      if (idxAum === -1 && /(aum|assets under management|total assets)/.test(cell)) idxAum = i
+    })
+    if (idxIsin !== -1 && idxAum !== -1) {
+      headerIdx = r
+      break
+    }
+  }
+  if (headerIdx === -1 || idxIsin === -1 || idxAum === -1) return map
+
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const row = rows[r]
+    const isin = row[idxIsin]?.trim()
+    if (!isin || !isinRe.test(isin)) continue
+    const name = idxName >= 0 ? (row[idxName]?.trim() || null) : null
+    const aumRaw = row[idxAum] ?? ''
+    const aumNum = parseNumberSmart(aumRaw)
+    const aum = aumNum != null && aumNum > 0 ? Math.round(aumNum * 1_000_000) : null
     map.set(isin, { name, aum })
   }
   return map
@@ -134,17 +206,40 @@ async function getStatsMap(): Promise<Map<string, { name: string | null; aum: nu
 
   const buf = Buffer.from(await fileRes.arrayBuffer())
   const entries = findZipEntries(buf)
-  const strings = parseSharedStrings(await extractXml(buf, entries.get('xl/sharedStrings.xml')!))
+  const sharedEntry = entries.get('xl/sharedStrings.xml')
+  const strings = sharedEntry ? parseSharedStrings(await extractXml(buf, sharedEntry)) : []
 
-  const [etfRows, etcRows] = await Promise.all([
-    fetchXlsxSheet(buf, 'xl/worksheets/sheet3.xml', strings),
-    fetchXlsxSheet(buf, 'xl/worksheets/sheet4.xml', strings),
-  ])
+  let data = new Map<string, { name: string | null; aum: number | null }>()
+  let usedFallback = false
+  try {
+    const [etfRows, etcRows] = await Promise.all([
+      fetchXlsxSheet(buf, 'xl/worksheets/sheet3.xml', strings),
+      fetchXlsxSheet(buf, 'xl/worksheets/sheet4.xml', strings),
+    ])
+    data = new Map([
+      ...parseETFSheet(etfRows),
+      ...parseETCSheet(etcRows),
+    ])
+  } catch {
+    usedFallback = true
+  }
 
-  const data = new Map([
-    ...parseETFSheet(etfRows),
-    ...parseETCSheet(etcRows),
-  ])
+  if (data.size === 0) {
+    usedFallback = true
+  }
+
+  if (usedFallback) {
+    const sheetNames = Array.from(entries.keys()).filter((k) => k.startsWith('xl/worksheets/sheet') && k.endsWith('.xml'))
+    for (const sheet of sheetNames) {
+      try {
+        const rows = await fetchXlsxSheet(buf, sheet, strings)
+        const sheetMap = parseStatsSheet(rows)
+        sheetMap.forEach((v, k) => data.set(k, v))
+      } catch {
+        // ignore broken sheets
+      }
+    }
+  }
 
   cache = { ts: Date.now(), data }
   return data
