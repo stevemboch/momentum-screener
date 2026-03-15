@@ -282,6 +282,7 @@ export function calculateTfaTDetails(
   aboveMa50: boolean | null,
   drawFromHigh: number | null,
   higherLow?: boolean | null,
+  maCrossover?: { ma50: boolean; ma100: boolean; ma200: boolean; stillValid: boolean } | null,
 ): { score: number | null; signals: { t1: number; t2: number; t3: number; t4: number; t5: number } | null } {
   if (!closes || closes.length < 50) return { score: null, signals: null }
 
@@ -292,8 +293,13 @@ export function calculateTfaTDetails(
     if (prevRSI !== null && prevRSI < 35 && rsi14 > prevRSI) t1 = 1
   }
 
-  // T2: Kurs über MA50 nach Phase darunter
-  const t2 = aboveMa50 === true ? 1 : 0
+  // T2: MA-Crossover (frisch = 1) oder statisch über MA50 (Kontext = 0.5)
+  let t2 = 0
+  if (maCrossover?.stillValid && (maCrossover.ma50 || maCrossover.ma100 || maCrossover.ma200)) {
+    t2 = 1
+  } else if (aboveMa50 === true) {
+    t2 = 0.5
+  }
 
   // T3: Higher Low gebildet
   const t3 = (higherLow ?? calculateHigherLow(closes)) ? 1 : 0
@@ -320,8 +326,9 @@ export function calculateTfaTScore(
   rsi14: number | null,
   aboveMa50: boolean | null,
   drawFromHigh: number | null,
+  maCrossover?: { ma50: boolean; ma100: boolean; ma200: boolean; stillValid: boolean } | null,
 ): number | null {
-  return calculateTfaTDetails(closes, volumes, rsi14, aboveMa50, drawFromHigh).score
+  return calculateTfaTDetails(closes, volumes, rsi14, aboveMa50, drawFromHigh, undefined, maCrossover).score
 }
 
 // ─── TFA Fundamental Score (F_Score) ─────────────────────────────────────────
@@ -330,7 +337,6 @@ export function calculateTfaFDetails(
   pb: number | null | undefined,
   ebitda: number | null | undefined,
   enterpriseValue: number | null | undefined,
-  analystRating: number | null | undefined,
   targetPrice: number | null | undefined,
   currentPrice: number | null | undefined,
 ): { score: number | null; signals: { f1: number; f2: number; f3: number } | null } {
@@ -363,11 +369,10 @@ export function calculateTfaFScore(
   pb: number | null | undefined,
   ebitda: number | null | undefined,
   enterpriseValue: number | null | undefined,
-  analystRating: number | null | undefined,
   targetPrice: number | null | undefined,
   currentPrice: number | null | undefined,
 ): number | null {
-  return calculateTfaFDetails(pb, ebitda, enterpriseValue, analystRating, targetPrice, currentPrice).score
+  return calculateTfaFDetails(pb, ebitda, enterpriseValue, targetPrice, currentPrice).score
 }
 
 // ─── TFA Technical Score (5Y/7Y Szenarien, Wochendaten) ─────────────────────
@@ -762,23 +767,28 @@ export function recalculateAll(
       updated.aboveMa100 = mas.aboveMa100
       updated.aboveMa200 = mas.aboveMa200
 
-      const ma50Hist = buildMAHistory(inst.closes, 50)
-      const ma100Hist = buildMAHistory(inst.closes, 100)
-      const ma200Hist = buildMAHistory(inst.closes, 200)
-      const crossoverSignals = calculateTfaMACrossoverSignals(
-        inst.closes,
-        ma50Hist,
-        ma100Hist,
-        ma200Hist,
-      )
-      updated.maCrossover = {
-        ma50: crossoverSignals.ma50,
-        ma100: crossoverSignals.ma100,
-        ma200: crossoverSignals.ma200,
-        risingMa: crossoverSignals.risingMa,
-        stillValid: crossoverSignals.stillValid,
+      if (inst.type === 'Stock') {
+        const ma50Hist = buildMAHistory(inst.closes, 50)
+        const ma100Hist = buildMAHistory(inst.closes, 100)
+        const ma200Hist = buildMAHistory(inst.closes, 200)
+        const crossoverSignals = calculateTfaMACrossoverSignals(
+          inst.closes,
+          ma50Hist,
+          ma100Hist,
+          ma200Hist,
+        )
+        updated.maCrossover = {
+          ma50: crossoverSignals.ma50,
+          ma100: crossoverSignals.ma100,
+          ma200: crossoverSignals.ma200,
+          risingMa: crossoverSignals.risingMa,
+          stillValid: crossoverSignals.stillValid,
+        }
+        updated.tfaCrossoverDaysAgo = crossoverSignals.daysAgo
+      } else {
+        updated.maCrossover = null
+        updated.tfaCrossoverDaysAgo = null
       }
-      updated.tfaCrossoverDaysAgo = crossoverSignals.daysAgo
 
       // TFA technical inputs
       updated.rsi14 = calculateRSI(inst.closes)
@@ -810,7 +820,8 @@ export function recalculateAll(
       updated.rsi14 ?? null,
       updated.aboveMa50 ?? null,
       updated.drawFromHigh ?? null,
-      updated.higherLow ?? null
+      updated.higherLow ?? null,
+      updated.maCrossover ?? null
     )
     const currentPrice = inst.closes && inst.closes.length > 0
       ? inst.closes[inst.closes.length - 1]
@@ -819,7 +830,6 @@ export function recalculateAll(
       inst.pb,
       inst.ebitda,
       inst.enterpriseValue,
-      inst.analystRating,
       inst.targetPriceAdj ?? inst.targetPrice,
       currentPrice,
     )
@@ -880,7 +890,12 @@ export function recalculateAll(
       } else if (phase1.phase === 'monitoring') {
         updated.tfaPhase = 'monitoring'
         updated.tfaScenario = phase1.scenario
-        updated.tfaRejectReason = undefined
+        const crossExpired = updated.tfaFetched
+          && !!(updated.maCrossover && (updated.maCrossover.ma50 || updated.maCrossover.ma100 || updated.maCrossover.ma200))
+          && updated.maCrossover.stillValid === false
+        updated.tfaRejectReason = crossExpired
+          ? 'MA-Crossover abgelaufen — Kurs unter MA gefallen'
+          : undefined
       } else {
         updated.tfaScenario = phase1.scenario
 

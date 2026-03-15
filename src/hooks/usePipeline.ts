@@ -675,7 +675,8 @@ export function usePipeline() {
         inst.rsi14 ?? null,
         inst.aboveMa50 ?? null,
         inst.drawFromHigh ?? null,
-        inst.higherLow ?? null
+        inst.higherLow ?? null,
+        inst.maCrossover ?? null
       )
       const effectivePb = updates.pb ?? inst.pb
       const effectiveRoA = updates.returnOnAssets ?? inst.returnOnAssets
@@ -690,7 +691,6 @@ export function usePipeline() {
         effectivePb,
         effectiveEbitda,
         effectiveEV,
-        updates.analystRating ?? null,
         updates.targetPriceAdj ?? updates.targetPrice ?? inst.targetPriceAdj ?? inst.targetPrice ?? null,
         currentPrice,
       )
@@ -713,23 +713,33 @@ export function usePipeline() {
       const phase1 = calculateTfaPhase1Gate({
         ...inst,
         returnOnAssets: effectiveRoA ?? null,
+        pb: effectivePb ?? inst.pb ?? null,
         tfaTScore: tDetails.score ?? null,
       })
 
       const phase2 = calculateTfaPhase2Gate({
         ...inst,
         returnOnAssets: effectiveRoA ?? null,
+        pb: effectivePb ?? inst.pb ?? null,
         tfaTScore: tDetails.score ?? null,
         tfaFScore: fDetails.score ?? null,
         tfaFScore5Y: f5yDetails.score ?? null,
       }, phase1.scenario || '52w')
 
       const scenario = phase1.scenario
-      if (phase1.phase !== 'none' && (scenario === '5y' || scenario === '7y')) {
-        const tScore5y = inst.tfaTScore5Y ?? null
-        const fScore5y = f5yDetails.score ?? null
-        if (tScore5y !== null && fScore5y !== null) {
-          updates.tfaScore = (tScore5y * 0.35 + fScore5y * 0.40) / 0.75
+      if (phase1.phase !== 'none') {
+        if (scenario === '5y' || scenario === '7y') {
+          const tScore5y = inst.tfaTScore5Y ?? null
+          const fScore5y = f5yDetails.score ?? null
+          if (tScore5y !== null && fScore5y !== null) {
+            updates.tfaScore = (tScore5y * 0.35 + fScore5y * 0.40) / 0.75
+          }
+        } else {
+          const tScore = tDetails.score ?? null
+          const fScore = fDetails.score ?? null
+          if (tScore !== null && fScore !== null) {
+            updates.tfaScore = (tScore * 0.35 + fScore * 0.40) / 0.75
+          }
         }
       }
 

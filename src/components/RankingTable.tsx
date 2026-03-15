@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { useInstrumentContext } from '../hooks/useInstrumentContext'
-import type { ColumnGroup, SortColumn } from '../types'
+import type { ColumnGroup, SortColumn, Instrument } from '../types'
 import {
   fmtAUM, fmtTER, fmtPct, fmtRatio, fmtVola, fmtPE, returnColor, scoreColor
 } from '../utils/formatters'
@@ -147,10 +147,36 @@ function SignalValue({ value }: { value: number | null | undefined }) {
   return <span className={cls}>{label}</span>
 }
 
-function TfaPhaseBadge({ phase, reason }: { phase: string | null | undefined; reason?: string }) {
+function nearestMADistance(inst: Instrument): { ma: string; pct: number } | null {
+  const last = inst.closes?.[inst.closes.length - 1]
+  if (!last) return null
+  const candidates = [
+    { ma: 'MA50', val: inst.ma50 },
+    { ma: 'MA100', val: inst.ma100 },
+    { ma: 'MA200', val: inst.ma200 },
+  ].filter((c) => c.val != null && last < (c.val as number))
+  if (candidates.length === 0) return null
+  const nearest = candidates.reduce((a, b) =>
+    Math.abs((a.val as number) - last) < Math.abs((b.val as number) - last) ? a : b
+  )
+  return { ma: nearest.ma, pct: ((nearest.val as number) - last) / last }
+}
+
+function TfaPhaseBadge({ phase, reason, inst }: { phase: string | null | undefined; reason?: string; inst?: Instrument | null }) {
   switch (phase) {
-    case 'monitoring':
-      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-gray-400/10 text-gray-400 border border-gray-400/20" title={reason}>👁 Monitoring</span>
+    case 'monitoring': {
+      const dist = inst ? nearestMADistance(inst) : null
+      return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-gray-400/10 text-gray-400 border border-gray-400/20" title={reason}>
+          👁 Monitoring
+          {dist != null && (
+            <span className="ml-1 text-gray-500">
+              {dist.ma} +{(dist.pct * 100).toFixed(1)}%
+            </span>
+          )}
+        </span>
+      )
+    }
     case 'watch':
       return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-yellow-400/10 text-yellow-400 border border-yellow-400/20" title={reason}>⚡ Watch</span>
     case 'fetching':
@@ -380,7 +406,7 @@ function CandidateRow({
       )}
       {!hiddenKeys.has('tfaPhase') && (
         <td className="px-2 py-1.5 text-right">
-          <TfaPhaseBadge phase={candidate.tfaPhase} reason={candidate.tfaRejectReason} />
+          <TfaPhaseBadge phase={candidate.tfaPhase} reason={candidate.tfaRejectReason} inst={candidate} />
         </td>
       )}
       {!hiddenKeys.has('breakoutScore') && (
@@ -731,7 +757,7 @@ function ExpandedDetail({
                           : '52W Crash'}
                     </span>
                   )}
-                  <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} />
+                  <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} inst={inst} />
                 </div>
               </div>
               {inst.tfaRejectReason && (
@@ -752,8 +778,20 @@ function ExpandedDetail({
                 <div className="space-y-1">
                   <div className="text-gray-400 font-semibold">T-Score (Technisch)</div>
                   <div>Score: <span className="text-gray-300">{inst.tfaTScore != null ? inst.tfaTScore.toFixed(2) : '—'}</span></div>
+                  {inst.maCrossover?.stillValid && inst.maCrossover.risingMa && (
+                    <div className="text-yellow-400 font-semibold">
+                      ⚡ {inst.maCrossover.risingMa.toUpperCase()} Cross
+                      {inst.tfaCrossoverDaysAgo != null ? ` vor ${inst.tfaCrossoverDaysAgo}d` : ''}
+                    </div>
+                  )}
+                  {inst.maCrossover && !inst.maCrossover.stillValid &&
+                    (inst.maCrossover.ma50 || inst.maCrossover.ma100 || inst.maCrossover.ma200) && (
+                    <div className="text-orange-400 text-[10px]">
+                      ⚠ Cross abgelaufen (Kurs unter MA)
+                    </div>
+                  )}
                   <div>T1 RSI dreht: <SignalValue value={inst.tfaTSignals?.t1} /></div>
-                  <div>T2 über MA50: <SignalValue value={inst.tfaTSignals?.t2} /></div>
+                  <div>T2 MA-Cross/MA50: <SignalValue value={inst.tfaTSignals?.t2} /></div>
                   <div>T3 Higher Low: <SignalValue value={inst.tfaTSignals?.t3} /></div>
                   <div>T4 Volumen: <SignalValue value={inst.tfaTSignals?.t4} /></div>
                   <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals?.t5} /></div>
@@ -795,17 +833,6 @@ function ExpandedDetail({
                     {inst.tfaEScore == null ? 'keine Daten' : inst.tfaEScore.toFixed(2)}
                   </span></div>
                   <div>Final TFA: <span className="text-gray-300">{inst.tfaScore != null ? inst.tfaScore.toFixed(2) : '—'}</span></div>
-                  {inst.maCrossover?.risingMa && (
-                    <div className="text-yellow-400">
-                      ⚡ {inst.maCrossover.risingMa.toUpperCase()} Cross
-                      {inst.tfaCrossoverDaysAgo != null ? ` (vor ${inst.tfaCrossoverDaysAgo}d)` : ''}
-                    </div>
-                  )}
-                  {(inst.maCrossover?.ma50 || inst.maCrossover?.ma100 || inst.maCrossover?.ma200) && !inst.maCrossover?.stillValid && (
-                    <div className="text-orange-400 text-[10px]">
-                      ⚠ Cross erkannt aber Kurs wieder unter MA — Signal abgelaufen
-                    </div>
-                  )}
                   {(['earningsBeatRecent','earningsBeatPrior','guidanceRaised','analystUpgrade','insiderBuying','restructuring'] as const).map((key) => {
                     const sig = inst.tfaCatalyst?.[key]
                     const label: Record<string, string> = {
@@ -1143,7 +1170,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
                   {!hiddenKeys.has('tfaPhase') && (
                     <td className="px-2 py-1.5 text-right">
-                      <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} />
+                      <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} inst={inst} />
                     </td>
                   )}
 
