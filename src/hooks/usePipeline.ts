@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { useAppState } from '../store'
+import { useAppState, useDisplayedInstruments } from '../store'
 import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
@@ -119,6 +119,7 @@ function applyStatsResults(instruments: Instrument[], statsResults: StatsResult[
 
 export function usePipeline() {
   const { state, dispatch } = useAppState()
+  const displayedInstruments = useDisplayedInstruments()
   const abortRef = useRef(false)
   const xetraBuffer = useRef<Instrument[]>([])
   const tfaInFlight = useRef<Set<string>>(new Set())
@@ -750,7 +751,7 @@ export function usePipeline() {
     if (!state.tableState.tfaMode) return
     if (tfaAutoRunning.current) return
     if (!['done', 'idle'].includes(state.fetchStatus.phase)) return
-    const pending = state.instruments.filter((i) =>
+    const pending = displayedInstruments.filter((i) =>
       i.type === 'Stock'
       && i.tfaPhase === 'pending'
       && !i.analystFetched
@@ -778,7 +779,7 @@ export function usePipeline() {
         tfaAutoRunning.current = false
       }
     })()
-  }, [state.instruments, state.fetchStatus.phase, state.tableState.tfaMode, fetchSingleInstrumentAnalyst, dispatch])
+  }, [displayedInstruments, state.fetchStatus.phase, state.tableState.tfaMode, fetchSingleInstrumentAnalyst, dispatch])
 
   const fetchPortfolioPrices = useCallback(async (isins: string[]) => {
     const targets = state.instruments.filter((i) => isins.includes(i.isin) && i.yahooTicker)
