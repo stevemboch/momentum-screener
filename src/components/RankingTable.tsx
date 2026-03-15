@@ -6,6 +6,7 @@ import type { ColumnGroup, SortColumn, Instrument } from '../types'
 import {
   fmtAUM, fmtTER, fmtPct, fmtRatio, fmtVola, fmtPE, returnColor, scoreColor
 } from '../utils/formatters'
+import { generateTfaSummary } from '../utils/tfaSummary'
 
 type Col = { key: string; label: string; title?: string; align?: 'right' | 'left' }
 
@@ -162,13 +163,28 @@ function nearestMADistance(inst: Instrument): { ma: string; pct: number } | null
   return { ma: nearest.ma, pct: ((nearest.val as number) - last) / last }
 }
 
-function TfaPhaseBadge({ phase, reason, inst }: { phase: string | null | undefined; reason?: string; inst?: Instrument | null }) {
+function TfaPhaseBadge({
+  phase,
+  reason,
+  summary,
+  inst,
+}: {
+  phase: string | null | undefined
+  reason?: string
+  summary?: string
+  inst?: Instrument | null
+}) {
+  const tooltip = summary ?? reason
   switch (phase) {
     case 'monitoring': {
       const dist = inst ? nearestMADistance(inst) : null
       return (
-        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-gray-400/10 text-gray-400 border border-gray-400/20" title={reason}>
-          👁 Monitoring
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-gray-400/10 text-gray-400 border border-gray-400/20"
+          title={tooltip}
+          style={{ cursor: 'help' }}
+        >
+          👁 Beobachtet
           {dist != null && (
             <span className="ml-1 text-gray-500">
               {dist.ma} +{(dist.pct * 100).toFixed(1)}%
@@ -178,17 +194,54 @@ function TfaPhaseBadge({ phase, reason, inst }: { phase: string | null | undefin
       )
     }
     case 'watch':
-      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-yellow-400/10 text-yellow-400 border border-yellow-400/20" title={reason}>⚡ Watch</span>
+      return (
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-yellow-400/10 text-yellow-400 border border-yellow-400/20"
+          title={tooltip}
+          style={{ cursor: 'help' }}
+        >
+          ⚡ Ausbruch
+        </span>
+      )
     case 'fetching':
-      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-blue-400/10 text-blue-300 border border-blue-400/20" title={reason}>⏳ Fetching</span>
+      return (
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-blue-400/10 text-blue-300 border border-blue-400/20"
+          title={tooltip}
+        >
+          ⏳ Analyse...
+        </span>
+      )
     case 'qualified':
-      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-green-400/10 text-green-400 border border-green-400/20" title={reason}>✓ Qualified</span>
+      return (
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-green-400/10 text-green-400 border border-green-400/20"
+          title={tooltip}
+          style={{ cursor: 'help' }}
+        >
+          ✓ Qualifiziert
+        </span>
+      )
     case 'rejected':
-      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-red-400/10 text-red-400 border border-red-400/20" title={reason}>✗ Rejected</span>
+      return (
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-red-400/10 text-red-400 border border-red-400/20"
+          title={tooltip}
+        >
+          ✗ Abgelehnt
+        </span>
+      )
     case 'ko':
-      return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-red-500/10 text-red-500 border border-red-500/20" title={reason}>⛔ KO</span>
+      return (
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-red-500/10 text-red-500 border border-red-500/20"
+          title={tooltip}
+        >
+          ⛔ KO
+        </span>
+      )
     default:
-      return <span className="text-muted" title={reason}>—</span>
+      return <span className="text-muted" title={tooltip}>—</span>
   }
 }
 
@@ -406,7 +459,12 @@ function CandidateRow({
       )}
       {!hiddenKeys.has('tfaPhase') && (
         <td className="px-2 py-1.5 text-right">
-          <TfaPhaseBadge phase={candidate.tfaPhase} reason={candidate.tfaRejectReason} inst={candidate} />
+          <TfaPhaseBadge
+            phase={candidate.tfaPhase}
+            reason={candidate.tfaRejectReason}
+            summary={generateTfaSummary(candidate)}
+            inst={candidate}
+          />
         </td>
       )}
       {!hiddenKeys.has('breakoutScore') && (
@@ -757,9 +815,19 @@ function ExpandedDetail({
                           : '52W Crash'}
                     </span>
                   )}
-                  <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} inst={inst} />
+                  <TfaPhaseBadge
+                    phase={inst.tfaPhase}
+                    reason={inst.tfaRejectReason}
+                    summary={generateTfaSummary(inst)}
+                    inst={inst}
+                  />
                 </div>
               </div>
+              {inst.type === 'Stock' && inst.tfaPhase !== 'none' && (
+                <div className="text-[11px] text-gray-300 mb-3 leading-snug italic border-l-2 border-yellow-400/30 pl-2">
+                  {generateTfaSummary(inst)}
+                </div>
+              )}
               {inst.tfaRejectReason && (
                 <div className={`text-[10px] mb-2 ${inst.tfaPhase === 'rejected' || inst.tfaPhase === 'none' ? 'text-red-400' : 'text-muted'}`}>
                   {inst.tfaRejectReason}
@@ -1170,7 +1238,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
                   {!hiddenKeys.has('tfaPhase') && (
                     <td className="px-2 py-1.5 text-right">
-                      <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} inst={inst} />
+                      <TfaPhaseBadge
+                        phase={inst.tfaPhase}
+                        reason={inst.tfaRejectReason}
+                        summary={generateTfaSummary(inst)}
+                        inst={inst}
+                      />
                     </td>
                   )}
 
