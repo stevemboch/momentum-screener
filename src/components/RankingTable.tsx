@@ -128,6 +128,13 @@ function TfaScoreCell({ score, ko }: { score: number | null | undefined; ko?: bo
   )
 }
 
+function SignalValue({ value }: { value: number | null | undefined }) {
+  if (value == null) return <span className="text-muted">—</span>
+  const cls = value >= 1 ? 'text-green-400' : value >= 0.5 ? 'text-amber-300' : 'text-red-400'
+  const label = Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
+  return <span className={cls}>{label}</span>
+}
+
 function fmtPrice(v: number | null | undefined): string {
   if (v == null) return '—'
   return v.toFixed(2)
@@ -637,6 +644,60 @@ function ExpandedDetail({
                   Error: {ctx.error}
                 </div>
               )}
+            </div>
+          )}
+
+          {inst.type === 'Stock' && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-semibold text-gray-400 font-mono">🧭 TFA Breakdown</span>
+                <span className={`text-[10px] font-mono ${inst.tfaGate ? 'text-green-400' : 'text-red-400'}`}>
+                  {inst.tfaGate ? 'Gate: PASS' : 'Gate: FAIL'}
+                </span>
+              </div>
+              {inst.tfaGate === false && inst.tfaGateReason && (
+                <div className="text-[10px] text-red-400 mb-2">{inst.tfaGateReason}</div>
+              )}
+              <div className="grid grid-cols-3 gap-4 text-[11px] font-mono">
+                <div className="space-y-1">
+                  <div className="text-gray-400 font-semibold">T-Score (Technisch)</div>
+                  <div>Score: <span className="text-gray-300">{inst.tfaTScore != null ? inst.tfaTScore.toFixed(2) : '—'}</span></div>
+                  <div>T1 RSI dreht: <SignalValue value={inst.tfaTSignals?.t1} /></div>
+                  <div>T2 über MA50: <SignalValue value={inst.tfaTSignals?.t2} /></div>
+                  <div>T3 Higher Low: <SignalValue value={inst.tfaTSignals?.t3} /></div>
+                  <div>T4 Volumen: <SignalValue value={inst.tfaTSignals?.t4} /></div>
+                  <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals?.t5} /></div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-gray-400 font-semibold">F-Score (Fundamental)</div>
+                  <div>Score: <span className="text-gray-300">{inst.tfaFScore != null ? inst.tfaFScore.toFixed(2) : '—'}</span></div>
+                  <div>F1 PB: <SignalValue value={inst.tfaFSignals?.f1} /></div>
+                  <div>F2 EY: <SignalValue value={inst.tfaFSignals?.f2} /></div>
+                  <div>F3 ROA: <SignalValue value={inst.tfaFSignals?.f3} /></div>
+                  <div>F4 PE: <SignalValue value={inst.tfaFSignals?.f4} /></div>
+                  <div>F5 Analyst: <SignalValue value={inst.tfaFSignals?.f5} /></div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-gray-400 font-semibold">E-Score (Catalysts)</div>
+                  <div>Score: <span className="text-gray-300">{inst.tfaEScore != null ? inst.tfaEScore.toFixed(2) : '—'}</span></div>
+                  <div>Final TFA: <span className="text-gray-300">{inst.tfaScore != null ? inst.tfaScore.toFixed(2) : '—'}</span></div>
+                  <div>Insider: <SignalValue value={inst.tfaCatalyst?.insiderBuying} /></div>
+                  <div>Short squeeze: <SignalValue value={inst.tfaCatalyst?.shortSqueeze} /></div>
+                  <div>Restructuring: <SignalValue value={inst.tfaCatalyst?.restructuring} /></div>
+                  <div>Sector catalyst: <SignalValue value={inst.tfaCatalyst?.sectorCatalyst} /></div>
+                  <div>KO Risk: <span className={inst.tfaCatalyst?.koRisk ? 'text-red-400' : 'text-green-400'}>
+                    {inst.tfaCatalyst?.koRisk == null ? '—' : (inst.tfaCatalyst.koRisk ? 'Yes' : 'No')}
+                  </span></div>
+                  {inst.tfaCatalyst?.summary && (
+                    <div className="text-muted leading-snug">Summary: {inst.tfaCatalyst.summary}</div>
+                  )}
+                  {inst.tfaFetched !== true && (
+                    <div className="text-muted">Not loaded</div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </td>

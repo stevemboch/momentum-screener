@@ -140,14 +140,15 @@ export function calculateLevyRS(closes: number[], period = 130): number | null {
 
 // ─── TFA Technical Score (T_Score) ───────────────────────────────────────────
 // 5 binäre Signale → normalisiert auf 0–1
-export function calculateTfaTScore(
+export function calculateTfaTDetails(
   closes: number[],
   volumes: number[] | undefined,
   rsi14: number | null,
   aboveMa50: boolean | null,
   drawFromHigh: number | null,
-): number | null {
-  if (!closes || closes.length < 50) return null
+  higherLow?: boolean | null,
+): { score: number | null; signals: { t1: number; t2: number; t3: number; t4: number; t5: number } | null } {
+  if (!closes || closes.length < 50) return { score: null, signals: null }
 
   // T1: RSI war unter 30 und dreht nach oben
   let t1 = 0
@@ -160,7 +161,7 @@ export function calculateTfaTScore(
   const t2 = aboveMa50 === true ? 1 : 0
 
   // T3: Higher Low gebildet
-  const t3 = calculateHigherLow(closes) ? 1 : 0
+  const t3 = (higherLow ?? calculateHigherLow(closes)) ? 1 : 0
 
   // T4: Volumen beim letzten Anstieg überdurchschnittlich
   let t4 = 0
@@ -171,14 +172,66 @@ export function calculateTfaTScore(
     if (lastUp && volumes[n - 1] > avgVol * 1.2) t4 = 1
   }
 
-  // T5: Rückgang im TFA-Fenster (−40% bis −80%)
+  // T5: Rückgang im TFA-Fenster (−40% bis −85%)
   const t5 = drawFromHigh !== null && drawFromHigh < -0.40 && drawFromHigh > -0.85 ? 1 : 0
 
-  return (t1 + t2 + t3 + t4 + t5) / 5
+  const score = (t1 + t2 + t3 + t4 + t5) / 5
+  return { score, signals: { t1, t2, t3, t4, t5 } }
+}
+
+export function calculateTfaTScore(
+  closes: number[],
+  volumes: number[] | undefined,
+  rsi14: number | null,
+  aboveMa50: boolean | null,
+  drawFromHigh: number | null,
+): number | null {
+  return calculateTfaTDetails(closes, volumes, rsi14, aboveMa50, drawFromHigh).score
 }
 
 // ─── TFA Fundamental Score (F_Score) ─────────────────────────────────────────
 // Nutzt bereits vorhandene Felder: pb, earningsYield, returnOnAssets, pe
+export function calculateTfaFDetails(
+  pb: number | null | undefined,
+  earningsYield: number | null | undefined,
+  returnOnAssets: number | null | undefined,
+  pe: number | null | undefined,
+  analystRating: number | null | undefined, // 1=Strong Buy … 5=Sell
+): { score: number | null; signals: { f1: number; f2: number; f3: number; f4: number; f5: number } | null } {
+  let signals = 0
+  let count = 0
+  let f1 = 0, f2 = 0, f3 = 0, f4 = 0, f5 = 0
+
+  // F1: Günstige Bewertung (KBV unter 1.5 oder stark unter historisch)
+  if (pb !== null && pb !== undefined) {
+    f1 = pb < 1.5 ? 1 : pb < 2.5 ? 0.5 : 0
+    signals += f1; count++
+  }
+  // F2: Earnings Yield positiv und überdurchschnittlich (>6%)
+  if (earningsYield !== null && earningsYield !== undefined) {
+    f2 = earningsYield > 0.06 ? 1 : earningsYield > 0.03 ? 0.5 : 0
+    signals += f2; count++
+  }
+  // F3: Profitabilität vorhanden
+  if (returnOnAssets !== null && returnOnAssets !== undefined) {
+    f3 = returnOnAssets > 0.05 ? 1 : returnOnAssets > 0 ? 0.5 : 0
+    signals += f3; count++
+  }
+  // F4: Nicht extrem überteuert (kein KGV > 100)
+  if (pe !== null && pe !== undefined) {
+    f4 = (pe > 0 && pe < 30) ? 1 : (pe > 0 && pe < 60) ? 0.5 : 0
+    signals += f4; count++
+  }
+  // F5: Analysten bullish (aus bestehendem analystRating 1-5)
+  if (analystRating !== null && analystRating !== undefined) {
+    f5 = analystRating < 2.5 ? 1 : analystRating < 3.5 ? 0.5 : 0
+    signals += f5; count++
+  }
+
+  if (count === 0) return { score: null, signals: null }
+  return { score: signals / count, signals: { f1, f2, f3, f4, f5 } }
+}
+
 export function calculateTfaFScore(
   pb: number | null | undefined,
   earningsYield: number | null | undefined,
@@ -186,32 +239,42 @@ export function calculateTfaFScore(
   pe: number | null | undefined,
   analystRating: number | null | undefined, // 1=Strong Buy … 5=Sell
 ): number | null {
-  let signals = 0
-  let count = 0
+  return calculateTfaFDetails(pb, earningsYield, returnOnAssets, pe, analystRating).score
+}
 
-  // F1: Günstige Bewertung (KBV unter 1.5 oder stark unter historisch)
-  if (pb !== null && pb !== undefined) {
-    signals += pb < 1.5 ? 1 : pb < 2.5 ? 0.5 : 0; count++
-  }
-  // F2: Earnings Yield positiv und überdurchschnittlich (>6%)
-  if (earningsYield !== null && earningsYield !== undefined) {
-    signals += earningsYield > 0.06 ? 1 : earningsYield > 0.03 ? 0.5 : 0; count++
-  }
-  // F3: Profitabilität vorhanden
-  if (returnOnAssets !== null && returnOnAssets !== undefined) {
-    signals += returnOnAssets > 0.05 ? 1 : returnOnAssets > 0 ? 0.5 : 0; count++
-  }
-  // F4: Nicht extrem überteuert (kein KGV > 100)
-  if (pe !== null && pe !== undefined) {
-    signals += (pe > 0 && pe < 30) ? 1 : (pe > 0 && pe < 60) ? 0.5 : 0; count++
-  }
-  // F5: Analysten bullish (aus bestehendem analystRating 1-5)
-  if (analystRating !== null && analystRating !== undefined) {
-    signals += analystRating < 2.5 ? 1 : analystRating < 3.5 ? 0.5 : 0; count++
+// ─── TFA Gate ────────────────────────────────────────────────────────────────
+// Pflicht- und Soft-Gates gegen "fallende Messer"
+export function calculateTfaGate(inst: Instrument): { passes: boolean; reason?: string } {
+  // Gate 1: Rückgang im TFA-Fenster (Pflicht)
+  if (inst.drawFromHigh == null || inst.drawFromHigh > -0.40 || inst.drawFromHigh < -0.85) {
+    return { passes: false, reason: 'Kein TFA-Rückgang (−40%..−85%)' }
   }
 
-  if (count === 0) return null
-  return signals / count
+  // Gate 2: Mindestens ein Trendbruch-Signal (T2 oder T3)
+  if (inst.aboveMa50 !== true && inst.higherLow !== true) {
+    return { passes: false, reason: 'Kein Trendbruch-Signal (MA50/HigherLow)' }
+  }
+
+  // Gate 3: Kein aktives Geldverbrennen (ROA < −10% = KO)
+  if (inst.returnOnAssets != null && inst.returnOnAssets < -0.10) {
+    return { passes: false, reason: 'ROA < −10%: strukturelles Problem' }
+  }
+
+  // Gate 4: kombinierter T+F Score
+  if (inst.tfaTScore == null || inst.tfaFScore == null) {
+    return { passes: false, reason: 'T/F Score fehlt' }
+  }
+  const combinedTF = (inst.tfaTScore * 0.35) + (inst.tfaFScore * 0.40)
+  if (combinedTF < 0.35) {
+    return { passes: false, reason: 'T+F Score zu schwach' }
+  }
+
+  // Gate 5: Mindestens T oder F einzeln > 0.3
+  if (inst.tfaTScore <= 0.3 && inst.tfaFScore <= 0.3) {
+    return { passes: false, reason: 'T und F Score zu schwach' }
+  }
+
+  return { passes: true }
 }
 
 // ─── ATR(20) ─────────────────────────────────────────────────────────────────
@@ -453,6 +516,7 @@ export function recalculateAll(
       updated.rsi14 = calculateRSI(inst.closes)
       updated.drawFromHigh = calculateDrawFromHigh(inst.closes)
       updated.levyRS = calculateLevyRS(inst.closes)
+      updated.higherLow = calculateHigherLow(inst.closes)
 
       // ATR + Selling Threshold
       const { atr20, sellingThreshold } = calculateSellingThreshold(
@@ -472,28 +536,34 @@ export function recalculateAll(
       }
     }
 
-    const tfaTScore = calculateTfaTScore(
+    const tDetails = calculateTfaTDetails(
       inst.closes ?? [],
       inst.volumes,
       updated.rsi14 ?? null,
       updated.aboveMa50 ?? null,
-      updated.drawFromHigh ?? null
+      updated.drawFromHigh ?? null,
+      updated.higherLow ?? null
     )
-    const tfaFScore = calculateTfaFScore(
+    const fDetails = calculateTfaFDetails(
       inst.pb,
       updated.earningsYield,
       inst.returnOnAssets,
       inst.pe,
       inst.analystRating
     )
-    updated.tfaTScore = tfaTScore
-    updated.tfaFScore = tfaFScore
-    if (tfaTScore !== null && tfaFScore !== null) {
-      const base = tfaTScore * 0.35 + tfaFScore * 0.40
+    updated.tfaTScore = tDetails.score
+    updated.tfaTSignals = tDetails.signals
+    updated.tfaFScore = fDetails.score
+    updated.tfaFSignals = fDetails.signals
+    if (tDetails.score !== null && fDetails.score !== null) {
+      const base = tDetails.score * 0.35 + fDetails.score * 0.40
       updated.tfaScore = updated.tfaEScore != null ? base + (updated.tfaEScore * 0.25) : base
     } else {
       updated.tfaScore = null
     }
+    const gate = calculateTfaGate(updated)
+    updated.tfaGate = gate.passes
+    updated.tfaGateReason = gate.reason
 
     // Breakout score (uses last 60 days, MA200/MA50, volume, and URTH reference)
     const breakout = calculateBreakout(

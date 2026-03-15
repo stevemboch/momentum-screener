@@ -108,10 +108,24 @@ export interface Instrument {
   rsi14?: number | null
   drawFromHigh?: number | null   // % unter 52W-Hoch, negativ
   levyRS?: number | null         // Kurs / 26W-GD
+  higherLow?: boolean
+  tfaTSignals?: { t1: number; t2: number; t3: number; t4: number; t5: number } | null
   tfaTScore?: number | null      // 0–1, technische Bodensignale
+  tfaFSignals?: { f1: number; f2: number; f3: number; f4: number; f5: number } | null
   tfaFScore?: number | null      // 0–1, fundamentale Intaktheit
   tfaEScore?: number | null      // 0–1, Katalysatoren (Gemini)
+  tfaCatalyst?: {
+    insiderBuying: number | null
+    shortSqueeze: number | null
+    restructuring: number | null
+    sectorCatalyst: number | null
+    koRisk: boolean | null
+    summary: string | null
+    fetchedAt: number | null
+  } | null
   tfaScore?: number | null       // 0–1, Gesamtscore
+  tfaGate?: boolean
+  tfaGateReason?: string
   tfaKO?: boolean                // true = disqualifiziert
   tfaFetched?: boolean
 }
@@ -151,7 +165,7 @@ export type SortColumn =
   | 'combinedScore'
   | 'breakoutScore'
   | 'sellingThreshold'
-  | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS'
+  | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS' | 'tfaTScore' | 'tfaFScore'
 
 export type SortDirection = 'asc' | 'desc'
 export type TypeFilter = 'all' | 'etf' | 'stock'

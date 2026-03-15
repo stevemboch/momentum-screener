@@ -88,7 +88,7 @@ export function FilterBar() {
           typeFilter: !tfaMode ? 'stock' : typeFilter,
         } }),
         'TFA Mode',
-        'Zeigt nur Turnaround-Kandidaten: −40% bis −80% unter 52W-Hoch'
+        'Zeigt nur Turnaround-Kandidaten: −40% bis −85% unter 52W-Hoch'
       )}
 
       {/* Instrument count */}

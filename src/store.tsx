@@ -378,9 +378,7 @@ export function useDisplayedInstruments() {
   // TFA mode — only stocks in the -40%..-80% drawdown window, excluding KO
   if (tableState.tfaMode) {
     filtered = filtered.filter((i) => i.type === 'Stock')
-    filtered = filtered.filter((i) =>
-      i.drawFromHigh != null && i.drawFromHigh <= -0.40 && i.drawFromHigh >= -0.80
-    )
+    filtered = filtered.filter((i) => i.tfaGate === true)
     filtered = filtered.filter((i) => i.tfaKO !== true)
   }
 

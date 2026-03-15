@@ -3,7 +3,7 @@ import { useAppState } from '../store'
 import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
-import { calculateReturns, recalculateAll, calculateTfaTScore, calculateTfaFScore } from '../utils/calculations'
+import { calculateReturns, recalculateAll, calculateTfaGate, calculateTfaTDetails, calculateTfaFDetails } from '../utils/calculations'
 
 const YAHOO_CONCURRENCY_MIN = 3
 const YAHOO_CONCURRENCY_MAX = 12
@@ -630,28 +630,40 @@ export function usePipeline() {
       }
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
 
-      const tScore = inst.tfaTScore ?? calculateTfaTScore(
+      const tDetails = calculateTfaTDetails(
         inst.closes ?? [],
         inst.volumes,
         inst.rsi14 ?? null,
         inst.aboveMa50 ?? null,
-        inst.drawFromHigh ?? null
+        inst.drawFromHigh ?? null,
+        inst.higherLow ?? null
       )
-      const fScore = calculateTfaFScore(
-        inst.pb,
-        inst.earningsYield,
-        inst.returnOnAssets,
-        inst.pe,
+      const effectivePb = updates.pb ?? inst.pb
+      const effectivePe = updates.pe ?? inst.pe
+      const effectiveRoA = updates.returnOnAssets ?? inst.returnOnAssets
+      const effectiveEbitda = updates.ebitda ?? inst.ebitda
+      const effectiveEV = updates.enterpriseValue ?? inst.enterpriseValue
+      const effectiveEY =
+        effectiveEbitda != null && effectiveEV != null && effectiveEV > 0
+          ? (effectiveEbitda / effectiveEV)
+          : inst.earningsYield
+
+      const fDetails = calculateTfaFDetails(
+        effectivePb,
+        effectiveEY,
+        effectiveRoA,
+        effectivePe,
         updates.analystRating ?? null
       )
 
-      if (
-        inst.type === 'Stock'
-        && (tScore ?? 0) > 0.4
-        && (fScore ?? 0) > 0.4
-        && !inst.tfaFetched
-        && !tfaInFlight.current.has(inst.isin)
-      ) {
+      const gate = calculateTfaGate({
+        ...inst,
+        returnOnAssets: effectiveRoA ?? null,
+        tfaTScore: tDetails.score ?? null,
+        tfaFScore: fDetails.score ?? null,
+      })
+
+      if (inst.type === 'Stock' && gate.passes && !inst.tfaFetched && !tfaInFlight.current.has(inst.isin)) {
         tfaInFlight.current.add(inst.isin)
         try {
           const res = await fetch('/api/tfa-catalyst', {
@@ -665,7 +677,7 @@ export function usePipeline() {
           })
           if (res.ok) {
             const data = await res.json()
-            const finalScore = (tScore! * 0.35) + (fScore! * 0.40) + (data.eScore * 0.25)
+            const finalScore = (tDetails.score! * 0.35) + (fDetails.score! * 0.40) + (data.eScore * 0.25)
             dispatch({
               type: 'UPDATE_INSTRUMENT',
               isin: inst.isin,
@@ -673,6 +685,15 @@ export function usePipeline() {
                 tfaEScore: data.eScore,
                 tfaScore: data.ko_risk ? null : finalScore,
                 tfaKO: data.ko_risk,
+                tfaCatalyst: {
+                  insiderBuying: data.insider_buying ?? null,
+                  shortSqueeze: data.short_squeeze ?? null,
+                  restructuring: data.restructuring ?? null,
+                  sectorCatalyst: data.sector_catalyst ?? null,
+                  koRisk: data.ko_risk ?? null,
+                  summary: data.summary ?? null,
+                  fetchedAt: Date.now(),
+                },
                 tfaFetched: true,
               },
             })
