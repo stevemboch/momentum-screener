@@ -748,6 +748,15 @@ function ExpandedDetail({
                   <div>T3 Higher Low: <SignalValue value={inst.tfaTSignals?.t3} /></div>
                   <div>T4 Volumen: <SignalValue value={inst.tfaTSignals?.t4} /></div>
                   <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals?.t5} /></div>
+                  <div className="text-gray-400 font-semibold mt-2">
+                    T-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} Weekly)
+                  </div>
+                  <div>Score: <span className="text-gray-300">{inst.tfaTScore5Y != null ? inst.tfaTScore5Y.toFixed(2) : '—'}</span></div>
+                  <div>T1 RSI dreht (W): <SignalValue value={inst.tfaTSignals5Y?.t1} /></div>
+                  <div>T2 LevyRS (W): <SignalValue value={inst.tfaTSignals5Y?.t2} /></div>
+                  <div>T3 Higher Low (W): <SignalValue value={inst.tfaTSignals5Y?.t3} /></div>
+                  <div>T4 Vola-Kompr. (W): <SignalValue value={inst.tfaTSignals5Y?.t4} /></div>
+                  <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals5Y?.t5} /></div>
                 </div>
 
                 <div className="space-y-1">
