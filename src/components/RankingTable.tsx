@@ -717,14 +717,16 @@ function ExpandedDetail({
                   <div>KO Risk: <span className={inst.tfaCatalyst?.koRisk ? 'text-red-400' : 'text-green-400'}>
                     {inst.tfaCatalyst?.koRisk == null ? '—' : (inst.tfaCatalyst.koRisk ? 'Yes' : 'No')}
                   </span></div>
-                  {inst.tfaCatalyst?.summary && (
-                    <div className="text-muted leading-snug">Summary: {inst.tfaCatalyst.summary}</div>
-                  )}
                   {inst.tfaFetched !== true && (
                     <div className="text-muted">Not loaded</div>
                   )}
                 </div>
               </div>
+              {inst.tfaCatalyst?.summary && (
+                <div className="mt-2 text-[11px] text-muted leading-snug">
+                  Gemini Summary: {inst.tfaCatalyst.summary}
+                </div>
+              )}
             </div>
           )}
         </td>
