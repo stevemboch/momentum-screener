@@ -747,6 +747,7 @@ export function usePipeline() {
   }, [state.instruments])
 
   useEffect(() => {
+    if (!state.tableState.tfaMode) return
     if (tfaAutoRunning.current) return
     if (!['done', 'idle'].includes(state.fetchStatus.phase)) return
     const pending = state.instruments.filter((i) =>
@@ -759,18 +760,25 @@ export function usePipeline() {
 
     tfaAutoRunning.current = true
     void (async () => {
-      for (const inst of pending) {
-        if (tfaFundInFlight.current.has(inst.isin)) continue
-        tfaFundInFlight.current.add(inst.isin)
-        try {
-          await fetchSingleInstrumentAnalyst(inst.isin)
-        } finally {
-          tfaFundInFlight.current.delete(inst.isin)
+      try {
+        for (const inst of pending) {
+          if (tfaFundInFlight.current.has(inst.isin)) continue
+          if (!inst.yahooTicker) {
+            dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'rejected', tfaRejectReason: 'Kein Yahoo-Ticker für Analyst-Fetch' } })
+            continue
+          }
+          tfaFundInFlight.current.add(inst.isin)
+          try {
+            await fetchSingleInstrumentAnalyst(inst.isin)
+          } finally {
+            tfaFundInFlight.current.delete(inst.isin)
+          }
         }
+      } finally {
+        tfaAutoRunning.current = false
       }
-      tfaAutoRunning.current = false
     })()
-  }, [state.instruments, state.fetchStatus.phase, fetchSingleInstrumentAnalyst])
+  }, [state.instruments, state.fetchStatus.phase, state.tableState.tfaMode, fetchSingleInstrumentAnalyst, dispatch])
 
   const fetchPortfolioPrices = useCallback(async (isins: string[]) => {
     const targets = state.instruments.filter((i) => isins.includes(i.isin) && i.yahooTicker)
