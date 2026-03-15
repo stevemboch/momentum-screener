@@ -1,9 +1,9 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useAppState } from '../store'
 import type { Instrument } from '../types'
 import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
-import { calculateReturns, recalculateAll, calculateTfaGate, calculateTfaTDetails, calculateTfaFDetails } from '../utils/calculations'
+import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails } from '../utils/calculations'
 
 const YAHOO_CONCURRENCY_MIN = 3
 const YAHOO_CONCURRENCY_MAX = 12
@@ -15,6 +15,7 @@ const OPENFIGI_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
+const TFA_AUTO_FUNDAMENTALS_LIMIT = 25
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 
@@ -120,6 +121,8 @@ export function usePipeline() {
   const abortRef = useRef(false)
   const xetraBuffer = useRef<Instrument[]>([])
   const tfaInFlight = useRef<Set<string>>(new Set())
+  const tfaFundInFlight = useRef<Set<string>>(new Set())
+  const tfaAutoRunning = useRef(false)
 
   const setStatus = (message: string, current = 0, total = 0) =>
     dispatch({ type: 'SET_FETCH_STATUS', status: { message, current, total } })
@@ -594,6 +597,9 @@ export function usePipeline() {
   const fetchSingleInstrumentAnalyst = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
+    if (inst.tfaPhase === 'pending') {
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
+    }
     try {
       const cacheKey = `cache:analyst:${inst.yahooTicker}`
       let r = cacheGet<any>(cacheKey, ANALYST_TTL_MS)
@@ -656,16 +662,23 @@ export function usePipeline() {
         updates.analystRating ?? null
       )
 
-      const gate = calculateTfaGate({
+      const phase1 = calculateTfaPhase1Gate({
+        ...inst,
+        returnOnAssets: effectiveRoA ?? null,
+        tfaTScore: tDetails.score ?? null,
+      })
+
+      const phase2 = calculateTfaPhase2Gate({
         ...inst,
         returnOnAssets: effectiveRoA ?? null,
         tfaTScore: tDetails.score ?? null,
         tfaFScore: fDetails.score ?? null,
       })
 
-      if (inst.type === 'Stock' && gate.passes && !inst.tfaFetched && !tfaInFlight.current.has(inst.isin)) {
+      if (inst.type === 'Stock' && phase1.passes && phase2.passes && !inst.tfaFetched && !tfaInFlight.current.has(inst.isin)) {
         tfaInFlight.current.add(inst.isin)
         try {
+          dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'fetching' } })
           const res = await fetch('/api/tfa-catalyst', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -694,18 +707,47 @@ export function usePipeline() {
                   summary: data.summary ?? null,
                   fetchedAt: Date.now(),
                 },
+                tfaPhase: data.ko_risk ? 'ko' : 'qualified',
                 tfaFetched: true,
               },
             })
+          } else {
+            dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'pending' } })
           }
         } finally {
           tfaInFlight.current.delete(inst.isin)
         }
       }
     } catch (err: any) {
-      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message } })
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message, tfaPhase: 'pending' } })
     }
   }, [state.instruments])
+
+  useEffect(() => {
+    if (tfaAutoRunning.current) return
+    if (!['done', 'idle'].includes(state.fetchStatus.phase)) return
+    const pending = state.instruments.filter((i) =>
+      i.type === 'Stock'
+      && i.tfaPhase === 'pending'
+      && !i.analystFetched
+      && !i.analystError
+    )
+    if (pending.length === 0 || pending.length >= TFA_AUTO_FUNDAMENTALS_LIMIT) return
+
+    tfaAutoRunning.current = true
+    void (async () => {
+      for (const inst of pending) {
+        if (tfaFundInFlight.current.has(inst.isin)) continue
+        tfaFundInFlight.current.add(inst.isin)
+        try {
+          await fetchSingleInstrumentAnalyst(inst.isin)
+        } finally {
+          tfaFundInFlight.current.delete(inst.isin)
+        }
+      }
+      tfaAutoRunning.current = false
+    })()
+  }, [state.instruments, state.fetchStatus.phase, fetchSingleInstrumentAnalyst])
 
   const fetchPortfolioPrices = useCallback(async (isins: string[]) => {
     const targets = state.instruments.filter((i) => isins.includes(i.isin) && i.yahooTicker)

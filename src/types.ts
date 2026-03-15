@@ -124,8 +124,8 @@ export interface Instrument {
     fetchedAt: number | null
   } | null
   tfaScore?: number | null       // 0–1, Gesamtscore
-  tfaGate?: boolean
-  tfaGateReason?: string
+  tfaPhase?: TfaPhase
+  tfaRejectReason?: string
   tfaKO?: boolean                // true = disqualifiziert
   tfaFetched?: boolean
 }
@@ -172,6 +172,14 @@ export type TypeFilter = 'all' | 'etf' | 'stock'
 
 export type ColumnGroup =
   'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout' | 'tfa'
+
+export type TfaPhase =
+  | 'none'
+  | 'pending'
+  | 'fetching'
+  | 'qualified'
+  | 'rejected'
+  | 'ko'
 
 export interface TableState {
   sortColumn: SortColumn

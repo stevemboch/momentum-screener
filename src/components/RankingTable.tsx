@@ -32,6 +32,7 @@ const COLUMNS: Col[] = [
   { key: 'tfaTScore',     label: 'T-Score',  title: 'TFA Technisch (0–1)' },
   { key: 'tfaFScore',     label: 'F-Score',  title: 'TFA Fundamental (0–1)' },
   { key: 'tfaScore',      label: 'TFA ⭐',   title: 'TFA Gesamtscore (0–1)' },
+  { key: 'tfaPhase',      label: 'TFA Status', title: 'TFA Pipeline Status' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
   { key: 'breakoutAgeDays', label: 'Breakout Age', title: 'Days since breakout' },
 ]
@@ -41,11 +42,11 @@ const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   returns:      ['r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
-  tfa:          ['drawFromHigh', 'rsi14', 'levyRS', 'tfaTScore', 'tfaFScore', 'tfaScore'],
+  tfa:          ['drawFromHigh', 'rsi14', 'levyRS', 'tfaTScore', 'tfaFScore', 'tfaScore', 'tfaPhase'],
   breakout:     ['breakoutScore', 'breakoutAgeDays'],
 }
 
-const NON_SORTABLE = new Set(['displayName', 'ma', 'breakoutAgeDays'])
+const NON_SORTABLE = new Set(['displayName', 'ma', 'breakoutAgeDays', 'tfaPhase'])
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -133,6 +134,18 @@ function SignalValue({ value }: { value: number | null | undefined }) {
   const cls = value >= 1 ? 'text-green-400' : value >= 0.5 ? 'text-amber-300' : 'text-red-400'
   const label = Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
   return <span className={cls}>{label}</span>
+}
+
+function TfaPhaseBadge({ phase, reason }: { phase: string | null | undefined; reason?: string }) {
+  const label = phase ?? 'none'
+  const cls =
+    label === 'qualified' ? 'text-green-400' :
+    label === 'pending'   ? 'text-amber-300' :
+    label === 'fetching'  ? 'text-blue-300' :
+    label === 'rejected'  ? 'text-red-400' :
+    label === 'ko'        ? 'text-red-500' :
+                            'text-muted'
+  return <span className={cls} title={reason}>{label === 'none' ? '—' : label}</span>
 }
 
 function fmtPrice(v: number | null | undefined): string {
@@ -345,6 +358,11 @@ function CandidateRow({
       {!hiddenKeys.has('tfaScore') && (
         <td className="px-2 py-1.5 text-right">
           <TfaScoreCell score={candidate.tfaScore} ko={candidate.tfaKO} />
+        </td>
+      )}
+      {!hiddenKeys.has('tfaPhase') && (
+        <td className="px-2 py-1.5 text-right">
+          <TfaPhaseBadge phase={candidate.tfaPhase} reason={candidate.tfaRejectReason} />
         </td>
       )}
       {!hiddenKeys.has('breakoutScore') && (
@@ -651,12 +669,12 @@ function ExpandedDetail({
             <div className="mt-3 pt-3 border-t border-border">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-semibold text-gray-400 font-mono">🧭 TFA Breakdown</span>
-                <span className={`text-[10px] font-mono ${inst.tfaGate ? 'text-green-400' : 'text-red-400'}`}>
-                  {inst.tfaGate ? 'Gate: PASS' : 'Gate: FAIL'}
-                </span>
+                <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} />
               </div>
-              {inst.tfaGate === false && inst.tfaGateReason && (
-                <div className="text-[10px] text-red-400 mb-2">{inst.tfaGateReason}</div>
+              {inst.tfaRejectReason && (
+                <div className={`text-[10px] mb-2 ${inst.tfaPhase === 'rejected' || inst.tfaPhase === 'none' ? 'text-red-400' : 'text-muted'}`}>
+                  {inst.tfaRejectReason}
+                </div>
               )}
               <div className="grid grid-cols-3 gap-4 text-[11px] font-mono">
                 <div className="space-y-1">
@@ -771,7 +789,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   return (
     <div className="flex-1 overflow-auto">
-      <table className="w-full text-xs font-mono border-collapse min-w-[2250px]">
+      <table className="w-full text-xs font-mono border-collapse min-w-[2350px]">
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {visibleColumns.map((col) => (
@@ -957,6 +975,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('tfaScore') && (
                     <td className="px-2 py-1.5 text-right">
                       <TfaScoreCell score={inst.tfaScore} ko={inst.tfaKO} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('tfaPhase') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} />
                     </td>
                   )}
 

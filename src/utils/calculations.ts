@@ -242,36 +242,42 @@ export function calculateTfaFScore(
   return calculateTfaFDetails(pb, earningsYield, returnOnAssets, pe, analystRating).score
 }
 
-// ─── TFA Gate ────────────────────────────────────────────────────────────────
-// Pflicht- und Soft-Gates gegen "fallende Messer"
-export function calculateTfaGate(inst: Instrument): { passes: boolean; reason?: string } {
-  // Gate 1: Rückgang im TFA-Fenster (Pflicht)
+// ─── TFA Phase 1 Gate (ohne Fundamentals) ────────────────────────────────────
+export function calculateTfaPhase1Gate(inst: Instrument): { passes: boolean; reason?: string } {
+  // Hard Gate 1: Rückgang im Fenster
   if (inst.drawFromHigh == null || inst.drawFromHigh > -0.40 || inst.drawFromHigh < -0.85) {
-    return { passes: false, reason: 'Kein TFA-Rückgang (−40%..−85%)' }
+    return { passes: false, reason: 'Kein TFA-Rückgang' }
   }
 
-  // Gate 2: Mindestens ein Trendbruch-Signal (T2 oder T3)
+  // Hard Gate 2: Trendbruch-Signal
   if (inst.aboveMa50 !== true && inst.higherLow !== true) {
-    return { passes: false, reason: 'Kein Trendbruch-Signal (MA50/HigherLow)' }
+    return { passes: false, reason: 'Kein Trendbruch-Signal' }
   }
 
-  // Gate 3: Kein aktives Geldverbrennen (ROA < −10% = KO)
+  // Soft Gate: T_Score Mindestwert
+  if ((inst.tfaTScore ?? 0) < 0.30) {
+    return { passes: false, reason: 'T_Score zu schwach' }
+  }
+
+  return { passes: true }
+}
+
+// ─── TFA Phase 2 Gate (mit Fundamentals) ─────────────────────────────────────
+export function calculateTfaPhase2Gate(inst: Instrument): { passes: boolean; reason?: string } {
+  // Zombie-Filter
   if (inst.returnOnAssets != null && inst.returnOnAssets < -0.10) {
-    return { passes: false, reason: 'ROA < −10%: strukturelles Problem' }
+    return { passes: false, reason: 'ROA < −10%: Zombie-Aktie' }
   }
 
-  // Gate 4: kombinierter T+F Score
-  if (inst.tfaTScore == null || inst.tfaFScore == null) {
-    return { passes: false, reason: 'T/F Score fehlt' }
-  }
-  const combinedTF = (inst.tfaTScore * 0.35) + (inst.tfaFScore * 0.40)
-  if (combinedTF < 0.35) {
-    return { passes: false, reason: 'T+F Score zu schwach' }
-  }
-
-  // Gate 5: Mindestens T oder F einzeln > 0.3
-  if (inst.tfaTScore <= 0.3 && inst.tfaFScore <= 0.3) {
-    return { passes: false, reason: 'T und F Score zu schwach' }
+  // F_Score vorhanden und zu schwach?
+  if (inst.tfaFScore != null) {
+    if (inst.tfaFScore < 0.30) {
+      return { passes: false, reason: 'F_Score zu schwach' }
+    }
+    const combined = (inst.tfaTScore ?? 0) * 0.35 + inst.tfaFScore * 0.40
+    if (combined < 0.35) {
+      return { passes: false, reason: 'T+F kombiniert zu schwach' }
+    }
   }
 
   return { passes: true }
@@ -561,9 +567,34 @@ export function recalculateAll(
     } else {
       updated.tfaScore = null
     }
-    const gate = calculateTfaGate(updated)
-    updated.tfaGate = gate.passes
-    updated.tfaGateReason = gate.reason
+    if (updated.type === 'Stock') {
+      const phase1 = calculateTfaPhase1Gate(updated)
+      if (!phase1.passes) {
+        updated.tfaPhase = 'none'
+        updated.tfaRejectReason = phase1.reason
+      } else if (updated.analystFetched !== true) {
+        updated.tfaPhase = 'pending'
+        updated.tfaRejectReason = undefined
+      } else {
+        const phase2 = calculateTfaPhase2Gate(updated)
+        if (!phase2.passes) {
+          updated.tfaPhase = 'rejected'
+          updated.tfaRejectReason = phase2.reason
+        } else if (updated.tfaKO === true) {
+          updated.tfaPhase = 'ko'
+          updated.tfaRejectReason = undefined
+        } else if (updated.tfaFetched) {
+          updated.tfaPhase = 'qualified'
+          updated.tfaRejectReason = undefined
+        } else {
+          updated.tfaPhase = 'pending'
+          updated.tfaRejectReason = undefined
+        }
+      }
+    } else {
+      updated.tfaPhase = 'none'
+      updated.tfaRejectReason = undefined
+    }
 
     // Breakout score (uses last 60 days, MA200/MA50, volume, and URTH reference)
     const breakout = calculateBreakout(
