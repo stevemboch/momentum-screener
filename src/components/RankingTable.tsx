@@ -113,6 +113,12 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
+function openIsinSearch(isin: string) {
+  if (!isin || typeof window === 'undefined') return
+  const query = encodeURIComponent(isin)
+  window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer')
+}
+
 function ScoreCell({ score, rank, colorFn }: { score: number | null | undefined; rank: number | undefined; colorFn?: (v: any) => string }) {
   if (score == null) return <span className="text-muted">—</span>
   const color = colorFn ? colorFn(score) : scoreColor(score)
@@ -358,7 +364,14 @@ function CandidateRow({
         <div className="text-muted text-[10px] flex items-center gap-1.5">
           <TypeBadge type={candidate.type} />
           <span>
-            {candidate.isin}{candidate.currency && ` · ${candidate.currency}`}
+            <span
+              className="cursor-pointer hover:text-gray-200"
+              title="Double-click to search ISIN"
+              onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(candidate.isin) }}
+            >
+              {candidate.isin}
+            </span>
+            {candidate.currency && ` · ${candidate.currency}`}
             {candidate.aum != null && ` · ${fmtAUM(candidate.aum)}`}
             {candidate.ter != null && ` · ${fmtTER(candidate.ter)}`}
           </span>
@@ -532,7 +545,16 @@ function ExpandedDetail({
             {/* Instrument details */}
             <div>
               <div className="text-gray-400 font-semibold mb-1">Instrument</div>
-              <div>ISIN: <span className="text-gray-300">{inst.isin}</span></div>
+              <div>
+                ISIN:{' '}
+                <span
+                  className="text-gray-300 cursor-pointer hover:text-gray-200"
+                  title="Double-click to search ISIN"
+                  onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin) }}
+                >
+                  {inst.isin}
+                </span>
+              </div>
               {inst.wkn && <div>WKN: <span className="text-gray-300">{inst.wkn}</span></div>}
               {inst.mnemonic && <div>Mnemonic: <span className="text-gray-300">{inst.mnemonic}</span></div>}
               {inst.yahooTicker && <div>Yahoo: <span className="text-gray-300">{inst.yahooTicker}</span></div>}
@@ -1075,7 +1097,13 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     <div className="text-muted text-[10px] mt-0.5 flex items-center gap-1.5">
                       <TypeBadge type={inst.type} />
                       <span>
-                        {inst.isin}
+                        <span
+                          className="cursor-pointer hover:text-gray-200"
+                          title="Double-click to search ISIN"
+                          onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin) }}
+                        >
+                          {inst.isin}
+                        </span>
                         {inst.isin?.startsWith('WKN:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
                         {inst.isin?.startsWith('TICKER:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
                         {inst.currency && ` · ${inst.currency}`}
