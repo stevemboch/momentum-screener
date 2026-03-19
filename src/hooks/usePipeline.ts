@@ -5,6 +5,42 @@ import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, re
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails, calculateTfaFDetails5Y } from '../utils/calculations'
 
+/**
+ * Leitet die Financial Currency (Berichtswährung) aus dem ISIN-Prefix ab.
+ * Das ist deterministisch und unabhängig von Yahoo-Feldern.
+ *
+ * Relevant für Xetra-gelistete Fremdwährungstitel: US-Aktien handeln in EUR
+ * auf Xetra, aber Analystenpreisziele sind immer in USD.
+ */
+function isinToFinancialCurrency(isin: string | null | undefined): string | null {
+  if (!isin) return null
+  const prefix = isin.slice(0, 2).toUpperCase()
+  const map: Record<string, string> = {
+    US: 'USD',
+    CA: 'CAD',
+    GB: 'GBP',
+    AU: 'AUD',
+    NZ: 'NZD',
+    JP: 'JPY',
+    HK: 'HKD',
+    SG: 'SGD',
+    KR: 'KRW',
+    CN: 'CNY',
+    IN: 'INR',
+    BR: 'BRL',
+    ZA: 'ZAR',
+    CH: 'CHF',
+    SE: 'SEK',
+    NO: 'NOK',
+    DK: 'DKK',
+    // Eurozone — alle liefern EUR
+    DE: 'EUR', FR: 'EUR', NL: 'EUR', BE: 'EUR', ES: 'EUR', IT: 'EUR',
+    PT: 'EUR', AT: 'EUR', FI: 'EUR', IE: 'EUR', LU: 'EUR', GR: 'EUR',
+    // ISIN für Fonds/ETFs hat keinen klaren Ländercode
+  }
+  return map[prefix] ?? null
+}
+
 const YAHOO_CONCURRENCY_MIN = 3
 const YAHOO_CONCURRENCY_MAX = 12
 let yahooConcurrency = 8
@@ -646,35 +682,70 @@ export function usePipeline() {
 
       const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
       const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
-      const analystCurrency = r.financialCurrency ?? r.currency ?? null
-      const analystCurrent = r.currentPrice ?? null
-      const fxRate = r.fxRate ?? (
-        (lastPrice != null && analystCurrent != null && analystCurrent > 0)
-          ? (lastPrice / analystCurrent)
-          : null
-      )
-      const currencyMismatch = priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency
-      const ratioMismatch = fxRate != null && (fxRate < 0.85 || fxRate > 1.15)
-      const sameCurrencyRatioMismatch = fxRate != null
-        && priceCurrency != null
-        && analystCurrency != null
-        && priceCurrency === analystCurrency
-        && (fxRate < 0.95 || fxRate > 1.05)
-      const shouldAdjust = fxRate != null && (currencyMismatch || ratioMismatch || sameCurrencyRatioMismatch)
 
-      if (shouldAdjust) {
+      // Financial Currency: ISIN-basiert ist Ground Truth, Yahoo-Feld ist Fallback
+      const isinCurrency = isinToFinancialCurrency(inst.isin)
+      const analystCurrency = isinCurrency ?? r.financialCurrency ?? r.currency ?? null
+
+      const analystCurrent = r.currentPrice ?? null
+
+      // FX-Rate-Bestimmung (Priorität: Yahoo-Rate > Preisverhältnis):
+      let fxRate: number | null = null
+      if (priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency) {
+        // Yahoo hat die Rate bereits korrekt geliefert (wenn financialCurrency ≠ currency erkannt)
+        if (r.fxRate != null) {
+          fxRate = r.fxRate
+        } else if (lastPrice != null && analystCurrent != null && analystCurrent > 0) {
+          // Preisverhältnis als Proxy: lastPrice (priceCurrency) / analystCurrent (analystCurrency)
+          // Sanity-Check: Rate muss sinnvoll sein (nicht < 0.01 oder > 100)
+          const ratio = lastPrice / analystCurrent
+          if (ratio >= 0.01 && ratio <= 100) fxRate = ratio
+        }
+        // Letzter Fallback: falls kein Rate verfügbar, Target nicht anzeigen
+      }
+
+      // Keine FX nötig wenn gleiche Währung
+      const currencyMismatch = priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency
+
+      // Ratio-Mismatch als zusätzlichen Trigger (deckt Fälle ab wo ISIN-Mapping fehlt)
+      const ratioProxy = fxRate == null && priceCurrency === analystCurrency
+        ? (lastPrice != null && analystCurrent != null && analystCurrent > 0
+          ? lastPrice / analystCurrent
+          : null)
+        : null
+      const ratioMismatch = ratioProxy != null && (ratioProxy < 0.85 || ratioProxy > 1.15)
+
+      const shouldAdjust = currencyMismatch || ratioMismatch
+
+      if (shouldAdjust && fxRate != null) {
         updates.targetFxRate = fxRate
         updates.targetFxApplied = true
         updates.targetPriceAdj = r.targetMeanPrice != null ? r.targetMeanPrice * fxRate : null
         updates.targetLowAdj = r.targetLowPrice != null ? r.targetLowPrice * fxRate : null
         updates.targetHighAdj = r.targetHighPrice != null ? r.targetHighPrice * fxRate : null
+        updates.targetCurrencyUnknown = false
+      } else if (shouldAdjust && fxRate == null) {
+        // Währungsmismatch erkannt aber kein FX-Rate verfügbar
+        // → Target ausblenden statt falsche Währung anzeigen
+        updates.targetFxRate = null
+        updates.targetFxApplied = false
+        updates.targetPriceAdj = null
+        updates.targetLowAdj = null
+        updates.targetHighAdj = null
+        // Speichere raw-Target zur Information aber markiere es als unzuverlässig
+        updates.targetCurrencyUnknown = true
       } else {
         updates.targetFxRate = null
         updates.targetFxApplied = false
         updates.targetPriceAdj = null
         updates.targetLowAdj = null
         updates.targetHighAdj = null
+        updates.targetCurrencyUnknown = false
       }
+
+      // analystCurrency für Anzeige: gibt die ZIEL-Währung des Kursziels an
+      // (nicht die Handelswährung des Instruments)
+      updates.analystCurrency = analystCurrency
 
       const tDetails = calculateTfaTDetails(
         inst.closes ?? [],

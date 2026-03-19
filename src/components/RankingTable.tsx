@@ -578,8 +578,10 @@ function ExpandedDetail({
   const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
   const analystCurrency = inst.analystCurrency ?? null
   const currencyMismatch = analystCurrency != null && priceCurrency != null && analystCurrency !== priceCurrency
-  const targetDisplay = inst.targetPriceAdj ?? inst.targetPrice
-  const targetDisplayCurrency = inst.targetPriceAdj != null ? priceCurrency : (analystCurrency ?? priceCurrency)
+  const targetDisplay = inst.targetCurrencyUnknown ? null : (inst.targetPriceAdj ?? inst.targetPrice)
+  const targetDisplayCurrency = inst.targetCurrencyUnknown
+    ? priceCurrency
+    : (inst.targetPriceAdj != null ? priceCurrency : (analystCurrency ?? priceCurrency))
   const targetForUpside = inst.targetPriceAdj != null
     ? inst.targetPriceAdj
     : (analystCurrency && priceCurrency && analystCurrency !== priceCurrency ? null : inst.targetPrice)
@@ -792,6 +794,11 @@ function ExpandedDetail({
                           {inst.targetFxApplied && inst.targetPrice != null && analystCurrency && (
                             <div className="text-muted text-[10px]">
                               Original: {inst.targetPrice.toFixed(2)} {analystCurrency}
+                            </div>
+                          )}
+                          {inst.targetCurrencyUnknown && (
+                            <div className="text-amber-400 text-[10px]">
+                              ⚠ Kursziel-Währung konnte nicht verifiziert werden — Wert könnte in Fremdwährung sein
                             </div>
                           )}
                           {currencyMismatch && !inst.targetFxApplied && (

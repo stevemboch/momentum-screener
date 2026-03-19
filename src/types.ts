@@ -78,6 +78,7 @@ export interface Instrument {
   targetHighAdj?: number | null
   targetFxRate?: number | null
   targetFxApplied?: boolean
+  targetCurrencyUnknown?: boolean
   marketCap?: number | null
   analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
   analystFetched?: boolean

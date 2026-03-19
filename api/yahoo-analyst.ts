@@ -428,6 +428,20 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     base.financialCurrency = fd.financialCurrency ?? null
     base.source = 'yahoo'
 
+    // ISIN-basierte Currency als Fallback wenn Yahoo nichts oder falsch liefert
+    const isinPrefix = (isin ?? '').slice(0, 2).toUpperCase()
+    const isinCurrencyMap: Record<string, string> = {
+      US: 'USD', CA: 'CAD', GB: 'GBP', AU: 'AUD', NZ: 'NZD',
+      JP: 'JPY', HK: 'HKD', SG: 'SGD', KR: 'KRW', CN: 'CNY',
+      CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK',
+    }
+    const isinFinancialCurrency = isinCurrencyMap[isinPrefix] ?? null
+
+    // Wenn Yahoo keine financialCurrency liefert, ISIN-basierte verwenden
+    if (!base.financialCurrency && isinFinancialCurrency) {
+      base.financialCurrency = isinFinancialCurrency
+    }
+
     if (base.financialCurrency && base.currency && base.financialCurrency !== base.currency) {
       try {
         const pair = `${base.financialCurrency}${base.currency}=X`
