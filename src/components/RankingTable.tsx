@@ -152,6 +152,15 @@ function TfaScoreCell({ score, ko }: { score: number | null | undefined; ko?: bo
   )
 }
 
+function PullbackScoreCell({ score }: { score: number | null | undefined }) {
+  if (score == null) return <span className="text-muted">—</span>
+  const color = score >= 0.7 ? 'text-green-400 font-semibold'
+    : score >= 0.5 ? 'text-yellow-400'
+    : score >= 0.3 ? 'text-orange-400'
+    : 'text-muted'
+  return <span className={color}>{score.toFixed(2)}</span>
+}
+
 function SignalValue({ value }: { value: number | null | undefined }) {
   if (value == null) return <span className="text-muted">—</span>
   const cls = value >= 1 ? 'text-green-400' : value >= 0.5 ? 'text-amber-300' : 'text-red-400'
@@ -981,6 +990,62 @@ function ExpandedDetail({
               </div>
             </div>
           )}
+
+          {inst.type === 'Stock' && inst.pullbackScore !== null && inst.pullbackScore !== undefined && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-semibold text-gray-400 font-mono">↩ Pullback Setup</span>
+                <PullbackScoreCell score={inst.pullbackScore} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-[11px] font-mono mb-2">
+                <div className="space-y-1">
+                  <div className="text-gray-400 font-semibold">Signale</div>
+                  <div>S1 RSI + MA50: <SignalValue value={inst.pullbackSignals?.s1} /></div>
+                  <div>S2 RSI dreht: <SignalValue value={inst.pullbackSignals?.s2} /></div>
+                  <div>S3 Volumen sinkt: <SignalValue value={inst.pullbackSignals?.s3} /></div>
+                  <div>S4 Nahe MA50: <SignalValue value={inst.pullbackSignals?.s4} /></div>
+                  <div>S5 Stabilisierung: <SignalValue value={inst.pullbackSignals?.s5} /></div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-gray-400 font-semibold">Trade Setup</div>
+                  <div>
+                    Entry (akt.):
+                    <span className="text-gray-300 ml-1">
+                      {inst.closes && inst.closes.length > 0
+                        ? inst.closes[inst.closes.length - 1].toFixed(2)
+                        : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    Stop: <span className="text-red-400 ml-1">
+                      {inst.pullbackStop != null ? inst.pullbackStop.toFixed(2) : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    Ziel: <span className="text-green-400 ml-1">
+                      {inst.pullbackTarget != null ? inst.pullbackTarget.toFixed(2) : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    R/R: <span className="text-gray-300 ml-1">
+                      {inst.pullbackRR != null ? `1:${inst.pullbackRR.toFixed(1)}` : '—'}
+                    </span>
+                  </div>
+                  <div className="text-muted text-[10px] mt-1">
+                    Momentum Rank: #{inst.momentumRank ?? '—'}
+                    {' · '}RSI: {inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-muted border-t border-border/40 pt-1 mt-1">
+                ⚠ Kein Anlageberatung. Stop-Loss zwingend einhalten.
+                Enge Spreads bevorzugen (DAX/MDAX auf gettex).
+              </div>
+            </div>
+          )}
         </td>
       </tr>
 
@@ -1305,6 +1370,33 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('breakoutAgeDays') && (
                     <td className="px-2 py-1.5 text-right text-gray-300">
                       {fmtAge(inst.breakoutAgeDays)}
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('pullbackScore') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <PullbackScoreCell score={inst.pullbackScore} />
+                    </td>
+                  )}
+                  {!hiddenKeys.has('pullbackStop') && (
+                    <td className="px-2 py-1.5 text-right font-mono text-[12px] text-red-400">
+                      {inst.pullbackStop != null
+                        ? inst.pullbackStop.toFixed(2)
+                        : <span className="text-muted">—</span>}
+                    </td>
+                  )}
+                  {!hiddenKeys.has('pullbackTarget') && (
+                    <td className="px-2 py-1.5 text-right font-mono text-[12px] text-green-400">
+                      {inst.pullbackTarget != null
+                        ? inst.pullbackTarget.toFixed(2)
+                        : <span className="text-muted">—</span>}
+                    </td>
+                  )}
+                  {!hiddenKeys.has('pullbackRR') && (
+                    <td className="px-2 py-1.5 text-right font-mono text-[12px] text-gray-300">
+                      {inst.pullbackRR != null
+                        ? `1:${inst.pullbackRR.toFixed(1)}`
+                        : <span className="text-muted">—</span>}
                     </td>
                   )}
                 </tr>

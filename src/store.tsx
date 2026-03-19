@@ -213,7 +213,7 @@ function reducer(state: AppState, action: Action): AppState {
         })
         .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
       const merged = [...state.instruments, ...newInst]
-      return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
+      return { ...state, instruments: recalculateAll(merged) }
     }
     case 'SET_INSTRUMENTS':
       {
@@ -226,7 +226,7 @@ function reducer(state: AppState, action: Action): AppState {
             return true
           })
           .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
-        return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
+        return { ...state, instruments: recalculateAll(next) }
       }
     case 'UPDATE_INSTRUMENT': {
       const instruments = state.instruments.map((inst) =>
@@ -235,7 +235,7 @@ function reducer(state: AppState, action: Action): AppState {
       if (!updatesAffectScores(action.updates)) {
         return { ...state, instruments }
       }
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
+      return { ...state, instruments: recalculateAll(instruments) }
     }
     case 'UPDATE_INSTRUMENTS': {
       const needsRecalc = Array.from(action.updates.values()).some((u) => updatesAffectScores(u))
@@ -246,7 +246,7 @@ function reducer(state: AppState, action: Action): AppState {
       if (!needsRecalc) {
         return { ...state, instruments }
       }
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
+      return { ...state, instruments: recalculateAll(instruments) }
     }
     case 'SET_FETCH_STATUS':
       return { ...state, fetchStatus: { ...state.fetchStatus, ...action.status } }
