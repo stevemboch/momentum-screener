@@ -4,7 +4,7 @@ import { usePipeline } from '../hooks/usePipeline'
 import { useInstrumentContext } from '../hooks/useInstrumentContext'
 import type { ColumnGroup, SortColumn, Instrument } from '../types'
 import {
-  fmtAUM, fmtTER, fmtPct, fmtRatio, fmtVola, fmtPE, returnColor, scoreColor
+  fmtAUM, fmtTER, fmtPct, fmtRatio, fmtVola, fmtPE, returnColor, scoreColor, rsiColor
 } from '../utils/formatters'
 import { generateTfaSummary } from '../utils/tfaSummary'
 
@@ -295,7 +295,7 @@ function MetricCell({ value, rank, fmt }: { value: number | null | undefined; ra
 function fmtDate(ts: number | null | undefined): string {
   if (!ts) return '—'
   try {
-    return new Date(ts * 1000).toLocaleDateString('en-US')
+  return new Date(ts * 1000).toLocaleDateString('de-DE')
   } catch {
     return '—'
   }
@@ -469,15 +469,31 @@ function CandidateRow({
       {!hiddenKeys.has('drawFromHigh') && (
         <td className={`px-2 py-1.5 text-right ${returnColor(candidate.drawFromHigh)}`}>{fmtPct(candidate.drawFromHigh)}</td>
       )}
+      {!hiddenKeys.has('drawFrom5YHigh') && (
+        <td className={`px-2 py-1.5 text-right ${returnColor(candidate.drawFrom5YHigh)}`}>
+          {fmtPct(candidate.drawFrom5YHigh)}
+        </td>
+      )}
+      {!hiddenKeys.has('drawFrom7YHigh') && (
+        <td className={`px-2 py-1.5 text-right ${returnColor(candidate.drawFrom7YHigh)}`}>
+          {fmtPct(candidate.drawFrom7YHigh)}
+        </td>
+      )}
       {!hiddenKeys.has('rsi14') && (
-        <td className="px-2 py-1.5 text-right text-gray-300">
+        <td className={`px-2 py-1.5 text-right ${rsiColor(candidate.rsi14)}`}>
           {candidate.rsi14 != null ? candidate.rsi14.toFixed(1) : '—'}
         </td>
+      )}
+      {!hiddenKeys.has('weeklyRsi14') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
       {!hiddenKeys.has('levyRS') && (
         <td className="px-2 py-1.5 text-right text-gray-300">
           {candidate.levyRS != null ? candidate.levyRS.toFixed(2) : '—'}
         </td>
+      )}
+      {!hiddenKeys.has('weeklyVolaRatio') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
       {!hiddenKeys.has('tfaTScore') && (
         <td className="px-2 py-1.5 text-right">
@@ -488,6 +504,12 @@ function CandidateRow({
         <td className="px-2 py-1.5 text-right">
           {candidate.tfaFScore != null ? candidate.tfaFScore.toFixed(2) : <span className="text-muted">—</span>}
         </td>
+      )}
+      {!hiddenKeys.has('tfaTScore5Y') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('tfaFScore5Y') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
       {!hiddenKeys.has('tfaScore') && (
         <td className="px-2 py-1.5 text-right">
@@ -504,11 +526,26 @@ function CandidateRow({
           />
         </td>
       )}
+      {!hiddenKeys.has('tfaCrossoverDaysAgo') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
+      )}
       {!hiddenKeys.has('breakoutScore') && (
         <td className="px-2 py-1.5 text-right text-gray-400">—</td>
       )}
       {!hiddenKeys.has('breakoutAgeDays') && (
         <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+      )}
+      {!hiddenKeys.has('pullbackScore') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('pullbackStop') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('pullbackTarget') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('pullbackRR') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
     </tr>
   )
@@ -704,7 +741,7 @@ function ExpandedDetail({
                 <div className="flex items-center gap-2">
                   {ctx && (
                     <span className="text-[10px] text-muted font-mono">
-                      {new Date(ctx.fetchedAt).toLocaleTimeString('en-US')}
+                      {new Date(ctx.fetchedAt).toLocaleTimeString('de-DE')}
                     </span>
                   )}
                 </div>
@@ -944,15 +981,19 @@ function ExpandedDetail({
                   <div>T3 Higher Low: <SignalValue value={inst.tfaTSignals?.t3} /></div>
                   <div>T4 Volumen: <SignalValue value={inst.tfaTSignals?.t4} /></div>
                   <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals?.t5} /></div>
-                  <div className="text-gray-400 font-semibold mt-2">
-                    T-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} Weekly)
-                  </div>
-                  <div>Score: <span className="text-gray-300">{inst.tfaTScore5Y != null ? inst.tfaTScore5Y.toFixed(2) : '—'}</span></div>
-                  <div>T1 RSI dreht (W): <SignalValue value={inst.tfaTSignals5Y?.t1} /></div>
-                  <div>T2 LevyRS (W): <SignalValue value={inst.tfaTSignals5Y?.t2} /></div>
-                  <div>T3 Higher Low (W): <SignalValue value={inst.tfaTSignals5Y?.t3} /></div>
-                  <div>T4 Vola-Kompr. (W): <SignalValue value={inst.tfaTSignals5Y?.t4} /></div>
-                  <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals5Y?.t5} /></div>
+                  {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
+                    <>
+                      <div className="text-gray-400 font-semibold mt-2">
+                        T-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} Weekly)
+                      </div>
+                      <div>Score: <span className="text-gray-300">{inst.tfaTScore5Y != null ? inst.tfaTScore5Y.toFixed(2) : '—'}</span></div>
+                      <div>T1 RSI dreht (W): <SignalValue value={inst.tfaTSignals5Y?.t1} /></div>
+                      <div>T2 LevyRS (W): <SignalValue value={inst.tfaTSignals5Y?.t2} /></div>
+                      <div>T3 Higher Low (W): <SignalValue value={inst.tfaTSignals5Y?.t3} /></div>
+                      <div>T4 Vola-Kompr. (W): <SignalValue value={inst.tfaTSignals5Y?.t4} /></div>
+                      <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals5Y?.t5} /></div>
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -961,15 +1002,19 @@ function ExpandedDetail({
                   <div>F1 PB: <SignalValue value={inst.tfaFSignals?.f1} /></div>
                   <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals?.f2} /></div>
                   <div>F3 Upside: <SignalValue value={inst.tfaFSignals?.f3} /></div>
-                  <div className="text-gray-400 font-semibold mt-2">
-                    F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxiert)
-                  </div>
-                  <div>Score: <span className="text-gray-300">{inst.tfaFScore5Y != null ? inst.tfaFScore5Y.toFixed(2) : '—'}</span></div>
-                  <div>F1 PB: <SignalValue value={inst.tfaFSignals5Y?.f1} /></div>
-                  <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals5Y?.f2} /></div>
-                  <div>F3 ROA: <SignalValue value={inst.tfaFSignals5Y?.f3} /></div>
-                  <div>F4 Analyst: <SignalValue value={inst.tfaFSignals5Y?.f4} /></div>
-                  <div>F5 Upside: <SignalValue value={inst.tfaFSignals5Y?.f5} /></div>
+                  {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
+                    <>
+                      <div className="text-gray-400 font-semibold mt-2">
+                        F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxiert)
+                      </div>
+                      <div>Score: <span className="text-gray-300">{inst.tfaFScore5Y != null ? inst.tfaFScore5Y.toFixed(2) : '—'}</span></div>
+                      <div>F1 PB: <SignalValue value={inst.tfaFSignals5Y?.f1} /></div>
+                      <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals5Y?.f2} /></div>
+                      <div>F3 ROA: <SignalValue value={inst.tfaFSignals5Y?.f3} /></div>
+                      <div>F4 Analyst: <SignalValue value={inst.tfaFSignals5Y?.f4} /></div>
+                      <div>F5 Upside: <SignalValue value={inst.tfaFSignals5Y?.f5} /></div>
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -1189,7 +1234,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             ))}
           </tr>
         </thead>
-        <tbody key={`${sortColumn}:${sortDirection}:${state.tableState.typeFilter}:${state.tableState.showDeduped}`}>
+        <tbody key={`${sortColumn}:${sortDirection}:${state.tableState.typeFilter}:${state.tableState.showDeduped}:${state.tableState.tfaMode}:${state.tableState.pullbackMode}`}>
           {instruments.map((inst, idx) => {
             const isExpanded = expandedISIN === inst.isin
             const rowBg = idx % 2 === 0 ? 'bg-bg' : 'bg-surface'
@@ -1345,7 +1390,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   )}
 
                   {!hiddenKeys.has('rsi14') && (
-                    <td className="px-2 py-1.5 text-right text-gray-300">
+                    <td className={`px-2 py-1.5 text-right ${rsiColor(inst.rsi14)}`}>
                       {inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}
                     </td>
                   )}

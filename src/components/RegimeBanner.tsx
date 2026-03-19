@@ -34,6 +34,17 @@ export function RegimeBanner() {
 
   if (dismissed) return null
 
+  if (!regime && !loading) return null
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 text-[11px] font-mono text-muted">
+        <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" />
+        Marktregime wird analysiert...
+      </div>
+    )
+  }
+
   if (!regime) return null
 
   const cfg = CONFIG[regime.regime]

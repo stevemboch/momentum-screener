@@ -126,8 +126,19 @@ export function SettingsPanel() {
             </Section>
 
             <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={() => {
+                  dispatch({ type: 'SET_WEIGHTS', weights: { w1m: 1 / 3, w3m: 1 / 3, w6m: 1 / 3 } })
+                  dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: 4 })
+                  dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
+                  dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })
+                }}
+                className="px-3 py-1.5 text-xs font-mono text-muted hover:text-gray-300 border border-border rounded"
+              >
+                Zurücksetzen
+              </button>
               <button onClick={() => setOpen(false)} className="px-3 py-1.5 text-xs font-mono text-muted hover:text-gray-300 border border-border rounded">
-                Cancel
+                Schließen
               </button>
             </div>
           </div>

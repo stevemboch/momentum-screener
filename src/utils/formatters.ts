@@ -63,3 +63,13 @@ export function scoreColor(value: number | null | undefined): string {
   if (value < -0.05) return 'text-red-400'
   return 'text-red-600'
 }
+
+export function rsiColor(value: number | null | undefined): string {
+  if (value == null) return 'text-muted'
+  if (value < 30) return 'text-green-400 font-semibold'
+  if (value < 40) return 'text-green-600'
+  if (value < 50) return 'text-gray-300'
+  if (value < 60) return 'text-gray-400'
+  if (value < 70) return 'text-orange-400'
+  return 'text-red-400'
+}

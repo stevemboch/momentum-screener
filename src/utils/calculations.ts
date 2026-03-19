@@ -792,6 +792,7 @@ function buildPercentileMap(
 
 export function applyRanks(instruments: Instrument[]): Instrument[] {
   const result = instruments.map((inst) => ({ ...inst }))
+  const indexMap = new Map(result.map((inst, i) => [inst.isin, i]))
 
   const rank = (
     arr: { inst: Instrument; i: number }[],
@@ -806,8 +807,8 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
         return desc ? bv - av : av - bv
       })
       .forEach(({ inst }, rank) => {
-        const idx = result.findIndex((r) => r.isin === inst.isin)
-        if (idx >= 0) {
+        const idx = indexMap.get(inst.isin)
+        if (idx !== undefined) {
           const rankField = field === 'riskAdjustedScore' ? 'riskAdjustedRank' : `${String(field)}Rank`
           ;(result[idx] as any)[rankField] = rank + 1
         }

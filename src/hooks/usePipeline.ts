@@ -750,6 +750,9 @@ export function usePipeline() {
       } else if (phase1.phase === 'monitoring') {
         updates.tfaPhase = 'monitoring'
         updates.tfaRejectReason = undefined
+      } else if (phase1.phase === 'above_all_mas') {
+        updates.tfaPhase = 'above_all_mas'
+        updates.tfaRejectReason = undefined
       } else if (!phase2.passes) {
         updates.tfaPhase = 'rejected'
         updates.tfaRejectReason = phase2.reason
@@ -763,7 +766,8 @@ export function usePipeline() {
       const updatedPhase = updates.tfaPhase
       if (
         inst.type === 'Stock' &&
-        (updatedPhase === 'watch' || inst.tfaPhase === 'watch') &&
+        (updatedPhase === 'watch' || updatedPhase === 'above_all_mas' ||
+         inst.tfaPhase === 'watch' || inst.tfaPhase === 'above_all_mas') &&
         !inst.tfaFetched &&
         !tfaInFlight.current.has(inst.isin)
       ) {
