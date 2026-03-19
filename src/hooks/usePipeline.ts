@@ -646,7 +646,7 @@ export function usePipeline() {
 
       const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
       const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
-      const analystCurrency = r.currency ?? null
+      const analystCurrency = r.financialCurrency ?? r.currency ?? null
       const analystCurrent = r.currentPrice ?? null
       const fxRate = (lastPrice != null && analystCurrent != null && analystCurrent > 0)
         ? (lastPrice / analystCurrent)

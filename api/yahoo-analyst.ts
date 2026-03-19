@@ -10,6 +10,7 @@ interface AnalystResult {
   targetHighPrice: number | null
   currentPrice: number | null
   currency?: string | null
+  financialCurrency?: string | null
   ebitda?: number | null
   enterpriseValue?: number | null
   returnOnAssets?: number | null
@@ -340,6 +341,7 @@ async function fetchFromMarketScreener(ticker: string): Promise<Partial<AnalystR
     targetLowPrice: parseMoney(lowText),
     currentPrice: parseMoney(lastText),
     currency: inferCurrency(lastText) || inferCurrency(avgText) || inferCurrency(highText) || inferCurrency(lowText),
+    financialCurrency: inferCurrency(lastText) || inferCurrency(avgText) || inferCurrency(highText) || inferCurrency(lowText),
     ebitda,
     enterpriseValue,
     returnOnAssets,
@@ -385,6 +387,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     targetHighPrice: null,
     currentPrice: null,
     currency: null,
+    financialCurrency: null,
   }
 
   try {
@@ -420,6 +423,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     base.targetHighPrice = fd.targetHighPrice?.raw ?? null
     base.currentPrice = fd.currentPrice?.raw ?? null
     base.currency = price.currency ?? null
+    base.financialCurrency = fd.financialCurrency ?? null
     base.source = 'yahoo'
   } catch (err: any) {
     // Fallback 1: MarketScreener (search by ticker)
@@ -446,6 +450,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
         targetLowPrice: ms.targetLowPrice ?? null,
         targetHighPrice: ms.targetHighPrice ?? null,
         currentPrice: ms.currentPrice ?? null,
+        financialCurrency: ms.financialCurrency ?? ms.currency ?? null,
         pe: ms.pe ?? null,
         pb: ms.pb ?? null,
         ebitda: ms.ebitda ?? null,
@@ -463,6 +468,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
           targetMeanPrice: fallback.targetMeanPrice ?? null,
           targetLowPrice: fallback.targetLowPrice ?? null,
           targetHighPrice: fallback.targetHighPrice ?? null,
+          financialCurrency: fallback.financialCurrency ?? fallback.currency ?? null,
           source: 'optionsanalysissuite',
         }
       } catch (fallbackErr: any) {
