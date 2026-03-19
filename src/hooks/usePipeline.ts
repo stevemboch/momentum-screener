@@ -195,9 +195,10 @@ export function usePipeline() {
     try {
       const r = await apiYahooSingle('URTH')
       if (r?.closes?.length) {
-        const { r3m } = calculateReturns(r.closes)
-        dispatch({ type: 'SET_REFERENCE_R3M', r3m: r3m ?? null })
-        return r3m ?? null
+        const r3m = calculateReturns(r.closes)
+        const r3mValue = typeof r3m === 'number' ? r3m : null
+        dispatch({ type: 'SET_REFERENCE_R3M', r3m: r3mValue })
+        return r3mValue
       }
     } catch {
       // ignore
@@ -669,15 +670,7 @@ export function usePipeline() {
         updates.targetHighAdj = null
       }
 
-      const tDetails = calculateTfaTDetails(
-        inst.closes ?? [],
-        inst.volumes,
-        inst.rsi14 ?? null,
-        inst.aboveMa50 ?? null,
-        inst.drawFromHigh ?? null,
-        inst.higherLow ?? null,
-        inst.maCrossover ?? null
-      )
+      const tDetails = calculateTfaTDetails(inst)
       const effectivePb = updates.pb ?? inst.pb
       const effectiveRoA = updates.returnOnAssets ?? inst.returnOnAssets
       const effectiveEbitda = updates.ebitda ?? inst.ebitda
@@ -687,47 +680,19 @@ export function usePipeline() {
         ? inst.closes[inst.closes.length - 1]
         : null
 
-      const fDetails = calculateTfaFDetails(
-        effectivePb,
-        effectiveEbitda,
-        effectiveEV,
-        updates.targetPriceAdj ?? updates.targetPrice ?? inst.targetPriceAdj ?? inst.targetPrice ?? null,
-        currentPrice,
-      )
-
+      const fDetails = calculateTfaFDetails(inst)
       updates.tfaFScore = fDetails.score ?? null
       updates.tfaFSignals = fDetails.signals
 
-      const f5yDetails = calculateTfaFDetails5Y(
-        effectivePb,
-        effectiveEbitda,
-        effectiveEV,
-        effectiveRoA,
-        updates.analystRating ?? null,
-        updates.targetPriceAdj ?? updates.targetPrice ?? inst.targetPrice ?? null,
-        currentPrice,
-      )
+      const f5yDetails = calculateTfaFDetails5Y(inst)
       updates.tfaFScore5Y = f5yDetails.score ?? null
       updates.tfaFSignals5Y = f5yDetails.signals
 
-      const phase1 = calculateTfaPhase1Gate({
-        ...inst,
-        returnOnAssets: effectiveRoA ?? null,
-        pb: effectivePb ?? inst.pb ?? null,
-        tfaTScore: tDetails.score ?? null,
-      })
+      const phase1 = calculateTfaPhase1Gate(inst)
+      const phase2 = calculateTfaPhase2Gate(inst)
 
-      const phase2 = calculateTfaPhase2Gate({
-        ...inst,
-        returnOnAssets: effectiveRoA ?? null,
-        pb: effectivePb ?? inst.pb ?? null,
-        tfaTScore: tDetails.score ?? null,
-        tfaFScore: fDetails.score ?? null,
-        tfaFScore5Y: f5yDetails.score ?? null,
-      }, phase1.scenario || '52w')
-
-      const scenario = phase1.scenario
-      if (phase1.phase !== 'none') {
+      const scenario = (inst as any).tfaScenario || '52w'
+      if (phase1) {
         if (scenario === '5y' || scenario === '7y') {
           const tScore5y = inst.tfaTScore5Y ?? null
           const fScore5y = f5yDetails.score ?? null
@@ -743,16 +708,13 @@ export function usePipeline() {
         }
       }
 
-      updates.tfaScenario = phase1.scenario ?? null
-      if (phase1.phase === 'none') {
+      updates.tfaScenario = scenario
+      if (!phase1) {
         updates.tfaPhase = 'none'
-        updates.tfaRejectReason = phase1.reason
-      } else if (phase1.phase === 'monitoring') {
-        updates.tfaPhase = 'monitoring'
-        updates.tfaRejectReason = undefined
-      } else if (!phase2.passes) {
+        updates.tfaRejectReason = 'Phase 1 failed'
+      } else if (!phase2) {
         updates.tfaPhase = 'rejected'
-        updates.tfaRejectReason = phase2.reason
+        updates.tfaRejectReason = 'Phase 2 failed'
       } else {
         updates.tfaPhase = 'watch'
         updates.tfaRejectReason = undefined
@@ -783,7 +745,7 @@ export function usePipeline() {
                 drawFromHigh: inst.drawFromHigh,
                 drawFrom5YHigh: inst.drawFrom5YHigh ?? null,
                 drawFrom7YHigh: inst.drawFrom7YHigh ?? null,
-                scenario: phase1.scenario ?? inst.tfaScenario ?? '52w',
+                scenario: inst.tfaScenario ?? '52w',
               }),
             })
             if (!res.ok) {
@@ -794,7 +756,7 @@ export function usePipeline() {
             cacheSet(catalystCacheKey, data, TFA_CATALYST_TTL_MS)
           }
 
-          const scenario = phase1.scenario
+          const scenario = inst.tfaScenario ?? '52w'
           const baseT = (scenario === '5y' || scenario === '7y')
             ? (inst.tfaTScore5Y ?? tDetails.score ?? null)
             : (tDetails.score ?? null)

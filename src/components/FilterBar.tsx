@@ -104,13 +104,16 @@ export function FilterBar() {
       {/* Pullback mode toggle */}
       {toggleSwitch(
         pullbackMode,
-        () => dispatch({ type: 'SET_TABLE_STATE', updates: {
-          pullbackMode: !pullbackMode,
-          tfaMode: false,
-          typeFilter: !pullbackMode ? 'stock' : typeFilter,
-          sortColumn: !pullbackMode ? 'pullbackScore' : 'combinedScore',
-          sortDirection: 'desc',
-        } }),
+        () => dispatch({
+          type: 'SET_TABLE_STATE',
+          updates: {
+            pullbackMode: !pullbackMode,
+            tfaMode: false,
+            typeFilter: !pullbackMode ? 'stock' : typeFilter,
+            sortColumn: !pullbackMode ? 'pullbackScore' : 'combinedScore',
+            sortDirection: 'desc',
+          },
+        }),
         `Pullback ${pullbackMode ? `(${pullbackCount} ↩)` : ''}`,
         'Zeigt Top-Momentum-Stocks mit RSI-Rücksetzer — potenzielle Swing-Einstiege',
       )}
