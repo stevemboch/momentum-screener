@@ -282,8 +282,8 @@ export function calculateTfaTDetails(
   aboveMa50: boolean | null,
   drawFromHigh: number | null,
   higherLow?: boolean | null,
-  maCrossover?: { ma50: boolean | null; ma100: boolean | null; ma200: boolean | null; stillValid: boolean } | null,
-): { score: number | null; signals: { t1: number; t2: number; t3: number; t4: number; t5: number } | null } {
+    maCrossover?: { ma50: boolean | null; ma100: boolean | null; ma200: boolean | null; any: boolean; stillValid: boolean } | null,
+  ): { score: number | null; signals: { t1: number; t2: number; t3: number; t4: number; t5: number } | null } {
   if (!closes || closes.length < 50) return { score: null, signals: null }
 
   // T1: RSI war unter 30 und dreht nach oben
@@ -295,7 +295,7 @@ export function calculateTfaTDetails(
 
   // T2: MA-Crossover (frisch = 1) oder statisch über MA50 (Kontext = 0.5)
   let t2 = 0
-  if (maCrossover?.stillValid && (maCrossover.ma50 || maCrossover.ma100 || maCrossover.ma200)) {
+  if (maCrossover?.stillValid && maCrossover.any) {
     t2 = 1
   } else if (aboveMa50 === true) {
     t2 = 0.5
@@ -326,7 +326,7 @@ export function calculateTfaTScore(
   rsi14: number | null,
   aboveMa50: boolean | null,
   drawFromHigh: number | null,
-  maCrossover?: { ma50: boolean | null; ma100: boolean | null; ma200: boolean | null; stillValid: boolean } | null,
+  maCrossover?: { ma50: boolean | null; ma100: boolean | null; ma200: boolean | null; any: boolean; stillValid: boolean } | null,
 ): number | null {
   return calculateTfaTDetails(closes, volumes, rsi14, aboveMa50, drawFromHigh, undefined, maCrossover).score
 }

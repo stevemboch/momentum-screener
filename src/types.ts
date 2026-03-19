@@ -144,6 +144,7 @@ export interface Instrument {
     ma50: boolean | null
     ma100: boolean | null
     ma200: boolean | null
+    any: boolean
     risingMa: 'ma50' | 'ma100' | 'ma200' | null
     stillValid: boolean
   } | null
