@@ -97,7 +97,7 @@ function loadHiddenColumnGroups(): ColumnGroup[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    const allowed: ColumnGroup[] = ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa']
+    const allowed: ColumnGroup[] = ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback']
     return parsed.filter((v) => allowed.includes(v))
   } catch {
     return []
@@ -394,8 +394,9 @@ export function useDisplayedInstruments() {
   if (tableState.pullbackMode) {
     filtered = filtered.filter((i) => i.type === 'Stock')
     filtered = filtered.filter((i) => i.aboveMa200 === true)
+    filtered = filtered.filter((i) => (i.r3m ?? -1) > 0)
     filtered = filtered.filter((i) => i.pullbackScore !== null && i.pullbackScore !== undefined)
-    // Nur Titel die Gate bestanden haben (pullbackScore !== null bedeutet alle Gates erfüllt)
+    // Nur Titel die Gate bestanden haben (pullbackScore !== null = alle Gates erfüllt)
   }
 
   // Dedup filter — hides non-winners when enabled
