@@ -135,6 +135,7 @@ const DEFAULT_STATE: AppState = {
     filterBelowRiskFree: true,  // ← ON by default
     filterBelowAllMAs: false,
     tfaMode: false,
+    pullbackMode: false,
     hiddenColumnGroups: persistedHiddenColumns,
   },
   referenceR3m: null,
@@ -268,8 +269,13 @@ function reducer(state: AppState, action: Action): AppState {
       const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, action.r3m)
       return { ...state, referenceR3m: action.r3m, instruments }
     }
-    case 'SET_TABLE_STATE':
-      return { ...state, tableState: { ...state.tableState, ...action.updates } }
+    case 'SET_TABLE_STATE': {
+      const updates = action.updates
+      // Mutual Exclusion: TFA und Pullback-Modus schließen sich aus
+      if (updates.tfaMode === true) updates.pullbackMode = false
+      if (updates.pullbackMode === true) updates.tfaMode = false
+      return { ...state, tableState: { ...state.tableState, ...updates } }
+    }
     case 'SET_ETF_GROUP':
       {
         const etfGroups = state.etfGroups.map((g) =>
@@ -384,6 +390,14 @@ export function useDisplayedInstruments() {
     filtered = filtered.filter((i) => i.tfaKO !== true)
   }
 
+  // Pullback-Modus — Top-Momentum-Stocks mit RSI-Rücksetzer
+  if (tableState.pullbackMode) {
+    filtered = filtered.filter((i) => i.type === 'Stock')
+    filtered = filtered.filter((i) => i.aboveMa200 === true)
+    filtered = filtered.filter((i) => i.pullbackScore !== null && i.pullbackScore !== undefined)
+    // Nur Titel die Gate bestanden haben (pullbackScore !== null bedeutet alle Gates erfüllt)
+  }
+
   // Dedup filter — hides non-winners when enabled
   if (tableState.showDeduped) {
     filtered = filtered.filter((i) => {
@@ -433,6 +447,9 @@ export function useDisplayedInstruments() {
     const getVal = (inst: Instrument) => {
       if (col === 'tfaScore' && tableState.tfaMode) {
         return (inst as any).tfaScore ?? (inst as any).tfaTScore ?? null
+      }
+      if (col === 'pullbackScore' && tableState.pullbackMode) {
+        return (inst as any).pullbackScore ?? null
       }
       return (inst as any)[col] ?? null
     }

@@ -113,6 +113,19 @@ export interface Instrument {
   valueRank?: number
   valueScoreModel?: 'etf' | 'magic-formula' | 'fallback'
 
+  // Pullback
+  pullbackScore?: number | null      // 0–1 Gesamt-Pullback-Signal
+  pullbackStop?: number | null       // konkreter Stop-Loss Kurs
+  pullbackTarget?: number | null     // konkretes Kursziel
+  pullbackRR?: number | null         // Risk-Reward-Ratio (z.B. 1.5)
+  pullbackSignals?: {
+    s1: number   // RSI unter 35 (stark überverkauft)
+    s2: number   // RSI dreht nach oben
+    s3: number   // Volumen rückläufig im Rücksetzer
+    s4: number   // Kurs nahe MA50 (Support)
+    s5: number   // Kurzfristiges Higher Low (5 Tage)
+  } | null
+
   // TFA – Turnaround Formula
   rsi14?: number | null
   drawFromHigh?: number | null   // % unter 52W-Hoch, negativ
@@ -206,12 +219,13 @@ export type SortColumn =
   | 'drawFrom5YHigh' | 'drawFrom7YHigh' | 'weeklyRsi14' | 'weeklyVolaRatio'
   | 'tfaTScore5Y' | 'tfaFScore5Y'
   | 'tfaCrossoverDaysAgo'
+  | 'pullbackScore' | 'pullbackStop' | 'pullbackTarget' | 'pullbackRR'
 
 export type SortDirection = 'asc' | 'desc'
 export type TypeFilter = 'all' | 'etf' | 'stock'
 
 export type ColumnGroup =
-  'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout' | 'tfa'
+  'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout' | 'tfa' | 'pullback'
 
 export type TfaPhase =
   | 'none'
@@ -231,6 +245,7 @@ export interface TableState {
   filterBelowRiskFree: boolean
   filterBelowAllMAs: boolean
   tfaMode: boolean
+  pullbackMode: boolean
   hiddenColumnGroups: ColumnGroup[]
 }
 

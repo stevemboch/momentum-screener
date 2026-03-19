@@ -9,12 +9,13 @@ const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
   fundamentals: 'Fundamentals',
   breakout: 'Breakout',
   tfa: 'TFA',
+  pullback: 'Pullback',
 }
 
 export function FilterBar() {
   const { state, dispatch } = useAppState()
   const displayed = useDisplayedInstruments()
-  const { typeFilter, filterBelowAllMAs, hiddenColumnGroups, tfaMode } = state.tableState
+  const { typeFilter, filterBelowAllMAs, hiddenColumnGroups, tfaMode, pullbackMode } = state.tableState
   const { fetchStatus } = state
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
@@ -22,6 +23,9 @@ export function FilterBar() {
   const aboveAllMAs = displayed.filter(i => i.tfaPhase === 'above_all_mas').length
   const watch = displayed.filter((i) => i.tfaPhase === 'watch').length
   const qualified = displayed.filter((i) => i.tfaPhase === 'qualified').length
+  const pullbackCount = displayed.filter(
+    (i) => i.pullbackScore !== null && i.pullbackScore !== undefined
+  ).length
 
   const setTypeFilter = (f: TypeFilter) =>
     dispatch({ type: 'SET_TABLE_STATE', updates: { typeFilter: f } })
@@ -95,6 +99,20 @@ export function FilterBar() {
         } }),
         `TFA Mode ${tfaMode ? `(${monitoring} 👁 / ${aboveAllMAs} 🚀 / ${watch} ⚡ / ${qualified} ✓)` : ''}`,
         'Zeigt nur Turnaround-Kandidaten: −40% bis −90% unter 52W-Hoch'
+      )}
+
+      {/* Pullback mode toggle */}
+      {toggleSwitch(
+        pullbackMode,
+        () => dispatch({ type: 'SET_TABLE_STATE', updates: {
+          pullbackMode: !pullbackMode,
+          tfaMode: false,
+          typeFilter: !pullbackMode ? 'stock' : typeFilter,
+          sortColumn: !pullbackMode ? 'pullbackScore' : 'combinedScore',
+          sortDirection: 'desc',
+        } }),
+        `Pullback ${pullbackMode ? `(${pullbackCount} ↩)` : ''}`,
+        'Zeigt Top-Momentum-Stocks mit RSI-Rücksetzer — potenzielle Swing-Einstiege',
       )}
 
       {/* Instrument count */}

@@ -43,6 +43,10 @@ const COLUMNS: Col[] = [
   { key: 'tfaCrossoverDaysAgo', label: 'Cross', title: 'Tage seit MA-Crossover' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
   { key: 'breakoutAgeDays', label: 'Breakout Age', title: 'Days since breakout' },
+  { key: 'pullbackScore', label: '↩ Score', title: 'Pullback-Score 0–1 (nur für Top-50 Momentum-Stocks über MA200)' },
+  { key: 'pullbackStop', label: 'PB Stop', title: 'Stop-Loss: Vortagestief − 0.5×ATR' },
+  { key: 'pullbackTarget', label: 'PB Ziel', title: 'Kursziel: Entry + 1.5× Risiko' },
+  { key: 'pullbackRR', label: 'R/R', title: 'Risk-Reward-Ratio' },
 ]
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
@@ -56,6 +60,7 @@ const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
     'drawFrom5YHigh', 'drawFrom7YHigh', 'weeklyRsi14', 'weeklyVolaRatio', 'tfaTScore5Y', 'tfaFScore5Y',
   ],
   breakout:     ['breakoutScore', 'breakoutAgeDays'],
+  pullback:     ['pullbackScore', 'pullbackStop', 'pullbackTarget', 'pullbackRR'],
 }
 
 const NON_SORTABLE = new Set(['displayName', 'ma', 'breakoutAgeDays', 'tfaPhase'])
