@@ -43,7 +43,7 @@ const COLUMNS: Col[] = [
   { key: 'tfaCrossoverDaysAgo', label: 'Cross', title: 'Tage seit MA-Crossover' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
   { key: 'breakoutAgeDays', label: 'Breakout Age', title: 'Days since breakout' },
-  { key: 'pullbackScore',  label: '↩ Score',  title: 'Pullback-Score 0–1 (nur für Top-50 Momentum-Stocks über MA200)' },
+  { key: 'pullbackScore',  label: '↩ Score',  title: 'Pullback-Score 0–1 (Stocks über MA200 mit positiver 3M-Performance)' },
   { key: 'pullbackStop',   label: 'PB Stop',  title: 'Stop-Loss: Vortagestief − 0.5×ATR' },
   { key: 'pullbackTarget', label: 'PB Ziel',  title: 'Kursziel: Entry + 1.5× Risiko' },
   { key: 'pullbackRR',     label: 'R/R',      title: 'Risk-Reward-Ratio' },
@@ -867,6 +867,41 @@ function ExpandedDetail({
                     summary={generateTfaSummary(inst)}
                     inst={inst}
                   />
+                  {inst.tfaPhase === 'above_all_mas' && !inst.analystFetched && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onLoadAnalyst(inst.isin)
+                      }}
+                      className="text-[10px] font-mono text-blue-400 hover:text-blue-300
+                                 border border-blue-400/30 rounded px-1.5 py-0.5
+                                 transition-colors"
+                      title="Fundamentaldaten und Gemini-Katalysator-Check laden"
+                    >
+                      Analyse laden
+                    </button>
+                  )}
+                  {inst.tfaPhase === 'above_all_mas' && inst.analystFetched && !inst.tfaFetched && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onLoadAnalyst(inst.isin)
+                      }}
+                      className="text-[10px] font-mono text-blue-400 hover:text-blue-300
+                                 border border-blue-400/30 rounded px-1.5 py-0.5
+                                 transition-colors"
+                      title="Gemini-Katalysator-Check laden"
+                    >
+                      Gemini laden
+                    </button>
+                  )}
+                  {inst.tfaPhase === 'above_all_mas' && inst.tfaFetched && (
+                    <span className="text-[10px] font-mono text-muted">
+                      {inst.tfaKO ? '⛔ KO' : inst.tfaEScore != null
+                        ? `E: ${inst.tfaEScore.toFixed(2)}`
+                        : 'Analysiert'}
+                    </span>
+                  )}
                 </div>
               </div>
               {inst.type === 'Stock' && inst.tfaPhase !== 'none' && (
@@ -1040,10 +1075,29 @@ function ExpandedDetail({
                 </div>
               </div>
 
-              <div className="text-[10px] text-muted border-t border-border/40 pt-1 mt-1">
-                ⚠ Kein Anlageberatung. Stop-Loss zwingend einhalten.
-                Enge Spreads bevorzugen (DAX/MDAX auf gettex).
-              </div>
+              {(() => {
+                const group = inst.xetraGroup ?? ''
+                const isDaxMdax = ['DAX', 'MDAX'].includes(group)
+                const isSdax = group === 'SDAX'
+                return (
+                  <div className={`text-[10px] border-t border-border/40 pt-1 mt-1 ${
+                    isDaxMdax ? 'text-muted' : 'text-orange-400/80'
+                  }`}>
+                    {isDaxMdax && (
+                      <>⚠ Kein Anlageberatung. Stop-Loss einhalten. Gettex empfohlen.</>
+                    )}
+                    {isSdax && (
+                      <>⚠ SDAX: Spread kann 0.3–0.8% betragen — Limit-Order verwenden,
+                      kein Market-Order. Stop-Loss einhalten.</>
+                    )}
+                    {!isDaxMdax && !isSdax && (
+                      <>⚠ Internationaler/kleinerer Titel: Spread prüfen vor dem Trade.
+                      Spread kann &gt;0.5% betragen. Limit-Order, kein Market-Order.
+                      Stop-Loss einhalten.</>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
         </td>

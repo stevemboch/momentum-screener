@@ -24,7 +24,11 @@ export function FilterBar() {
   const watch = displayed.filter((i) => i.tfaPhase === 'watch').length
   const qualified = displayed.filter((i) => i.tfaPhase === 'qualified').length
   const pullbackCount = displayed.filter(
-    (i) => i.pullbackScore !== null && i.pullbackScore !== undefined
+    (i) => i.type === 'Stock'
+      && i.aboveMa200 === true
+      && (i.r3m ?? -1) > 0
+      && i.pullbackScore !== null
+      && i.pullbackScore !== undefined
   ).length
 
   const setTypeFilter = (f: TypeFilter) =>
