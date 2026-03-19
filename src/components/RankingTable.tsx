@@ -199,6 +199,16 @@ function TfaPhaseBadge({
         </span>
       )
     }
+    case 'above_all_mas':
+      return (
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-blue-400/10 text-blue-400 border border-blue-400/20"
+          title={tooltip}
+          style={{ cursor: 'help' }}
+        >
+          🚀 Ausgebrochen
+        </span>
+      )
     case 'watch':
       return (
         <span

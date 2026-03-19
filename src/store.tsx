@@ -379,7 +379,7 @@ export function useDisplayedInstruments() {
   // TFA mode — only stocks in the -40%..-80% drawdown window, excluding KO
   if (tableState.tfaMode) {
     filtered = filtered.filter((i) => i.type === 'Stock')
-    const allowed = new Set(['monitoring', 'watch', 'fetching', 'qualified'])
+    const allowed = new Set(['monitoring', 'above_all_mas', 'watch', 'fetching', 'qualified'])
     filtered = filtered.filter((i) => allowed.has(i.tfaPhase ?? 'none'))
     filtered = filtered.filter((i) => i.tfaKO !== true)
   }

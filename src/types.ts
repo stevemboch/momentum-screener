@@ -215,6 +215,7 @@ export type ColumnGroup =
 export type TfaPhase =
   | 'none'
   | 'monitoring'
+  | 'above_all_mas'
   | 'watch'
   | 'fetching'
   | 'qualified'

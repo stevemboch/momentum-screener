@@ -478,7 +478,7 @@ export function isTfaZombie(
 }
 
 export function calculateTfaPhase1Gate(inst: Instrument): {
-  phase: 'monitoring' | 'watch' | 'none'
+  phase: 'monitoring' | 'watch' | 'above_all_mas' | 'none'
   scenario: '52w' | '5y' | '7y' | null
   reason?: string
 } {
@@ -512,7 +512,19 @@ export function calculateTfaPhase1Gate(inst: Instrument): {
   }
 
   const crossover = inst.maCrossover
-  const hasCrossover = !!(crossover && (crossover.ma50 || crossover.ma100 || crossover.ma200) && crossover.stillValid === true)
+
+  // Bereits über allen MAs ohne frischen Cross → Ausbruch verpasst
+  const aboveAllMAs =
+    inst.aboveMa50 === true &&
+    inst.aboveMa100 === true &&
+    inst.aboveMa200 === true
+
+  const hasCrossover = !!(crossover?.any && crossover.stillValid === true)
+
+  if (!hasCrossover && aboveAllMAs) {
+    return { phase: 'above_all_mas', scenario }
+  }
+
   if (hasCrossover) {
     return { phase: 'watch', scenario }
   }
@@ -887,15 +899,10 @@ export function recalculateAll(
         updated.tfaPhase = 'none'
         updated.tfaScenario = null
         updated.tfaRejectReason = phase1.reason
-      } else if (phase1.phase === 'monitoring') {
-        updated.tfaPhase = 'monitoring'
+      } else if (phase1.phase === 'monitoring' || phase1.phase === 'above_all_mas') {
+        updated.tfaPhase = phase1.phase
         updated.tfaScenario = phase1.scenario
-        const crossExpired = updated.tfaFetched
-          && !!(updated.maCrossover && (updated.maCrossover.ma50 || updated.maCrossover.ma100 || updated.maCrossover.ma200))
-          && updated.maCrossover.stillValid === false
-        updated.tfaRejectReason = crossExpired
-          ? 'MA-Crossover abgelaufen — Kurs unter MA gefallen'
-          : undefined
+        updated.tfaRejectReason = undefined
       } else {
         updated.tfaScenario = phase1.scenario
 

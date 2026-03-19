@@ -105,6 +105,16 @@ export function generateTfaSummary(inst: Instrument): string {
     return `${name}: ${parts.join(' — ')}.`
   }
 
+  if (phase === 'above_all_mas') {
+    const parts: string[] = []
+    if (drawdown) parts.push(`${drawdown} Rückgang`)
+    parts.push('bereits über MA50/100/200')
+    const fundParts = [pb, upside].filter(Boolean)
+    if (fundParts.length > 0) parts.push(fundParts.join(', '))
+    parts.push('Ausbruch bereits vollzogen — Einstieg mit Vorsicht')
+    return `${name}: ${parts.join(' — ')}.`
+  }
+
   if (phase === 'watch') {
     const parts: string[] = []
     if (drawdown) parts.push(`${drawdown} Rückgang`)

@@ -19,6 +19,7 @@ export function FilterBar() {
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
   const monitoring = displayed.filter((i) => i.tfaPhase === 'monitoring').length
+  const aboveAllMAs = displayed.filter(i => i.tfaPhase === 'above_all_mas').length
   const watch = displayed.filter((i) => i.tfaPhase === 'watch').length
   const qualified = displayed.filter((i) => i.tfaPhase === 'qualified').length
 
@@ -92,7 +93,7 @@ export function FilterBar() {
           sortColumn: !tfaMode ? 'tfaScore' : 'combinedScore',
           sortDirection: 'desc',
         } }),
-        `TFA Mode ${tfaMode ? `(${monitoring} monitor / ${watch} watch / ${qualified} ✓)` : ''}`,
+        `TFA Mode ${tfaMode ? `(${monitoring} 👁 / ${aboveAllMAs} 🚀 / ${watch} ⚡ / ${qualified} ✓)` : ''}`,
         'Zeigt nur Turnaround-Kandidaten: −40% bis −90% unter 52W-Hoch'
       )}
 
