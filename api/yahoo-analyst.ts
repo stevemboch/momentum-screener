@@ -11,6 +11,7 @@ interface AnalystResult {
   currentPrice: number | null
   currency?: string | null
   financialCurrency?: string | null
+  fxRate?: number | null
   ebitda?: number | null
   enterpriseValue?: number | null
   returnOnAssets?: number | null
@@ -388,6 +389,7 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     currentPrice: null,
     currency: null,
     financialCurrency: null,
+    fxRate: null,
   }
 
   try {
@@ -425,6 +427,29 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     base.currency = price.currency ?? null
     base.financialCurrency = fd.financialCurrency ?? null
     base.source = 'yahoo'
+
+    if (base.financialCurrency && base.currency && base.financialCurrency !== base.currency) {
+      try {
+        const pair = `${base.financialCurrency}${base.currency}=X`
+        const fxRes = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(pair)}?range=5d&interval=1d&includePrePost=false`,
+          { headers }
+        )
+        if (fxRes.ok) {
+          const fxData = await fxRes.json()
+          const fxResult = fxData?.chart?.result?.[0]
+          const fxQuote = fxResult?.indicators?.quote?.[0]
+          const fxClose = Array.isArray(fxQuote?.close)
+            ? fxQuote.close.filter((v: any) => v != null && !isNaN(v)).pop()
+            : null
+          if (typeof fxClose === 'number' && Number.isFinite(fxClose)) {
+            base.fxRate = fxClose
+          }
+        }
+      } catch {
+        // ignore FX fetch errors
+      }
+    }
   } catch (err: any) {
     // Fallback 1: MarketScreener (search by ticker)
     try {

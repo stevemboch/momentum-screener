@@ -608,7 +608,7 @@ export function usePipeline() {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
     }
     try {
-      const cacheKey = `cache:analyst:v3:${inst.yahooTicker}`
+      const cacheKey = `cache:analyst:v4:${inst.yahooTicker}`
       let r = cacheGet<any>(cacheKey, ANALYST_TTL_MS)
       if (!r) {
         r = await fetch('/api/yahoo-analyst', {
@@ -648,9 +648,11 @@ export function usePipeline() {
       const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
       const analystCurrency = r.financialCurrency ?? r.currency ?? null
       const analystCurrent = r.currentPrice ?? null
-      const fxRate = (lastPrice != null && analystCurrent != null && analystCurrent > 0)
-        ? (lastPrice / analystCurrent)
-        : null
+      const fxRate = r.fxRate ?? (
+        (lastPrice != null && analystCurrent != null && analystCurrent > 0)
+          ? (lastPrice / analystCurrent)
+          : null
+      )
       const currencyMismatch = priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency
       const ratioMismatch = fxRate != null && (fxRate < 0.85 || fxRate > 1.15)
       const sameCurrencyRatioMismatch = fxRate != null
