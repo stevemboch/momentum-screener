@@ -793,6 +793,7 @@ export function recalculateAll(
           ma50: crossoverSignals.ma50,
           ma100: crossoverSignals.ma100,
           ma200: crossoverSignals.ma200,
+          any: crossoverSignals.any,
           risingMa: crossoverSignals.risingMa,
           stillValid: crossoverSignals.stillValid,
         }
