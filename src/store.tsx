@@ -136,6 +136,9 @@ const DEFAULT_STATE: AppState = {
     filterBelowAllMAs: false,
     tfaMode: false,
     pullbackMode: false,
+    aiFilterFn: null,
+    aiFilterQuery: null,
+    aiFilterActive: false,
     hiddenColumnGroups: persistedHiddenColumns,
   },
   referenceR3m: null,
@@ -439,6 +442,18 @@ export function useDisplayedInstruments() {
       if (!hasAny) return true
       return flags.every((v) => v == null || v === true)
     })
+  }
+
+  // KI-Freitext-Filter
+  if (tableState.aiFilterActive && tableState.aiFilterFn) {
+    try {
+      const filterFn = new Function('inst', `"use strict"; return (${tableState.aiFilterFn})(inst)`)
+      filtered = filtered.filter((inst) => {
+        try { return Boolean(filterFn(inst)) } catch { return true }
+      })
+    } catch {
+      // Bei Parse-Fehler: Filter ignorieren, alle behalten
+    }
   }
 
   // Sort

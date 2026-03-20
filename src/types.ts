@@ -247,6 +247,9 @@ export interface TableState {
   filterBelowAllMAs: boolean
   tfaMode: boolean
   pullbackMode: boolean
+  aiFilterFn: string | null
+  aiFilterQuery: string | null
+  aiFilterActive: boolean
   hiddenColumnGroups: ColumnGroup[]
 }
 

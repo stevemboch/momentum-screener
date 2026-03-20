@@ -15,10 +15,22 @@ const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
 export function FilterBar() {
   const { state, dispatch } = useAppState()
   const displayed = useDisplayedInstruments()
-  const { typeFilter, filterBelowAllMAs, hiddenColumnGroups, tfaMode, pullbackMode } = state.tableState
+  const {
+    typeFilter,
+    filterBelowAllMAs,
+    hiddenColumnGroups,
+    tfaMode,
+    pullbackMode,
+    aiFilterFn,
+    aiFilterQuery,
+    aiFilterActive,
+  } = state.tableState
   const { fetchStatus } = state
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
+  const [aiInput, setAiInput] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
   const monitoring = displayed.filter((i) => i.tfaPhase === 'monitoring').length
   const aboveAllMAs = displayed.filter(i => i.tfaPhase === 'above_all_mas').length
   const watch = displayed.filter((i) => i.tfaPhase === 'watch').length
@@ -65,6 +77,39 @@ export function FilterBar() {
       {label}
     </button>
   )
+
+  const handleAiFilter = async () => {
+    const q = aiInput.trim()
+    if (!q || aiLoading) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const res = await fetch('/api/ai-filter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setAiError(data.error ?? 'Fehler')
+        return
+      }
+      dispatch({
+        type: 'SET_TABLE_STATE',
+        updates: { aiFilterFn: data.fn, aiFilterQuery: data.query, aiFilterActive: true },
+      })
+      setAiInput('')
+    } catch (err: any) {
+      setAiError(err?.message ?? 'Netzwerkfehler')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const clearAiFilter = () => {
+    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterFn: null, aiFilterQuery: null, aiFilterActive: false } })
+    setAiError(null)
+  }
 
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -124,6 +169,51 @@ export function FilterBar() {
         `Pullback ${pullbackMode ? `(${pullbackCount} ↩)` : ''}`,
         'Zeigt Top-Momentum-Stocks mit RSI-Rücksetzer — potenzielle Swing-Einstiege',
       )}
+
+      {/* KI-Freitext-Filter */}
+      <div className="flex items-center gap-1.5 flex-1 min-w-[200px] max-w-[400px]">
+        {aiFilterActive && aiFilterQuery ? (
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-400/10 border border-purple-400/30 rounded text-[11px] font-mono text-purple-300 flex-1 min-w-0">
+            <span className="shrink-0">✦</span>
+            <span className="truncate flex-1" title={aiFilterQuery}>{aiFilterQuery}</span>
+            <button
+              onClick={clearAiFilter}
+              className="shrink-0 text-purple-400/60 hover:text-purple-300 transition-colors ml-1"
+              title="Filter entfernen"
+            >
+              ×
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              type="text"
+              value={aiInput}
+              onChange={(e) => { setAiInput(e.target.value); setAiError(null) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAiFilter() }}
+              placeholder="KI-Filter: z.B. profitable Stocks unter MA50…"
+              className={`flex-1 bg-bg border rounded px-2.5 py-1 text-[11px] font-mono text-gray-300
+                placeholder:text-muted outline-none transition-colors
+                ${aiError ? 'border-red-400/50' : 'border-border focus:border-purple-400/50'}`}
+            />
+            <button
+              onClick={handleAiFilter}
+              disabled={!aiInput.trim() || aiLoading}
+              className="shrink-0 px-2 py-1 text-[11px] font-mono rounded border
+                border-purple-400/30 text-purple-400 hover:bg-purple-400/10
+                disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="KI-Filter anwenden (Enter)"
+            >
+              {aiLoading ? '…' : '✦'}
+            </button>
+          </>
+        )}
+        {aiError && (
+          <span className="text-[10px] text-red-400 font-mono shrink-0 max-w-[140px] truncate" title={aiError}>
+            ✗ {aiError}
+          </span>
+        )}
+      </div>
 
       {/* Instrument count */}
       <span className="text-xs font-mono text-muted ml-1">
