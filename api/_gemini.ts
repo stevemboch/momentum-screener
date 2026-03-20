@@ -10,6 +10,41 @@ function getGenAI(): GoogleGenerativeAI {
   return new GoogleGenerativeAI(apiKey)
 }
 
+type SearchToolMode = 'googleSearch' | 'googleSearchRetrieval'
+
+function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  return String(err)
+}
+
+function shouldSwitchToGoogleSearch(message: string): boolean {
+  const m = message.toLowerCase()
+  return (
+    (m.includes('google_search_retrieval') && m.includes('not supported'))
+    || m.includes('use google_search tool instead')
+  )
+}
+
+function shouldSwitchToGoogleSearchRetrieval(message: string): boolean {
+  const m = message.toLowerCase()
+  return (
+    (m.includes('google_search') && m.includes('not supported'))
+    || m.includes('use google_search_retrieval tool instead')
+  )
+}
+
+function createSearchModel(modelId: string, systemPrompt: string, mode: SearchToolMode) {
+  // SDK 0.21.0 typings do not include googleSearch, but API supports it.
+  const modelParams: any = {
+    model: modelId,
+    systemInstruction: systemPrompt,
+  }
+  modelParams.tools = mode === 'googleSearch'
+    ? [{ googleSearch: {} }]
+    : [{ googleSearchRetrieval: {} }]
+  return getGenAI().getGenerativeModel(modelParams)
+}
+
 export async function geminiChat(
   systemPrompt: string,
   userMessage: string
@@ -53,19 +88,36 @@ export async function geminiSearchChat(
 
   let lastError: unknown = null
   for (const modelId of modelFallbacks) {
-    try {
-      const isGemma = modelId.startsWith('gemma')
-      const model = getGenAI().getGenerativeModel({
-        model: modelId,
-        systemInstruction: systemPrompt,
-        ...(isGemma ? {} : { tools: [{ googleSearchRetrieval: {} }] }),
-      })
-      const result = await model.generateContent(userMessage)
-      const text = result.response.text()
-      if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
-      return text
-    } catch (err) {
-      lastError = err
+    const isGemma = modelId.startsWith('gemma')
+    if (isGemma) continue
+
+    let mode: SearchToolMode = 'googleSearch'
+    const attemptedModes = new Set<SearchToolMode>()
+
+    while (!attemptedModes.has(mode)) {
+      attemptedModes.add(mode)
+      try {
+        const model = createSearchModel(modelId, systemPrompt, mode)
+        const result = await model.generateContent(userMessage)
+        const text = result.response.text()
+        if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
+        return text
+      } catch (err) {
+        lastError = err
+        const msg = toErrorMessage(err)
+
+        if (mode === 'googleSearch' && shouldSwitchToGoogleSearchRetrieval(msg) && !attemptedModes.has('googleSearchRetrieval')) {
+          mode = 'googleSearchRetrieval'
+          continue
+        }
+
+        if (mode === 'googleSearchRetrieval' && shouldSwitchToGoogleSearch(msg) && !attemptedModes.has('googleSearch')) {
+          mode = 'googleSearch'
+          continue
+        }
+
+        break
+      }
     }
   }
 
