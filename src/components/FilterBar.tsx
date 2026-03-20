@@ -17,11 +17,9 @@ export function FilterBar() {
   const displayed = useDisplayedInstruments()
   const {
     typeFilter,
-    filterBelowAllMAs,
     hiddenColumnGroups,
     tfaMode,
     pullbackMode,
-    aiFilterFn,
     aiFilterQuery,
     aiFilterActive,
   } = state.tableState
@@ -44,8 +42,48 @@ export function FilterBar() {
       && i.pullbackScore !== undefined
   ).length
 
-  const setTypeFilter = (f: TypeFilter) =>
-    dispatch({ type: 'SET_TABLE_STATE', updates: { typeFilter: f } })
+  type PrimaryFilter = TypeFilter | 'tfa' | 'pullback'
+  const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : typeFilter
+
+  const setPrimaryFilter = (f: PrimaryFilter) => {
+    if (f === 'tfa') {
+      dispatch({
+        type: 'SET_TABLE_STATE',
+        updates: {
+          tfaMode: true,
+          pullbackMode: false,
+          typeFilter: 'stock',
+          sortColumn: 'tfaScore',
+          sortDirection: 'desc',
+        },
+      })
+      return
+    }
+
+    if (f === 'pullback') {
+      dispatch({
+        type: 'SET_TABLE_STATE',
+        updates: {
+          pullbackMode: true,
+          tfaMode: false,
+          typeFilter: 'stock',
+          sortColumn: 'pullbackScore',
+          sortDirection: 'desc',
+        },
+      })
+      return
+    }
+
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: {
+        typeFilter: f,
+        tfaMode: false,
+        pullbackMode: false,
+        ...(tfaMode || pullbackMode ? { sortColumn: 'combinedScore', sortDirection: 'desc' } : {}),
+      },
+    })
+  }
 
   const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
 
@@ -59,24 +97,6 @@ export function FilterBar() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [colMenuOpen])
-
-  const toggleSwitch = (active: boolean, onClick: () => void, label: string, title?: string) => (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded border transition-colors ${
-        active
-          ? 'bg-green-400/10 text-green-400 border-green-400/30'
-          : 'text-muted border-border hover:text-gray-300'
-      }`}
-    >
-      {/* Toggle pill */}
-      <span className={`relative inline-flex w-7 h-3.5 rounded-full transition-colors ${active ? 'bg-green-400' : 'bg-surface2 border border-border'}`}>
-        <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${active ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-      </span>
-      {label}
-    </button>
-  )
 
   const handleAiFilter = async () => {
     const q = aiInput.trim()
@@ -111,64 +131,42 @@ export function FilterBar() {
     setAiError(null)
   }
 
+  const editAiFilter = () => {
+    if (!aiFilterQuery) return
+    setAiInput(aiFilterQuery)
+    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterFn: null, aiFilterQuery: null, aiFilterActive: false } })
+    setAiError(null)
+  }
+
   return (
     <div className="flex items-center gap-3 flex-wrap">
       {/* Type filter */}
       <div className="flex items-center gap-0.5 bg-surface2 rounded p-0.5 border border-border">
-        {(['all', 'etf', 'stock'] as TypeFilter[]).map((f) => (
+        {(['all', 'etf', 'stock', 'tfa', 'pullback'] as PrimaryFilter[]).map((f) => (
           <button
             key={f}
-            onClick={() => setTypeFilter(f)}
+            onClick={() => setPrimaryFilter(f)}
+            title={
+              f === 'tfa'
+                ? 'Zeigt nur Turnaround-Kandidaten: −40% bis −90% unter 52W-Hoch'
+                : f === 'pullback'
+                  ? 'Zeigt Top-Momentum-Stocks mit RSI-Rücksetzer — potenzielle Swing-Einstiege'
+                  : undefined
+            }
             className={`px-2.5 py-1 text-xs font-mono rounded transition-colors ${
-              typeFilter === f
+              primaryFilter === f
                 ? 'bg-accent/20 text-accent border border-accent/30'
                 : 'text-muted hover:text-gray-300'
             }`}
           >
-            {f === 'all' ? 'All' : f === 'etf' ? 'ETFs & ETCs' : 'Stocks'}
+            {f === 'all' && 'All'}
+            {f === 'etf' && 'ETFs & ETCs'}
+            {f === 'stock' && 'Stocks'}
+            {f === 'tfa' && `TFA ${tfaMode ? `(${monitoring} / ${aboveAllMAs} / ${watch}${fetching > 0 ? ` / ${fetching}` : ''} / ${qualified})` : ''}`}
+            {f === 'pullback' && `Pullback ${pullbackMode ? `(${pullbackCount})` : ''}`}
           </button>
         ))}
       </div>
-
-      {/* MA filter toggle */}
-      {toggleSwitch(
-        filterBelowAllMAs,
-        () => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowAllMAs: !filterBelowAllMAs } }),
-        'Above All MAs',
-        'Hide instruments whose last price is not above all computed MAs (10/50/100/200)'
-      )}
-
-      {/* TFA mode toggle */}
-      {toggleSwitch(
-        tfaMode,
-        () => dispatch({ type: 'SET_TABLE_STATE', updates: {
-          tfaMode: !tfaMode,
-          typeFilter: !tfaMode ? 'stock' : typeFilter,
-          sortColumn: !tfaMode ? 'tfaScore' : 'combinedScore',
-          sortDirection: 'desc',
-        } }),
-        `TFA Mode ${tfaMode
-          ? `(${monitoring} 👁 / ${aboveAllMAs} 🚀 / ${watch} ⚡${fetching > 0 ? ` / ${fetching} ⏳` : ''} / ${qualified} ✓)`
-          : ''}`,
-        'Zeigt nur Turnaround-Kandidaten: −40% bis −90% unter 52W-Hoch'
-      )}
-
-      {/* Pullback mode toggle */}
-      {toggleSwitch(
-        pullbackMode,
-        () => dispatch({
-          type: 'SET_TABLE_STATE',
-          updates: {
-            pullbackMode: !pullbackMode,
-            tfaMode: false,
-            typeFilter: !pullbackMode ? 'stock' : typeFilter,
-            sortColumn: !pullbackMode ? 'pullbackScore' : 'combinedScore',
-            sortDirection: 'desc',
-          },
-        }),
-        `Pullback ${pullbackMode ? `(${pullbackCount} ↩)` : ''}`,
-        'Zeigt Top-Momentum-Stocks mit RSI-Rücksetzer — potenzielle Swing-Einstiege',
-      )}
 
       {/* KI-Freitext-Filter */}
       <div className="flex items-center gap-1.5 flex-1 min-w-[200px] max-w-[400px]">
@@ -176,6 +174,13 @@ export function FilterBar() {
           <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-400/10 border border-purple-400/30 rounded text-[11px] font-mono text-purple-300 flex-1 min-w-0">
             <span className="shrink-0">✦</span>
             <span className="truncate flex-1" title={aiFilterQuery}>{aiFilterQuery}</span>
+            <button
+              onClick={editAiFilter}
+              className="shrink-0 text-purple-400/70 hover:text-purple-200 transition-colors"
+              title="Filtertext übernehmen und bearbeiten"
+            >
+              Edit
+            </button>
             <button
               onClick={clearAiFilter}
               className="shrink-0 text-purple-400/60 hover:text-purple-300 transition-colors ml-1"

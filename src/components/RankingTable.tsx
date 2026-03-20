@@ -355,6 +355,70 @@ function MARow({ label, value, above, lastPrice }: { label: string; value: numbe
   )
 }
 
+function Sparkline({ closes }: { closes: number[] | undefined }) {
+  if (!closes || closes.length < 5) return null
+
+  // Letzten 21 Tage (ca. 1 Monat Handelstage)
+  const slice = closes.slice(-21)
+  const n = slice.length
+  const min = Math.min(...slice)
+  const max = Math.max(...slice)
+  const range = max - min
+
+  // Wenn kaum Bewegung: trotzdem zeigen (flache Linie)
+  const norm = (v: number) =>
+    range === 0 ? 10 : 18 - ((v - min) / range) * 16 // Y: 2..18 (SVG top=0)
+
+  const w = 60
+  const h = 20
+
+  // Polyline-Punkte
+  const points = slice
+    .map((v, i) => `${(i / (n - 1)) * (w - 2) + 1},${norm(v).toFixed(1)}`)
+    .join(' ')
+
+  // Farbe: grün wenn End > Start, rot wenn gefallen
+  const isUp = slice[n - 1] >= slice[0]
+  const color = isUp ? '#4ade80' : '#f87171'
+  const fillColor = isUp ? '#4ade8018' : '#f8717118'
+
+  // Fill-Polygon: Linie + runter zur Basis + zurück
+  const fillPoints = [
+    ...slice.map((v, i) => `${(i / (n - 1)) * (w - 2) + 1},${norm(v).toFixed(1)}`),
+    `${w - 1},${h - 1}`,
+    `1,${h - 1}`,
+  ].join(' ')
+
+  return (
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      className="shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
+    >
+      <title>{`1M: ${slice[0].toFixed(2)} -> ${slice[n - 1].toFixed(2)}`}</title>
+      {/* Fill unter der Linie */}
+      <polygon points={fillPoints} fill={fillColor} />
+      {/* Linie */}
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {/* Letzter Punkt als Dot */}
+      <circle
+        cx={(w - 2).toFixed(1)}
+        cy={norm(slice[n - 1]).toFixed(1)}
+        r="1.5"
+        fill={color}
+      />
+    </svg>
+  )
+}
+
 // ─── Candidate row (non-winner ETFs in dedup group) ──────────────────────────
 
 function CandidateRow({
@@ -1223,7 +1287,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   return (
     <div className="flex-1 overflow-auto">
-      <table className="w-full text-xs font-mono border-collapse min-w-[2350px]">
+      <table className="w-full text-xs font-mono border-collapse min-w-[2420px]">
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {visibleColumns.map((col) => (
@@ -1257,7 +1321,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                 >
                   {/* Name */}
-                  <td className="px-2 py-1.5 text-left max-w-[200px]">
+                  <td className="px-2 py-1.5 text-left max-w-[280px]">
                     <div className="flex items-center gap-1">
                       <button
                         onClick={(e) => { e.stopPropagation(); dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin }) }}
@@ -1278,6 +1342,9 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                         <span className="text-[9px] text-accent/70 ml-1 shrink-0" title={`${inst.dedupCandidates!.length} more ETFs in this group`}>
                           +{inst.dedupCandidates!.length}
                         </span>
+                      )}
+                      {inst.priceFetched && (
+                        <Sparkline closes={inst.closes} />
                       )}
                     </div>
                     <div className="text-muted text-[10px] mt-0.5 flex items-center gap-1.5">
