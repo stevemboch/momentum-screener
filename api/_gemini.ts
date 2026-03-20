@@ -58,7 +58,7 @@ export async function geminiSearchChat(
       const model = getGenAI().getGenerativeModel({
         model: modelId,
         systemInstruction: systemPrompt,
-        ...(isGemma ? {} : { tools: [{ googleSearch: {} }] }),
+        ...(isGemma ? {} : { tools: [{ googleSearchRetrieval: {} }] }),
       })
       const result = await model.generateContent(userMessage)
       const text = result.response.text()
