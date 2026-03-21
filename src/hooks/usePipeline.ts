@@ -114,6 +114,8 @@ function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS) {
 
 interface OpenFIGIResult { name?: string; securityDescription?: string; isin?: string; ticker?: string; securityType?: string; securityType2?: string }
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
+type YahooProfile = 'stock' | 'fund'
+interface YahooRequestOptions { includeWeekly?: boolean; profile?: YahooProfile }
 
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
   return apiFetchJson<OpenFIGIResult[]>('/api/openfigi', {
@@ -123,12 +125,30 @@ async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise
   })
 }
 
-async function apiYahooSingle(ticker: string): Promise<any> {
+function getYahooRequestOptions(inst: Instrument): Required<YahooRequestOptions> {
+  const isFundLike = inst.type === 'ETF' || inst.type === 'ETC' || inst.type === 'ETN'
+  return {
+    includeWeekly: !isFundLike,
+    profile: isFundLike ? 'fund' : 'stock',
+  }
+}
+
+async function apiYahooBatch(tickers: string[], options?: YahooRequestOptions): Promise<any[]> {
+  if (tickers.length === 0) return []
   const data = await apiFetchJson<any[]>('/api/yahoo', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tickers: [ticker] }),
+    body: JSON.stringify({
+      tickers,
+      includeWeekly: options?.includeWeekly,
+      profile: options?.profile,
+    }),
   })
+  return Array.isArray(data) ? data : []
+}
+
+async function apiYahooSingle(ticker: string, options?: YahooRequestOptions): Promise<any> {
+  const data = await apiYahooBatch([ticker], options)
   return data[0] ?? null
 }
 
@@ -260,7 +280,7 @@ export function usePipeline() {
   const ensureReferenceR3m = useCallback(async () => {
     if (state.referenceR3m != null) return state.referenceR3m
     try {
-      const r = await apiYahooSingle('URTH')
+      const r = await apiYahooSingle('URTH', { includeWeekly: false, profile: 'fund' })
       if (r?.closes?.length) {
         const { r3m } = calculateReturns(r.closes)
         dispatch({ type: 'SET_REFERENCE_R3M', r3m: r3m ?? null })
@@ -276,59 +296,147 @@ export function usePipeline() {
     const withTickers = instruments.filter((i) => i.yahooTicker)
     if (withTickers.length === 0) return instruments
     const cachedResults: any[] = new Array(withTickers.length)
-    const tasks: { idx: number; ticker: string }[] = []
+    const tasksByKey = new Map<string, { ticker: string; profile: YahooProfile; includeWeekly: boolean; resultIndices: number[] }>()
+    let cachedCount = 0
     withTickers.forEach((inst, idx) => {
       const key = buildYahooCacheKey(inst.yahooTicker)
-      const cached = cacheGet<any>(key, YAHOO_TTL_MS)
-      if (cached) cachedResults[idx] = cached
-      else tasks.push({ idx, ticker: inst.yahooTicker })
+      let cached = cacheGet<any>(key, YAHOO_TTL_MS)
+      if (!cached) {
+        const legacy = cacheGet<any>(buildLegacyYahooCacheKey(inst.yahooTicker), YAHOO_TTL_MS)
+        if (legacy) {
+          cached = legacy
+          cacheSet(key, legacy, YAHOO_TTL_MS)
+        }
+      }
+      if (cached) {
+        cachedResults[idx] = cached
+        cachedCount++
+      }
+      else {
+        const options = getYahooRequestOptions(inst)
+        const taskKey = `${inst.yahooTicker}|${options.profile}|${options.includeWeekly ? '1' : '0'}`
+        const existing = tasksByKey.get(taskKey)
+        if (existing) {
+          existing.resultIndices.push(idx)
+        } else {
+          tasksByKey.set(taskKey, {
+            ticker: inst.yahooTicker,
+            profile: options.profile,
+            includeWeekly: options.includeWeekly,
+            resultIndices: [idx],
+          })
+        }
+      }
     })
-    const cachedCount = withTickers.length - tasks.length
+    const tasks = Array.from(tasksByKey.values())
     const limit = Math.max(YAHOO_CONCURRENCY_MIN, Math.min(YAHOO_CONCURRENCY_MAX, yahooConcurrency))
-    const taskFns = tasks.map((t) => () => apiYahooSingle(t.ticker).catch((err) => ({ error: err.message, ticker: t.ticker })))
-    const fetched = tasks.length
-      ? await parallelLimit(taskFns, limit, (done) =>
-        setStatus(`Fetching prices: ${cachedCount + done} / ${withTickers.length}`, cachedCount + done, withTickers.length)
+    const requestGroups = [
+      {
+        profile: 'stock' as YahooProfile,
+        includeWeekly: true,
+        items: tasks.filter((t) => t.profile === 'stock' && t.includeWeekly),
+      },
+      {
+        profile: 'fund' as YahooProfile,
+        includeWeekly: false,
+        items: tasks.filter((t) => t.profile === 'fund' && !t.includeWeekly),
+      },
+    ].filter((g) => g.items.length > 0)
+
+    let done = cachedCount
+    setStatus(`Fetching prices: ${done} / ${withTickers.length}`, done, withTickers.length)
+
+    const fetched: Array<{ task: (typeof tasks)[number]; result: any }> = []
+    for (const group of requestGroups) {
+      const batchSize = group.profile === 'fund' ? 20 : 12
+      const batches: typeof group.items[] = []
+      for (let i = 0; i < group.items.length; i += batchSize) {
+        batches.push(group.items.slice(i, i + batchSize))
+      }
+
+      const requestConcurrency = Math.max(
+        1,
+        Math.min(group.profile === 'fund' ? 4 : 3, Math.ceil(limit / 4))
       )
-      : []
+      const batchResults = await parallelLimit(
+        batches.map((batch) => async () => {
+          try {
+            const tickers = batch.map((t) => t.ticker)
+            const payload = await apiYahooBatch(tickers, {
+              profile: group.profile,
+              includeWeekly: group.includeWeekly,
+            })
+            return batch.map((task, idx) => ({
+              task,
+              result: payload[idx] ?? { error: 'Empty Yahoo payload', ticker: task.ticker },
+            }))
+          } catch (err: any) {
+            return batch.map((task) => ({
+              task,
+              result: { error: err?.message ?? 'Yahoo batch failed', ticker: task.ticker },
+            }))
+          } finally {
+            done += batch.reduce((sum, item) => sum + item.resultIndices.length, 0)
+            setStatus(`Fetching prices: ${done} / ${withTickers.length}`, done, withTickers.length)
+          }
+        }),
+        requestConcurrency,
+      )
+      fetched.push(...batchResults.flat())
+    }
+
     const results = [...cachedResults]
-    fetched.forEach((r: any, i: number) => {
-      const t = tasks[i]
-      results[t.idx] = r
-      if (r) cacheSet(buildYahooCacheKey(t.ticker), r, YAHOO_TTL_MS)
+    fetched.forEach(({ task, result }) => {
+      for (const resultIdx of task.resultIndices) {
+        results[resultIdx] = result
+      }
+      if (result) cacheSet(buildYahooCacheKey(task.ticker), result, YAHOO_TTL_MS)
     })
 
-    const errorCount = fetched.filter((r: any) => !r || r.error).length
+    const errorCount = fetched.filter(({ result }) => !result || result.error).length
     const errorRate = fetched.length > 0 ? errorCount / fetched.length : 0
     if (errorRate >= 0.2 && yahooConcurrency > YAHOO_CONCURRENCY_MIN) yahooConcurrency -= 1
     else if (errorRate === 0 && fetched.length > 0 && yahooConcurrency < YAHOO_CONCURRENCY_MAX) yahooConcurrency += 1
 
     const updated = [...instruments]
+    const byTicker = new Map<string, number[]>()
+    updated.forEach((inst, idx) => {
+      if (!inst.yahooTicker) return
+      const current = byTicker.get(inst.yahooTicker)
+      if (current) current.push(idx)
+      else byTicker.set(inst.yahooTicker, [idx])
+    })
+    const appliedTickers = new Set<string>()
     results.forEach((r: any, i) => {
       if (!r) return
-      const idx = updated.findIndex((inst) => inst.yahooTicker === withTickers[i].yahooTicker)
-      if (idx < 0) return
-      const shouldReplaceName = r.longName && isUnclassifiedInstrument(updated[idx])
-      const nextLongName = shouldReplaceName ? r.longName : updated[idx].longName
-      updated[idx] = {
-        ...updated[idx],
-        closes: r.closes || [],
-        highs: r.highs || [],
-        lows: r.lows || [],
-        volumes: r.volumes || [],
-        timestamps: r.timestamps || [],
-        closesWeekly: r.closesWeekly ?? updated[idx].closesWeekly ?? [],
-        timestampsWeekly: r.timestampsWeekly ?? updated[idx].timestampsWeekly ?? [],
-        priceCurrency: r.currency ?? updated[idx].priceCurrency ?? null,
-        currency: updated[idx].currency ?? r.currency ?? null,
-        marketCap: r.marketCap ?? updated[idx].marketCap ?? null,
-        pe: r.pe ?? null, pb: r.pb ?? null,
-        ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
-        returnOnAssets: r.returnOnAssets ?? null,
-        yahooLongName: r.longName ?? updated[idx].yahooLongName,
-        longName: nextLongName,
-        displayName: nextLongName ? toDisplayName(nextLongName, updated[idx].displayName) : updated[idx].displayName,
-        priceFetched: true, priceError: r.error, fundamentalsFetched: true,
+      const ticker = withTickers[i].yahooTicker
+      if (appliedTickers.has(ticker)) return
+      appliedTickers.add(ticker)
+      const targetIndices = byTicker.get(ticker)
+      if (!targetIndices || targetIndices.length === 0) return
+      for (const idx of targetIndices) {
+        const shouldReplaceName = r.longName && isUnclassifiedInstrument(updated[idx])
+        const nextLongName = shouldReplaceName ? r.longName : updated[idx].longName
+        updated[idx] = {
+          ...updated[idx],
+          closes: r.closes || [],
+          highs: r.highs || [],
+          lows: r.lows || [],
+          volumes: r.volumes || [],
+          timestamps: r.timestamps || [],
+          closesWeekly: r.closesWeekly ?? updated[idx].closesWeekly ?? [],
+          timestampsWeekly: r.timestampsWeekly ?? updated[idx].timestampsWeekly ?? [],
+          priceCurrency: r.currency ?? updated[idx].priceCurrency ?? null,
+          currency: updated[idx].currency ?? r.currency ?? null,
+          marketCap: r.marketCap ?? updated[idx].marketCap ?? null,
+          pe: r.pe ?? null, pb: r.pb ?? null,
+          ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
+          returnOnAssets: r.returnOnAssets ?? null,
+          yahooLongName: r.longName ?? updated[idx].yahooLongName,
+          longName: nextLongName,
+          displayName: nextLongName ? toDisplayName(nextLongName, updated[idx].displayName) : updated[idx].displayName,
+          priceFetched: true, priceError: r.error, fundamentalsFetched: true,
+        }
       }
     })
     return updated
@@ -650,7 +758,7 @@ export function usePipeline() {
         }
       }
       if (!r) {
-        r = await apiYahooSingle(inst.yahooTicker)
+        r = await apiYahooSingle(inst.yahooTicker, getYahooRequestOptions(inst))
         if (r) cacheSet(cacheKey, r, YAHOO_TTL_MS)
       }
       if (!r) return

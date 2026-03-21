@@ -23,7 +23,19 @@ interface PriceResult {
   error?: string
 }
 
-async function fetchOneTicker(ticker: string): Promise<PriceResult> {
+type YahooProfile = 'stock' | 'fund'
+
+async function fetchOneTicker(
+  ticker: string,
+  options?: { includeWeekly?: boolean; profile?: YahooProfile }
+): Promise<PriceResult> {
+  const includeWeekly = options?.includeWeekly !== false
+  const profile: YahooProfile = options?.profile ?? 'stock'
+  const quoteModules =
+    profile === 'fund'
+      ? 'price,summaryDetail,fundProfile'
+      : 'price,defaultKeyStatistics,financialData,summaryDetail,fundProfile'
+
   const base: PriceResult = {
     ticker, longName: null, currency: null, closes: [], highs: [], lows: [], timestamps: [],
     volumes: [], closesWeekly: [], timestampsWeekly: [], marketCap: null,
@@ -38,13 +50,15 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
       fetch(
-        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price,defaultKeyStatistics,financialData,summaryDetail,fundProfile`,
+        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
-      fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=10y&interval=1wk&includePrePost=false`,
-        { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
-      ),
+      includeWeekly
+        ? fetch(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=10y&interval=1wk&includePrePost=false`,
+            { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
+          )
+        : Promise.resolve(null),
     ])
 
     if (chartRes.ok) {
@@ -73,7 +87,7 @@ async function fetchOneTicker(ticker: string): Promise<PriceResult> {
       }
     }
 
-    if (weeklyRes.ok) {
+    if (weeklyRes?.ok) {
       const weeklyData = await weeklyRes.json()
       const result = weeklyData?.chart?.result?.[0]
       if (result) {
@@ -136,9 +150,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!requireAuth(req, res)) return
   const tickers: string[] = req.body?.tickers
+  const includeWeekly = req.body?.includeWeekly !== false
+  const profile: YahooProfile = req.body?.profile === 'fund' ? 'fund' : 'stock'
   if (!Array.isArray(tickers) || tickers.length === 0)
     return res.status(400).json({ error: 'tickers array required' })
 
-  const results = await runWithConcurrency(tickers, 5, fetchOneTicker)
+  const concurrency = profile === 'fund' ? 8 : 6
+  const results = await runWithConcurrency(
+    tickers,
+    concurrency,
+    (ticker) => fetchOneTicker(ticker, { includeWeekly, profile })
+  )
   return res.status(200).json(results)
 }
