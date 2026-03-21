@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { geminiChat, parseJSON } from './_gemini'
-import { requireAuth } from './_auth'
+import { geminiChat, parseJSON } from '../server/gemini'
+import { requireAuth } from '../server/auth'
 
 type Primitive = string | number | boolean | null
 type Operator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in'

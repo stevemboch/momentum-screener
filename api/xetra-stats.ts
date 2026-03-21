@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import * as zlib from 'zlib'
 import { promisify } from 'util'
-import { requireAuth } from './_auth'
+import { requireAuth } from '../server/auth'
 const inflateRaw = promisify(zlib.inflateRaw)
 
 export interface ETFStats {

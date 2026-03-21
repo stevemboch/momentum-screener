@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { geminiSearchChat, parseJSON } from './_gemini'
-import { requireAuth } from './_auth'
+import { geminiSearchChat, parseJSON } from '../server/gemini'
+import { requireAuth } from '../server/auth'
 
 const CONFIDENCE_WEIGHTS: Record<string, number> = {
   high: 1.0,

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { parseJSON } from './_openrouter'
-import { aiChat } from './_ai'
-import { requireAuth } from './_auth'
+import { parseJSON } from '../server/openrouter'
+import { aiChat } from '../server/ai'
+import { requireAuth } from '../server/auth'
 import type { RegimeInputs } from '../src/utils/regimeInputs'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

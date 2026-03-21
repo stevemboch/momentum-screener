@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { requireAuth } from './_auth'
+import { requireAuth } from '../server/auth'
 
 interface FigiJob {
   idType: string

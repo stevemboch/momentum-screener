@@ -1,5 +1,5 @@
-import { geminiChat } from './_gemini'
-import { openrouterChat } from './_openrouter'
+import { geminiChat } from './gemini'
+import { openrouterChat } from './openrouter'
 
 export async function aiChat(
   systemPrompt: string,

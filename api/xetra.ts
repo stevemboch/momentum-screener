@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { requireAuth } from './_auth'
+import { requireAuth } from '../server/auth'
 
 async function findXetraCSVUrl(): Promise<string | null> {
   try {

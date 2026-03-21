@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { geminiSearchChat, parseJSON } from './_gemini'
-import { requireAuth } from './_auth'
+import { geminiSearchChat, parseJSON } from '../server/gemini'
+import { requireAuth } from '../server/auth'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })

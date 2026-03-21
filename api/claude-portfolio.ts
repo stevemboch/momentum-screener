@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { geminiChat, parseJSON } from './_gemini'
-import { requireAuth } from './_auth'
+import { geminiChat, parseJSON } from '../server/gemini'
+import { requireAuth } from '../server/auth'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST')
