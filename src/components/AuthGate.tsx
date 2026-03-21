@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../auth/AuthProvider'
+import { StatusBadge } from './ui/StatusBadge'
 
 export function AuthGate() {
   const { status, error, login } = useAuth()
@@ -16,7 +17,7 @@ export function AuthGate() {
     setSubmitting(true)
     setLocalError(null)
     const ok = await login(password)
-    if (!ok) setLocalError('Ungueltiges Passwort')
+    if (!ok) setLocalError('Invalid password')
     setSubmitting(false)
     if (ok) setPassword('')
   }
@@ -27,8 +28,8 @@ export function AuthGate() {
         <div className="font-mono text-sm font-semibold tracking-wider text-gray-100 mb-1">
           MOMENTUM<span className="text-accent">_</span>SCREENER
         </div>
-        <div className="text-xs font-mono text-muted mb-5">
-          Authentication required
+        <div className="mb-5">
+          <StatusBadge tone="warning">Authentication required</StatusBadge>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -36,21 +37,22 @@ export function AuthGate() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Passwort"
+            placeholder="Password"
             autoFocus
-            className="bg-bg border border-border rounded px-3 py-2 text-sm font-mono text-gray-200 outline-none focus:border-accent"
+            className="focus-ring bg-bg border border-border rounded px-3 py-2 text-sm font-mono text-gray-200"
+            aria-label="Password"
           />
           <button
             type="submit"
             disabled={disabled}
-            className="px-3 py-2 text-sm font-mono rounded border border-accent/40 text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="btn btn-md btn-primary focus-ring w-full"
           >
-            {loading || submitting ? 'Pruefe…' : 'Einloggen'}
+            {loading || submitting ? 'Checking...' : 'Sign in'}
           </button>
         </form>
 
         {(localError || error) && (
-          <div className="mt-3 text-xs font-mono text-red-400">
+          <div className="mt-3 text-ui-sm font-mono text-red-400">
             {localError || error}
           </div>
         )}

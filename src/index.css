@@ -2,21 +2,112 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --ui-motion-fast: 140ms;
+  --ui-motion-base: 190ms;
+  --ui-motion-ease: cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+
 @layer components {
+  .text-ui-xs {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .text-ui-sm {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .text-ui-base {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-bg;
+  }
+
   .btn {
-    @apply text-[10px] px-2 py-1 rounded border border-border font-mono transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 font-mono text-ui-xs transition-colors duration-150 select-none disabled:opacity-45 disabled:cursor-not-allowed;
+    transition-timing-function: var(--ui-motion-ease);
   }
+
   .btn-sm {
-    @apply text-[10px] px-2 py-0.5 rounded border border-border font-mono transition-colors;
+    @apply px-2 py-1 text-ui-xs;
   }
-  .btn-muted {
-    @apply text-muted hover:text-gray-300 hover:border-accent/40;
+
+  .btn-md {
+    @apply px-3 py-1.5 text-ui-sm;
   }
-  .btn-accent {
-    @apply text-accent border-accent/30 bg-accent/10 hover:bg-accent/20;
+
+  .btn-primary {
+    @apply text-accent border-accent/35 bg-accent/10 hover:bg-accent/20 hover:border-accent/55;
   }
+
+  .btn-secondary {
+    @apply text-gray-300 bg-surface2/70 border-border hover:text-gray-100 hover:border-accent/40;
+  }
+
   .btn-ghost {
-    @apply text-muted hover:text-gray-300;
+    @apply text-muted border-transparent bg-transparent hover:text-gray-200 hover:border-border/70;
+  }
+
+  .btn-danger {
+    @apply text-red-400 border-red-400/30 bg-red-400/5 hover:bg-red-400/15;
+  }
+
+  .btn-muted {
+    @apply btn btn-secondary;
+  }
+
+  .btn-accent {
+    @apply btn btn-primary;
+  }
+
+  .icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted transition-colors duration-150 hover:text-gray-200 hover:border-accent/35;
+    transition-timing-function: var(--ui-motion-ease);
+  }
+
+  .panel-shell {
+    @apply rounded-md border border-border bg-bg/40;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2;
+  }
+
+  .panel-title {
+    @apply text-ui-xs font-mono uppercase tracking-widest text-muted;
+  }
+
+  .panel-subtitle {
+    @apply text-ui-xs font-mono text-muted;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-ui-xs font-mono border;
+  }
+
+  .status-success {
+    @apply text-green border-green/30 bg-green/10;
+  }
+
+  .status-warning {
+    @apply text-amber border-amber/35 bg-amber/10;
+  }
+
+  .status-danger {
+    @apply text-red border-red/30 bg-red/10;
+  }
+
+  .status-info {
+    @apply text-accent border-accent/35 bg-accent/10;
+  }
+
+  .status-muted {
+    @apply text-muted border-border bg-surface2/60;
   }
 }
 
@@ -29,6 +120,13 @@ body {
   background-color: #080a0f;
   color: #e2e8f0;
   -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
 
 /* Custom scrollbar */

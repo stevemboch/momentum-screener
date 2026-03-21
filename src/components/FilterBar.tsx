@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { apiFetchJson } from '../api/client'
 import { useAppState, useDisplayedInstruments } from '../store'
 import type { ColumnGroup, TypeFilter } from '../types'
 import { isAiFilterPlan } from '../utils/aiFilter'
-import { apiFetchJson } from '../api/client'
+import { StatusBadge } from './ui/StatusBadge'
 
 const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
   scores: 'Scores',
@@ -31,21 +32,24 @@ export function FilterBar() {
   const [aiInput, setAiInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+
   const monitoring = displayed.filter((i) => i.tfaPhase === 'monitoring').length
-  const aboveAllMAs = displayed.filter(i => i.tfaPhase === 'above_all_mas').length
+  const aboveAllMAs = displayed.filter((i) => i.tfaPhase === 'above_all_mas').length
   const watch = displayed.filter((i) => i.tfaPhase === 'watch').length
   const fetching = displayed.filter((i) => i.tfaPhase === 'fetching').length
   const qualified = displayed.filter((i) => i.tfaPhase === 'qualified').length
   const pullbackCount = displayed.filter(
-    (i) => i.type === 'Stock'
-      && i.aboveMa200 === true
-      && (i.r3m ?? -1) > 0
-      && i.pullbackScore !== null
-      && i.pullbackScore !== undefined
+    (i) =>
+      i.type === 'Stock' &&
+      i.aboveMa200 === true &&
+      (i.r3m ?? -1) > 0 &&
+      i.pullbackScore !== null &&
+      i.pullbackScore !== undefined
   ).length
 
   type PrimaryFilter = TypeFilter | 'tfa' | 'pullback'
   const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : typeFilter
+  const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
 
   const setPrimaryFilter = (f: PrimaryFilter) => {
     if (f === 'tfa') {
@@ -87,8 +91,6 @@ export function FilterBar() {
     })
   }
 
-  const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
-
   useEffect(() => {
     if (!colMenuOpen) return
     const handleClick = (e: MouseEvent) => {
@@ -96,8 +98,15 @@ export function FilterBar() {
       if (colMenuRef.current.contains(e.target as Node)) return
       setColMenuOpen(false)
     }
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setColMenuOpen(false)
+    }
     document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleEscape)
+    }
   }, [colMenuOpen])
 
   const handleAiFilter = async () => {
@@ -112,11 +121,11 @@ export function FilterBar() {
         body: JSON.stringify({ query: q }),
       })
       if (data.error) {
-        setAiError(data.error ?? 'Fehler')
+        setAiError(data.error ?? 'Error')
         return
       }
       if (!isAiFilterPlan(data.plan)) {
-        setAiError('Ungültiger KI-Filter')
+        setAiError('Invalid AI filter response')
         return
       }
       dispatch({
@@ -125,71 +134,86 @@ export function FilterBar() {
       })
       setAiInput('')
     } catch (err: any) {
-      setAiError(err?.message ?? 'Netzwerkfehler')
+      setAiError(err?.message ?? 'Network error')
     } finally {
       setAiLoading(false)
     }
   }
 
   const clearAiFilter = () => {
-    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterPlan: null, aiFilterQuery: null, aiFilterActive: false } })
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: { aiFilterPlan: null, aiFilterQuery: null, aiFilterActive: false },
+    })
     setAiError(null)
   }
 
   const editAiFilter = () => {
     if (!aiFilterQuery) return
     setAiInput(aiFilterQuery)
-    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterPlan: null, aiFilterQuery: null, aiFilterActive: false } })
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: { aiFilterPlan: null, aiFilterQuery: null, aiFilterActive: false },
+    })
     setAiError(null)
   }
 
   return (
-    <div className="flex items-center gap-3 flex-wrap">
-      {/* Type filter */}
-      <div className="flex items-center gap-0.5 bg-surface2 rounded p-0.5 border border-border">
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center gap-0.5 rounded border border-border bg-surface2 p-0.5">
         {(['all', 'etf', 'stock', 'tfa', 'pullback'] as PrimaryFilter[]).map((f) => (
           <button
             key={f}
+            type="button"
             onClick={() => setPrimaryFilter(f)}
             title={
               f === 'tfa'
-                ? 'Zeigt nur Turnaround-Kandidaten: −40% bis −90% unter 52W-Hoch'
+                ? 'Shows turnaround candidates roughly 40% to 90% below 52-week high'
                 : f === 'pullback'
-                  ? 'Zeigt Top-Momentum-Stocks mit RSI-Rücksetzer — potenzielle Swing-Einstiege'
+                  ? 'Shows top momentum stocks with RSI pullback setups'
                   : undefined
             }
-            className={`px-2.5 py-1 text-xs font-mono rounded transition-colors ${
+            className={`focus-ring rounded px-2.5 py-1 font-mono text-ui-sm transition-colors ${
               primaryFilter === f
-                ? 'bg-accent/20 text-accent border border-accent/30'
+                ? 'border border-accent/30 bg-accent/20 text-accent'
                 : 'text-muted hover:text-gray-300'
             }`}
           >
             {f === 'all' && 'All'}
             {f === 'etf' && 'ETFs & ETCs'}
             {f === 'stock' && 'Stocks'}
-            {f === 'tfa' && `TFA ${tfaMode ? `(${monitoring} / ${aboveAllMAs} / ${watch}${fetching > 0 ? ` / ${fetching}` : ''} / ${qualified})` : ''}`}
+            {f === 'tfa' &&
+              `TFA ${
+                tfaMode
+                  ? `(${monitoring} / ${aboveAllMAs} / ${watch}${fetching > 0 ? ` / ${fetching}` : ''} / ${qualified})`
+                  : ''
+              }`}
             {f === 'pullback' && `Pullback ${pullbackMode ? `(${pullbackCount})` : ''}`}
           </button>
         ))}
       </div>
 
-      {/* KI-Freitext-Filter */}
-      <div className="flex items-center gap-1.5 flex-1 min-w-[200px] max-w-[400px]">
+      <div className="flex max-w-[430px] min-w-[220px] flex-1 items-center gap-1.5">
         {aiFilterActive && aiFilterQuery ? (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-400/10 border border-purple-400/30 rounded text-[11px] font-mono text-purple-300 flex-1 min-w-0">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-ui-sm text-accent">
             <span className="shrink-0">✦</span>
-            <span className="truncate flex-1" title={aiFilterQuery}>{aiFilterQuery}</span>
+            <span className="min-w-0 flex-1 truncate" title={aiFilterQuery}>
+              {aiFilterQuery}
+            </span>
             <button
+              type="button"
               onClick={editAiFilter}
-              className="shrink-0 text-purple-400/70 hover:text-purple-200 transition-colors"
-              title="Filtertext übernehmen und bearbeiten"
+              className="focus-ring shrink-0 text-accent/70 transition-colors hover:text-accent"
+              title="Edit filter text"
             >
               Edit
             </button>
             <button
+              type="button"
               onClick={clearAiFilter}
-              className="shrink-0 text-purple-400/60 hover:text-purple-300 transition-colors ml-1"
-              title="Filter entfernen"
+              className="focus-ring ml-1 shrink-0 text-accent/65 transition-colors hover:text-accent"
+              title="Remove filter"
+              aria-label="Remove AI filter"
             >
               ×
             </button>
@@ -199,63 +223,87 @@ export function FilterBar() {
             <input
               type="text"
               value={aiInput}
-              onChange={(e) => { setAiInput(e.target.value); setAiError(null) }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAiFilter() }}
-              placeholder="KI-Filter: z.B. profitable Stocks unter MA50…"
-              className={`flex-1 bg-bg border rounded px-2.5 py-1 text-[11px] font-mono text-gray-300
-                placeholder:text-muted outline-none transition-colors
-                ${aiError ? 'border-red-400/50' : 'border-border focus:border-purple-400/50'}`}
+              onChange={(e) => {
+                setAiInput(e.target.value)
+                setAiError(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAiFilter()
+              }}
+              placeholder="AI filter: e.g. profitable stocks below MA50"
+              className={`focus-ring flex-1 rounded border bg-bg px-2.5 py-1 font-mono text-ui-sm text-gray-300 placeholder:text-muted ${
+                aiError ? 'border-red-400/50' : 'border-border'
+              }`}
+              aria-label="AI filter input"
             />
             <button
+              type="button"
               onClick={handleAiFilter}
               disabled={!aiInput.trim() || aiLoading}
-              className="shrink-0 px-2 py-1 text-[11px] font-mono rounded border
-                border-purple-400/30 text-purple-400 hover:bg-purple-400/10
-                disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="KI-Filter anwenden (Enter)"
+              className="focus-ring shrink-0 rounded border border-accent/30 px-2 py-1 font-mono text-ui-sm text-accent transition-colors hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-30"
+              title="Apply AI filter (Enter)"
+              aria-label="Apply AI filter"
             >
               {aiLoading ? '…' : '✦'}
             </button>
           </>
         )}
+
         {aiError && (
-          <span className="text-[10px] text-red-400 font-mono shrink-0 max-w-[140px] truncate" title={aiError}>
+          <span
+            className="max-w-[160px] shrink-0 truncate font-mono text-ui-xs text-red-400"
+            title={aiError}
+          >
             ✗ {aiError}
           </span>
         )}
       </div>
 
-      {/* Instrument count */}
-      <span className="text-xs font-mono text-muted ml-1">
+      <span className="ml-1 font-mono text-ui-sm text-muted">
         {displayed.length.toLocaleString()}
         {displayed.length !== state.instruments.length && (
           <span className="text-muted"> / {state.instruments.length.toLocaleString()}</span>
-        )}
-        {' '}instruments
+        )}{' '}
+        instruments
       </span>
 
       <div className="relative ml-auto" ref={colMenuRef}>
         <button
+          type="button"
           onClick={() => setColMenuOpen(!colMenuOpen)}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded border border-border text-muted hover:text-gray-300 transition-colors"
+          className="btn btn-sm btn-secondary focus-ring"
+          aria-expanded={colMenuOpen}
+          aria-haspopup="menu"
+          aria-label="Toggle column visibility menu"
         >
-          Columns {hiddenColumnGroups.length > 0 && (
+          Columns
+          {hiddenColumnGroups.length > 0 ? (
             <span className="text-accent">({hiddenColumnGroups.length} hidden)</span>
-          )}
+          ) : null}
         </button>
         {colMenuOpen && (
-          <div className="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded shadow-xl p-2 flex flex-col gap-1 min-w-[140px]">
-            {(Object.keys(COL_GROUP_LABELS) as ColumnGroup[]).map(group => {
+          <div
+            className="absolute right-0 top-full z-20 mt-1 flex min-w-[160px] flex-col gap-1 rounded border border-border bg-surface p-2 shadow-xl"
+            role="menu"
+          >
+            {(Object.keys(COL_GROUP_LABELS) as ColumnGroup[]).map((group) => {
               const hidden = hiddenColumnGroups.includes(group)
               return (
                 <button
                   key={group}
+                  type="button"
                   onClick={() => dispatch({ type: 'TOGGLE_COLUMN_GROUP', group })}
-                  className={`flex items-center gap-2 px-2 py-1 text-xs font-mono rounded text-left transition-colors ${
+                  className={`focus-ring flex items-center gap-2 rounded px-2 py-1 text-left font-mono text-ui-sm transition-colors hover:bg-surface2 ${
                     hidden ? 'text-muted' : 'text-gray-300'
-                  } hover:bg-surface2`}
+                  }`}
+                  role="menuitemcheckbox"
+                  aria-checked={!hidden}
                 >
-                  <span className={`w-2 h-2 rounded-full ${hidden ? 'bg-surface2 border border-border' : 'bg-accent'}`} />
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      hidden ? 'border border-border bg-surface2' : 'bg-accent'
+                    }`}
+                  />
                   {COL_GROUP_LABELS[group]}
                 </button>
               )
@@ -264,30 +312,23 @@ export function FilterBar() {
         )}
       </div>
 
-      {/* Fetch progress */}
       {isActive && (
-        <div className="flex items-center gap-2 ml-auto text-xs font-mono text-muted">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+        <div className="ml-auto flex items-center gap-2 font-mono text-ui-sm text-muted">
+          <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
           {fetchStatus.message}
           {fetchStatus.total > 0 && (
-            <>
-              <div className="w-24 h-1 bg-surface2 rounded overflow-hidden border border-border">
-                <div
-                  className="h-full bg-accent transition-all duration-300"
-                  style={{ width: `${Math.min(100, (fetchStatus.current / fetchStatus.total) * 100)}%` }}
-                />
-              </div>
-            </>
+            <div className="h-1 w-24 overflow-hidden rounded border border-border bg-surface2">
+              <div
+                className="h-full bg-accent transition-all duration-300"
+                style={{ width: `${Math.min(100, (fetchStatus.current / fetchStatus.total) * 100)}%` }}
+              />
+            </div>
           )}
         </div>
       )}
 
-      {fetchStatus.phase === 'done' && (
-        <span className="ml-auto text-xs font-mono text-green-400">✓ {fetchStatus.message}</span>
-      )}
-      {fetchStatus.phase === 'error' && (
-        <span className="ml-auto text-xs font-mono text-red-400">✗ {fetchStatus.message}</span>
-      )}
+      {fetchStatus.phase === 'done' && <StatusBadge tone="success">✓ {fetchStatus.message}</StatusBadge>}
+      {fetchStatus.phase === 'error' && <StatusBadge tone="danger">✗ {fetchStatus.message}</StatusBadge>}
     </div>
   )
 }

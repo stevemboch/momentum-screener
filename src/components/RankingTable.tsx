@@ -27,25 +27,25 @@ const COLUMNS: Col[] = [
   { key: 'pb',            label: 'P/B',      title: 'Price / Book' },
   { key: 'earningsYield', label: 'EY',       title: 'Earnings Yield (rank)' },
   { key: 'returnOnAssets', label: 'ROA',     title: 'Return on Assets — Net income / total assets (rank)' },
-  { key: 'drawFromHigh',  label: '52W',      title: '% unter 52W-Hoch' },
-  { key: 'drawFrom5YHigh', label: '5Y',      title: '% unter 5-Jahres-Hoch (Wochenbasis)' },
-  { key: 'drawFrom7YHigh', label: '7Y',      title: '% unter 7-Jahres-Hoch (Capped ATH)' },
+  { key: 'drawFromHigh',  label: '52W',      title: '% below 52-week high' },
+  { key: 'drawFrom5YHigh', label: '5Y',      title: '% below 5-year high (weekly)' },
+  { key: 'drawFrom7YHigh', label: '7Y',      title: '% below 7-year high (capped ATH)' },
   { key: 'rsi14',         label: 'RSI',      title: 'RSI(14)' },
-  { key: 'weeklyRsi14',   label: 'RSI(W)',   title: 'RSI(14) auf Wochenbasis' },
-  { key: 'levyRS',        label: 'Levy',     title: 'Levy RS (Kurs / 26W-GD)' },
-  { key: 'weeklyVolaRatio', label: 'VolaR',  title: 'Vola-Ratio 3M/1J wöchentlich (< 0.7 = Kompression)' },
-  { key: 'tfaTScore',     label: 'T-Score',  title: 'TFA Technisch (0–1)' },
-  { key: 'tfaFScore',     label: 'F-Score',  title: 'TFA Fundamental (0–1)' },
-  { key: 'tfaTScore5Y',   label: 'T5Y',     title: 'TFA T-Score 5Y/7Y (0–1)' },
-  { key: 'tfaFScore5Y',   label: 'F5Y',     title: 'TFA F-Score 5Y/7Y relaxiert (0–1)' },
-  { key: 'tfaScore',      label: 'TFA ⭐',   title: 'TFA Gesamtscore (0–1)' },
+  { key: 'weeklyRsi14',   label: 'RSI(W)',   title: 'RSI(14) weekly' },
+  { key: 'levyRS',        label: 'Levy',     title: 'Levy RS (price / 26-week MA)' },
+  { key: 'weeklyVolaRatio', label: 'VolaR',  title: 'Volatility ratio 3M/1Y weekly (< 0.7 = compression)' },
+  { key: 'tfaTScore',     label: 'T-Score',  title: 'TFA technical score (0–1)' },
+  { key: 'tfaFScore',     label: 'F-Score',  title: 'TFA fundamental score (0–1)' },
+  { key: 'tfaTScore5Y',   label: 'T5Y',     title: 'TFA T-score 5Y/7Y (0–1)' },
+  { key: 'tfaFScore5Y',   label: 'F5Y',     title: 'TFA F-score 5Y/7Y relaxed (0–1)' },
+  { key: 'tfaScore',      label: 'TFA ⭐',   title: 'TFA total score (0–1)' },
   { key: 'tfaPhase',      label: 'TFA Status', title: 'TFA Pipeline Status' },
-  { key: 'tfaCrossoverDaysAgo', label: 'Cross', title: 'Tage seit MA-Crossover' },
+  { key: 'tfaCrossoverDaysAgo', label: 'Cross', title: 'Days since MA crossover' },
   { key: 'breakoutScore', label: 'Breakout Score', title: '0–5 points' },
   { key: 'breakoutAgeDays', label: 'Breakout Age', title: 'Days since breakout' },
-  { key: 'pullbackScore',  label: '↩ Score',  title: 'Pullback-Score 0–1 (Stocks über MA200 mit positiver 3M-Performance)' },
-  { key: 'pullbackStop',   label: 'PB Stop',  title: 'Stop-Loss: Vortagestief − 0.5×ATR' },
-  { key: 'pullbackTarget', label: 'PB Ziel',  title: 'Kursziel: Entry + 1.5× Risiko' },
+  { key: 'pullbackScore',  label: '↩ Score',  title: 'Pullback score 0–1 (stocks above MA200 with positive 3M return)' },
+  { key: 'pullbackStop',   label: 'PB Stop',  title: 'Stop-loss: previous low − 0.5×ATR' },
+  { key: 'pullbackTarget', label: 'PB Target',  title: 'Target: entry + 1.5× risk' },
   { key: 'pullbackRR',     label: 'R/R',      title: 'Risk-Reward-Ratio' },
 ]
 
@@ -204,7 +204,7 @@ function TfaPhaseBadge({
           title={tooltip}
           style={{ cursor: 'help' }}
         >
-          👁 Beobachtet
+          👁 Monitoring
           {dist != null && (
             <span className="ml-1 text-gray-500">
               {dist.ma} +{(dist.pct * 100).toFixed(1)}%
@@ -220,7 +220,7 @@ function TfaPhaseBadge({
           title={tooltip}
           style={{ cursor: 'help' }}
         >
-          🚀 Ausgebrochen
+          🚀 Breakout
         </span>
       )
     case 'watch':
@@ -230,7 +230,7 @@ function TfaPhaseBadge({
           title={tooltip}
           style={{ cursor: 'help' }}
         >
-          ⚡ Ausbruch
+          ⚡ Watch
         </span>
       )
     case 'fetching':
@@ -239,7 +239,7 @@ function TfaPhaseBadge({
           className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-blue-400/10 text-blue-300 border border-blue-400/20"
           title={tooltip}
         >
-          ⏳ Analyse...
+          ⏳ Analyzing...
         </span>
       )
     case 'qualified':
@@ -258,7 +258,7 @@ function TfaPhaseBadge({
           className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-red-400/10 text-red-400 border border-red-400/20"
           title={tooltip}
         >
-          ✗ Abgelehnt
+          ✗ Rejected
         </span>
       )
     case 'ko':
@@ -295,7 +295,7 @@ function MetricCell({ value, rank, fmt }: { value: number | null | undefined; ra
 function fmtDate(ts: number | null | undefined): string {
   if (!ts) return '—'
   try {
-  return new Date(ts * 1000).toLocaleDateString('de-DE')
+  return new Date(ts * 1000).toLocaleDateString('en-GB')
   } catch {
     return '—'
   }
@@ -519,9 +519,11 @@ function CandidateRow({
         <td className="px-2 py-1.5 text-right text-gray-300">
           {!hasPrices ? (
             <button
+              type="button"
               onClick={handleLoad}
               disabled={loading}
-              className="btn-sm btn-muted disabled:opacity-50"
+              className="btn btn-sm btn-secondary focus-ring disabled:opacity-50"
+              aria-label={`Load prices for ${candidate.displayName}`}
             >
               {loading ? '…' : '⬇ Load'}
             </button>
@@ -690,23 +692,28 @@ function ExpandedDetail({
               {inst.yahooLongName && <div>Yahoo long name: <span className="text-gray-300">{inst.yahooLongName}</span></div>}
               <div className="mt-1 flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => onLoadPrices(inst.isin)}
-                  className="btn-sm btn-muted"
+                  className="btn btn-sm btn-secondary focus-ring"
                 >
                   ⬇ Load prices
                 </button>
                 <span className="text-[10px] text-muted">Portfolio:</span>
                 <button
+                  type="button"
                   onClick={() => onTogglePortfolio(inst.isin)}
-                  className={`text-[10px] ${inst.inPortfolio ? 'text-amber-400' : 'text-muted hover:text-gray-300'}`}
+                  className={`focus-ring text-[10px] ${inst.inPortfolio ? 'text-amber-400' : 'text-muted hover:text-gray-300'}`}
                   title={inst.inPortfolio ? 'Remove from portfolio' : 'Add to portfolio'}
+                  aria-label={inst.inPortfolio ? `Remove ${inst.displayName} from portfolio` : `Add ${inst.displayName} to portfolio`}
                 >
                   ★
                 </button>
                 <button
+                  type="button"
                   onClick={() => onRemove(inst.isin)}
-                  className="text-[10px] text-muted hover:text-red-400"
+                  className="focus-ring text-[10px] text-muted hover:text-red-400"
                   title="Hide/remove instrument"
+                  aria-label={`Hide ${inst.displayName}`}
                 >
                   ×
                 </button>
@@ -774,6 +781,7 @@ function ExpandedDetail({
                     🌐 Analyst & Macro Context
                   </span>
                   <button
+                    type="button"
                     onClick={async () => {
                       setCombinedLoading(true)
                       try {
@@ -792,9 +800,8 @@ function ExpandedDetail({
                       }
                     }}
                     disabled={ctxLoading || combinedLoading}
-                    className="text-[10px] font-mono text-muted hover:text-gray-300
-                       border border-border rounded px-1.5 py-0.5
-                       disabled:opacity-40 transition-colors"
+                    className="btn btn-sm btn-ghost focus-ring disabled:opacity-40"
+                    aria-label={ctx ? 'Refresh analyst and context data' : 'Load analyst and context data'}
                   >
                     {(ctxLoading || combinedLoading) ? '…' : ctx ? '↺ Refresh' : '⬇ Load'}
                   </button>
@@ -807,7 +814,7 @@ function ExpandedDetail({
                 <div className="flex items-center gap-2">
                   {ctx && (
                     <span className="text-[10px] text-muted font-mono">
-                      {new Date(ctx.fetchedAt).toLocaleTimeString('de-DE')}
+                      {new Date(ctx.fetchedAt).toLocaleTimeString('en-GB')}
                     </span>
                   )}
                 </div>
@@ -862,7 +869,7 @@ function ExpandedDetail({
                           )}
                           {inst.targetCurrencyUnknown && (
                             <div className="text-amber-400 text-[10px]">
-                              ⚠ Kursziel-Währung konnte nicht verifiziert werden — Wert könnte in Fremdwährung sein
+                              ⚠ Could not verify target-price currency — value may be in a different currency
                             </div>
                           )}
                           {currencyMismatch && !inst.targetFxApplied && (
@@ -965,7 +972,7 @@ function ExpandedDetail({
                           : 'bg-orange-400/10 text-orange-400 border-orange-400/20'
                     }`}>
                       {inst.tfaScenario === '7y' ? '7Y Deep Value'
-                        : inst.tfaScenario === '5y' ? '5Y Konsolidierung'
+                        : inst.tfaScenario === '5y' ? '5Y Consolidation'
                           : '52W Crash'}
                     </span>
                   )}
@@ -977,37 +984,35 @@ function ExpandedDetail({
                   />
                   {inst.tfaPhase === 'above_all_mas' && !inst.analystFetched && (
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         onLoadAnalyst(inst.isin)
                       }}
-                      className="text-[10px] font-mono text-blue-400 hover:text-blue-300
-                                 border border-blue-400/30 rounded px-1.5 py-0.5
-                                 transition-colors"
-                      title="Fundamentaldaten und Gemini-Katalysator-Check laden"
+                      className="btn btn-sm btn-secondary focus-ring"
+                      title="Load fundamentals and Gemini catalyst check"
                     >
-                      Analyse laden
+                      Load analysis
                     </button>
                   )}
                   {inst.tfaPhase === 'above_all_mas' && inst.analystFetched && !inst.tfaFetched && (
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         onLoadAnalyst(inst.isin)
                       }}
-                      className="text-[10px] font-mono text-blue-400 hover:text-blue-300
-                                 border border-blue-400/30 rounded px-1.5 py-0.5
-                                 transition-colors"
-                      title="Gemini-Katalysator-Check laden"
+                      className="btn btn-sm btn-secondary focus-ring"
+                      title="Load Gemini catalyst check"
                     >
-                      Gemini laden
+                      Load Gemini
                     </button>
                   )}
                   {inst.tfaPhase === 'above_all_mas' && inst.tfaFetched && (
                     <span className="text-[10px] font-mono text-muted">
                       {inst.tfaKO ? '⛔ KO' : inst.tfaEScore != null
                         ? `E: ${inst.tfaEScore.toFixed(2)}`
-                        : 'Analysiert'}
+                        : 'Analyzed'}
                     </span>
                   )}
                 </div>
@@ -1023,7 +1028,7 @@ function ExpandedDetail({
                 </div>
               )}
               <div className="text-[10px] text-muted mb-2">
-                Stabilisierung: {
+                Stabilization: {
                   [
                     (inst.tfaTSignals?.t1 ?? 0) >= 1 ? 'RSI' : null,
                     inst.aboveMa50 === true ? 'MA50' : null,
@@ -1033,24 +1038,24 @@ function ExpandedDetail({
               </div>
               <div className="grid grid-cols-3 gap-4 text-[11px] font-mono">
                 <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">T-Score (Technisch)</div>
+                  <div className="text-gray-400 font-semibold">T-Score (Technical)</div>
                   <div>Score: <span className="text-gray-300">{inst.tfaTScore != null ? inst.tfaTScore.toFixed(2) : '—'}</span></div>
                   {inst.maCrossover?.stillValid && inst.maCrossover.risingMa && (
                     <div className="text-yellow-400 font-semibold">
                       ⚡ {inst.maCrossover.risingMa.toUpperCase()} Cross
-                      {inst.tfaCrossoverDaysAgo != null ? ` vor ${inst.tfaCrossoverDaysAgo}d` : ''}
+                      {inst.tfaCrossoverDaysAgo != null ? ` ${inst.tfaCrossoverDaysAgo}d ago` : ''}
                     </div>
                   )}
                   {inst.maCrossover && !inst.maCrossover.stillValid &&
                     (inst.maCrossover.ma50 || inst.maCrossover.ma100 || inst.maCrossover.ma200) && (
                     <div className="text-orange-400 text-[10px]">
-                      ⚠ Cross abgelaufen (Kurs unter MA)
+                      ⚠ Cross no longer valid (price below MA)
                     </div>
                   )}
-                  <div>T1 RSI dreht: <SignalValue value={inst.tfaTSignals?.t1} /></div>
+                  <div>T1 RSI turns: <SignalValue value={inst.tfaTSignals?.t1} /></div>
                   <div>T2 MA-Cross/MA50: <SignalValue value={inst.tfaTSignals?.t2} /></div>
                   <div>T3 Higher Low: <SignalValue value={inst.tfaTSignals?.t3} /></div>
-                  <div>T4 Volumen: <SignalValue value={inst.tfaTSignals?.t4} /></div>
+                  <div>T4 Volume: <SignalValue value={inst.tfaTSignals?.t4} /></div>
                   <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals?.t5} /></div>
                   {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
                     <>
@@ -1058,10 +1063,10 @@ function ExpandedDetail({
                         T-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} Weekly)
                       </div>
                       <div>Score: <span className="text-gray-300">{inst.tfaTScore5Y != null ? inst.tfaTScore5Y.toFixed(2) : '—'}</span></div>
-                      <div>T1 RSI dreht (W): <SignalValue value={inst.tfaTSignals5Y?.t1} /></div>
+                      <div>T1 RSI turns (W): <SignalValue value={inst.tfaTSignals5Y?.t1} /></div>
                       <div>T2 LevyRS (W): <SignalValue value={inst.tfaTSignals5Y?.t2} /></div>
                       <div>T3 Higher Low (W): <SignalValue value={inst.tfaTSignals5Y?.t3} /></div>
-                      <div>T4 Vola-Kompr. (W): <SignalValue value={inst.tfaTSignals5Y?.t4} /></div>
+                      <div>T4 Vola compression (W): <SignalValue value={inst.tfaTSignals5Y?.t4} /></div>
                       <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals5Y?.t5} /></div>
                     </>
                   )}
@@ -1076,7 +1081,7 @@ function ExpandedDetail({
                   {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
                     <>
                       <div className="text-gray-400 font-semibold mt-2">
-                        F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxiert)
+                        F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxed)
                       </div>
                       <div>Score: <span className="text-gray-300">{inst.tfaFScore5Y != null ? inst.tfaFScore5Y.toFixed(2) : '—'}</span></div>
                       <div>F1 PB: <SignalValue value={inst.tfaFSignals5Y?.f1} /></div>
@@ -1095,18 +1100,18 @@ function ExpandedDetail({
                       : inst.tfaEScore > 0.6 ? 'text-green-400'
                       : inst.tfaEScore > 0.3 ? 'text-yellow-400' : 'text-orange-400'
                   }>
-                    {inst.tfaEScore == null ? 'keine Daten' : inst.tfaEScore.toFixed(2)}
+                    {inst.tfaEScore == null ? 'no data' : inst.tfaEScore.toFixed(2)}
                   </span></div>
                   <div>Final TFA: <span className="text-gray-300">{inst.tfaScore != null ? inst.tfaScore.toFixed(2) : '—'}</span></div>
                   {(['earningsBeatRecent','earningsBeatPrior','guidanceRaised','analystUpgrade','insiderBuying','restructuring'] as const).map((key) => {
                     const sig = inst.tfaCatalyst?.[key]
                     const label: Record<string, string> = {
-                      earningsBeatRecent: 'Earnings Beat (aktuell)',
-                      earningsBeatPrior: 'Earnings Beat (vorig)',
-                      guidanceRaised: 'Guidance erhöht',
-                      analystUpgrade: 'Analyst-Upgrade',
-                      insiderBuying: 'Insider-Kauf',
-                      restructuring: 'Restrukturierung',
+                      earningsBeatRecent: 'Earnings Beat (recent)',
+                      earningsBeatPrior: 'Earnings Beat (prior)',
+                      guidanceRaised: 'Guidance raised',
+                      analystUpgrade: 'Analyst upgrade',
+                      insiderBuying: 'Insider buying',
+                      restructuring: 'Restructuring',
                     }
                     const confColor = !sig ? 'text-muted'
                       : sig.confidence === 'high' ? 'text-green-400'
@@ -1125,17 +1130,17 @@ function ExpandedDetail({
                   })}
                   {inst.tfaCatalyst?.koRisk?.value && (
                     <div className="text-red-400 font-semibold">
-                      ⛔ KO-Risiko ({inst.tfaCatalyst.koRisk.confidence})
+                      ⛔ KO risk ({inst.tfaCatalyst.koRisk.confidence})
                     </div>
                   )}
                   {inst.tfaCatalyst?.summary && (
                     <div className="text-muted text-[10px] leading-snug mt-1">{inst.tfaCatalyst.summary}</div>
                   )}
                   {inst.tfaPhase === 'watch' && !inst.tfaFetched && (
-                    <div className="text-yellow-400 text-[10px]">Gemini noch nicht geladen</div>
+                    <div className="text-yellow-400 text-[10px]">Gemini not loaded yet</div>
                   )}
                   {inst.tfaPhase === 'monitoring' && (
-                    <div className="text-gray-500 text-[10px]">Warte auf MA-Crossover</div>
+                    <div className="text-gray-500 text-[10px]">Waiting for MA crossover</div>
                   )}
                 </div>
               </div>
@@ -1151,18 +1156,18 @@ function ExpandedDetail({
 
               <div className="grid grid-cols-2 gap-4 text-[11px] font-mono mb-2">
                 <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">Signale</div>
+                  <div className="text-gray-400 font-semibold">Signals</div>
                   <div>S1 RSI + MA50: <SignalValue value={inst.pullbackSignals?.s1} /></div>
-                  <div>S2 RSI dreht: <SignalValue value={inst.pullbackSignals?.s2} /></div>
-                  <div>S3 Volumen sinkt: <SignalValue value={inst.pullbackSignals?.s3} /></div>
-                  <div>S4 Nahe MA50: <SignalValue value={inst.pullbackSignals?.s4} /></div>
-                  <div>S5 Stabilisierung: <SignalValue value={inst.pullbackSignals?.s5} /></div>
+                  <div>S2 RSI turns: <SignalValue value={inst.pullbackSignals?.s2} /></div>
+                  <div>S3 Volume fades: <SignalValue value={inst.pullbackSignals?.s3} /></div>
+                  <div>S4 Near MA50: <SignalValue value={inst.pullbackSignals?.s4} /></div>
+                  <div>S5 Stabilization: <SignalValue value={inst.pullbackSignals?.s5} /></div>
                 </div>
 
                 <div className="space-y-1">
                   <div className="text-gray-400 font-semibold">Trade Setup</div>
                   <div>
-                    Entry (akt.):
+                    Entry (current):
                     <span className="text-gray-300 ml-1">
                       {inst.closes && inst.closes.length > 0
                         ? inst.closes[inst.closes.length - 1].toFixed(2)
@@ -1175,7 +1180,7 @@ function ExpandedDetail({
                     </span>
                   </div>
                   <div>
-                    Ziel: <span className="text-green-400 ml-1">
+                    Target: <span className="text-green-400 ml-1">
                       {inst.pullbackTarget != null ? inst.pullbackTarget.toFixed(2) : '—'}
                     </span>
                   </div>
@@ -1200,16 +1205,13 @@ function ExpandedDetail({
                     isDaxMdax ? 'text-muted' : 'text-orange-400/80'
                   }`}>
                     {isDaxMdax && (
-                      <>⚠ Kein Anlageberatung. Stop-Loss einhalten. Gettex empfohlen.</>
+                      <>⚠ Not investment advice. Respect your stop-loss. Gettex execution preferred.</>
                     )}
                     {isSdax && (
-                      <>⚠ SDAX: Spread kann 0.3–0.8% betragen — Limit-Order verwenden,
-                      kein Market-Order. Stop-Loss einhalten.</>
+                      <>⚠ SDAX: spread can be 0.3–0.8% — use limit orders, avoid market orders, respect stop-loss.</>
                     )}
                     {!isDaxMdax && !isSdax && (
-                      <>⚠ Internationaler/kleinerer Titel: Spread prüfen vor dem Trade.
-                      Spread kann &gt;0.5% betragen. Limit-Order, kein Market-Order.
-                      Stop-Loss einhalten.</>
+                      <>⚠ International/smaller names: check spread before entry. Spread can exceed 0.5%. Use limit orders and respect stop-loss.</>
                     )}
                   </div>
                 )
@@ -1235,6 +1237,128 @@ function ExpandedDetail({
         </>
       )}
     </>
+  )
+}
+
+function TableToolbar({
+  total,
+  shown,
+  hiddenGroupCount,
+  sortColumn,
+  sortDirection,
+}: {
+  total: number
+  shown: number
+  hiddenGroupCount: number
+  sortColumn: string
+  sortDirection: 'asc' | 'desc'
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-3 py-2">
+      <div className="text-ui-sm font-mono text-muted">
+        Showing {shown.toLocaleString()} / {total.toLocaleString()} instruments
+      </div>
+      <div className="flex items-center gap-2 text-ui-xs font-mono text-muted">
+        <span>Sort: {sortColumn}</span>
+        <span>{sortDirection === 'desc' ? '↓' : '↑'}</span>
+        {hiddenGroupCount > 0 ? <span>{hiddenGroupCount} column groups hidden</span> : null}
+      </div>
+    </div>
+  )
+}
+
+function MobileInstrumentCard({
+  inst,
+  expanded,
+  onToggleExpanded,
+  onTogglePortfolio,
+  onRemove,
+  onLoadPrices,
+  onLoadAnalyst,
+}: {
+  inst: Instrument
+  expanded: boolean
+  onToggleExpanded: () => void
+  onTogglePortfolio: () => void
+  onRemove: () => void
+  onLoadPrices: () => void
+  onLoadAnalyst: () => void
+}) {
+  return (
+    <article className="rounded border border-border bg-surface px-3 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          className="focus-ring min-w-0 text-left"
+          aria-expanded={expanded}
+          aria-label={`Toggle details for ${inst.displayName}`}
+        >
+          <div className="truncate font-mono text-ui-sm text-gray-200">{inst.displayName}</div>
+          <div className="mt-0.5 flex items-center gap-1.5 font-mono text-ui-xs text-muted">
+            <TypeBadge type={inst.type} />
+            <span className="truncate">{inst.isin}</span>
+          </div>
+        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onTogglePortfolio}
+            className={`focus-ring text-sm ${inst.inPortfolio ? 'text-amber-400' : 'text-muted hover:text-gray-300'}`}
+            aria-label={inst.inPortfolio ? 'Remove from portfolio' : 'Add to portfolio'}
+            title={inst.inPortfolio ? 'Remove from portfolio' : 'Add to portfolio'}
+          >
+            ★
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="focus-ring text-sm text-muted hover:text-red-400"
+            aria-label={`Remove ${inst.displayName}`}
+            title="Remove instrument"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-ui-sm">
+        <div>
+          <span className="text-muted">Combined:</span>{' '}
+          <span className={scoreColor(inst.combinedScore)}>{inst.combinedScore?.toFixed(2) ?? '—'}</span>
+        </div>
+        <div>
+          <span className="text-muted">3M:</span>{' '}
+          <span className={returnColor(inst.r3m)}>{fmtPct(inst.r3m)}</span>
+        </div>
+        <div>
+          <span className="text-muted">6M:</span>{' '}
+          <span className={returnColor(inst.r6m)}>{fmtPct(inst.r6m)}</span>
+        </div>
+        <div>
+          <span className="text-muted">RSI:</span>{' '}
+          <span className={rsiColor(inst.rsi14)}>{inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}</span>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-2 border-t border-border/50 pt-2 font-mono text-ui-sm text-muted">
+          <div>Momentum rank: #{inst.momentumRank ?? '—'}</div>
+          <div>TFA: <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} summary={generateTfaSummary(inst)} inst={inst} /></div>
+          <div>Breakout: <BreakoutBadge score={inst.breakoutScore} flags={inst.breakoutFlags} /></div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={onLoadPrices} className="btn btn-sm btn-secondary focus-ring">
+              Load prices
+            </button>
+            {(inst.type === 'Stock' || inst.type === 'Unknown') && inst.yahooTicker ? (
+              <button type="button" onClick={onLoadAnalyst} className="btn btn-sm btn-secondary focus-ring">
+                Load analyst
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </article>
   )
 }
 
@@ -1274,8 +1398,9 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         <div className="text-sm">No instruments loaded.</div>
         <div className="flex gap-3">
           <button
+            type="button"
             onClick={onOpenSidebar}
-            className="px-3 py-2 text-xs border border-border rounded hover:border-accent/50 hover:text-accent transition-colors"
+            className="btn btn-md btn-secondary focus-ring"
           >
             Load Xetra Universe
           </button>
@@ -1286,7 +1411,31 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   }
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 min-h-0 overflow-auto">
+      <TableToolbar
+        total={state.instruments.length}
+        shown={instruments.length}
+        hiddenGroupCount={state.tableState.hiddenColumnGroups.length}
+        sortColumn={sortColumn}
+        sortDirection={sortDirection}
+      />
+
+      <div className="lg:hidden space-y-2 p-3">
+        {instruments.map((inst) => (
+          <MobileInstrumentCard
+            key={inst.isin}
+            inst={inst}
+            expanded={expandedISIN === inst.isin}
+            onToggleExpanded={() => setExpandedISIN(expandedISIN === inst.isin ? null : inst.isin)}
+            onTogglePortfolio={() => dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin })}
+            onRemove={() => dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin })}
+            onLoadPrices={() => fetchSingleInstrumentPrices(inst.isin)}
+            onLoadAnalyst={() => fetchSingleInstrumentAnalyst(inst.isin)}
+          />
+        ))}
+      </div>
+
+      <div className="hidden lg:block">
       <table className="w-full text-xs font-mono border-collapse min-w-[2420px]">
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
@@ -1294,13 +1443,23 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
               <th
                 key={col.key}
                 title={col.title}
-                onClick={() => handleSort(col.key)}
                 className={`px-2 py-1.5 font-semibold text-muted whitespace-nowrap
                   ${col.align === 'left' ? 'text-left' : 'text-right'}
-                  ${!NON_SORTABLE.has(col.key) ? 'cursor-pointer hover:text-gray-300' : ''}
                   select-none`}
               >
-                {col.label}{sortIcon(col.key)}
+                {NON_SORTABLE.has(col.key) ? (
+                  col.label
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSort(col.key)}
+                    className="focus-ring inline-flex items-center hover:text-gray-300"
+                    aria-label={`Sort by ${col.label}`}
+                  >
+                    {col.label}
+                    {sortIcon(col.key)}
+                  </button>
+                )}
               </th>
             ))}
           </tr>
@@ -1319,22 +1478,35 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   data-isin={inst.isin}
                   className={`${rowBg} ${portfolioClass} hover:bg-surface2 border-b border-border/30 cursor-pointer group`}
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setExpandedISIN(isExpanded ? null : inst.isin)
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-expanded={isExpanded}
                 >
                   {/* Name */}
                   <td className="px-2 py-1.5 text-left max-w-[280px]">
                     <div className="flex items-center gap-1">
                       <button
+                        type="button"
                         onClick={(e) => { e.stopPropagation(); dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin }) }}
-                        className={`text-[12px] leading-none ${inst.inPortfolio ? 'text-amber-400' : 'text-muted hover:text-gray-300'}`}
+                        className={`focus-ring text-[12px] leading-none ${inst.inPortfolio ? 'text-amber-400' : 'text-muted hover:text-gray-300'}`}
                         title={inst.inPortfolio ? 'Remove from portfolio' : 'Add to portfolio'}
+                        aria-label={inst.inPortfolio ? `Remove ${inst.displayName} from portfolio` : `Add ${inst.displayName} to portfolio`}
                       >
                         ★
                       </button>
                       <span className="truncate text-gray-200" title={inst.displayName}>{inst.displayName}</span>
                       <button
+                        type="button"
                         onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin }) }}
-                        className="text-[11px] text-muted hover:text-red-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="focus-ring text-[11px] text-muted hover:text-red-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Hide/remove instrument"
+                        aria-label={`Hide ${inst.displayName}`}
                       >
                         ×
                       </button>
@@ -1592,6 +1764,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

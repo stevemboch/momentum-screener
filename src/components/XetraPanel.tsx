@@ -3,6 +3,7 @@ import { Database, Loader, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { useState } from 'react'
+import { StatusBadge } from './ui/StatusBadge'
 
 export function XetraPanel() {
   const { state, dispatch } = useAppState()
@@ -28,31 +29,32 @@ export function XetraPanel() {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Group selector toggle */}
       <button
+        type="button"
         onClick={() => setShowGroups(!showGroups)}
-        className="flex items-center justify-between w-full text-xs text-muted hover:text-gray-300 py-1 font-mono"
+        className="focus-ring flex w-full items-center justify-between py-1 font-mono text-ui-sm text-muted hover:text-gray-300"
+        aria-expanded={showGroups}
+        aria-label={showGroups ? 'Hide group filters' : 'Show group filters'}
       >
         <span>
           {state.xetraReady ? (
             <>
-              <span className="text-green-500 mr-1">●</span>
+              <span className="text-green-500 mr-1" aria-hidden>●</span>
               {enabledETFCount.toLocaleString()} ETFs · {enabledStockCount.toLocaleString()} stocks selected
             </>
           ) : state.xetraLoading ? (
-            <><span className="text-amber-400 mr-1">◌</span> Loading universe...</>
+            <><span className="text-amber-400 mr-1" aria-hidden>◌</span> Loading universe...</>
           ) : (
-            <><span className="text-muted mr-1">○</span> Xetra universe</>
+            <><span className="text-muted mr-1" aria-hidden>○</span> Xetra universe</>
           )}
         </span>
         {showGroups ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
       </button>
 
-      {/* Groups */}
       {showGroups && state.xetraReady && (
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 pb-2 border-b border-border">
           <div>
-            <div className="text-[10px] text-muted uppercase tracking-wider mb-1 font-mono">ETF Groups</div>
+            <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">ETF groups</div>
             {state.etfGroups.map((g) => (
               <GroupCheckbox
                 key={g.groupKey}
@@ -64,7 +66,7 @@ export function XetraPanel() {
             ))}
           </div>
           <div>
-            <div className="text-[10px] text-muted uppercase tracking-wider mb-1 font-mono">Stock Groups</div>
+            <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Stock groups</div>
             {state.stockGroups.map((g) => (
               <GroupCheckbox
                 key={g.groupKey}
@@ -78,11 +80,11 @@ export function XetraPanel() {
         </div>
       )}
 
-      {/* Load button */}
       <button
+        type="button"
         onClick={activateXetra}
         disabled={!state.xetraReady || isLoading}
-        className="flex items-center justify-center gap-2 px-3 py-2 bg-surface2 border border-border text-gray-300 text-xs font-mono font-semibold rounded hover:border-accent/50 hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="btn btn-md btn-secondary focus-ring w-full font-semibold"
       >
         {isLoading ? (
           <><Loader size={12} className="animate-spin" /> Processing...</>
@@ -91,15 +93,17 @@ export function XetraPanel() {
         )}
       </button>
 
-      {/* Clear button */}
       {state.xetraActive && !isLoading && (
         <button
+          type="button"
           onClick={() => dispatch({ type: 'CLEAR_XETRA' })}
-          className="text-xs text-muted hover:text-red-400 font-mono text-center"
+          className="btn btn-sm btn-ghost focus-ring"
         >
-          Clear Xetra data
+          Clear loaded Xetra data
         </button>
       )}
+
+      {state.xetraLoading && <StatusBadge tone="info">Universe parsing in background</StatusBadge>}
     </div>
   )
 }
@@ -115,13 +119,13 @@ function GroupCheckbox({
         type="checkbox"
         checked={enabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="w-3 h-3 accent-blue-500"
+        className="w-3 h-3 accent-blue-500 focus-ring"
       />
-      <span className={`text-[11px] font-mono ${enabled ? 'text-gray-300' : 'text-muted'}`}>
+      <span className={`text-ui-xs font-mono ${enabled ? 'text-gray-300' : 'text-muted'}`}>
         {label}
       </span>
       {count > 0 && (
-        <span className="text-[10px] text-muted ml-auto">{count.toLocaleString()}</span>
+        <span className="text-ui-xs text-muted ml-auto">{count.toLocaleString()}</span>
       )}
     </label>
   )

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { usePortfolioAnalysis } from '../hooks/usePortfolioAnalysis'
+import { ModalShell } from './ui/ModalShell'
+import { StatusBadge } from './ui/StatusBadge'
 
 export function PortfolioPanel() {
   const { state, dispatch } = useAppState()
@@ -22,7 +24,7 @@ export function PortfolioPanel() {
 
   if (portfolio.length === 0 && missingIsins.length === 0) {
     return (
-      <div className="text-[11px] font-mono text-muted">
+      <div className="text-ui-sm font-mono text-muted">
         No portfolio instruments.
       </div>
     )
@@ -33,32 +35,36 @@ export function PortfolioPanel() {
       <div className="flex items-center gap-2">
         {portfolio.length > 0 && needsPriceLoad && (
           <button
+            type="button"
             onClick={() => fetchPortfolioPrices(portfolio.map((i) => i.isin))}
-            className="btn btn-muted"
+            className="btn btn-sm btn-secondary focus-ring"
           >
             Load prices
           </button>
         )}
         {missingIsins.length > 0 && (
           <button
+            type="button"
             onClick={() => processManualInput(missingIsins.join('\n'), false)}
-            className="btn btn-muted"
+            className="btn btn-sm btn-secondary focus-ring"
           >
             Load instruments
           </button>
         )}
-        <span className="text-[10px] text-muted font-mono">
+        <span className="text-ui-xs text-muted font-mono">
           {portfolio.length} items{missingIsins.length > 0 ? ` · ${missingIsins.length} missing` : ''}
         </span>
       </div>
       <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
         {portfolio.map((inst) => (
-          <div key={inst.isin} className="flex items-center gap-2 text-[11px] font-mono">
+          <div key={inst.isin} className="flex items-center gap-2 text-ui-sm font-mono">
             <span className="truncate flex-1 text-gray-300">{inst.displayName}</span>
             <button
+              type="button"
               onClick={() => dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin })}
-              className="text-[10px] text-muted hover:text-red-400"
+              className="focus-ring text-ui-xs text-muted hover:text-red-400"
               title="Remove from portfolio"
+              aria-label={`Remove ${inst.displayName} from portfolio`}
             >
               ×
             </button>
@@ -68,7 +74,7 @@ export function PortfolioPanel() {
 
       {/* Hinweis für manuelle Instrumente */}
       {portfolioCount > 0 && (
-        <div className="text-[10px] text-muted font-mono mt-2 leading-snug">
+        <div className="text-ui-xs text-muted font-mono mt-2 leading-snug">
           Best results with Xetra instruments — manual inputs have fewer
           exposure signals.
         </div>
@@ -77,29 +83,28 @@ export function PortfolioPanel() {
       {/* ── Haupt-Button ── */}
       <div className="flex gap-2 mt-3 items-center">
         <button
+          type="button"
           onClick={run}
           disabled={isRunning || portfolioCount === 0}
-          className="flex-1 px-2 py-1.5 text-xs font-mono border border-border
-                 text-muted hover:text-gray-300 hover:border-accent/50
-                 disabled:opacity-40 disabled:cursor-not-allowed rounded
-                 transition-colors flex items-center justify-center gap-1.5"
-          title="Analyse portfolio structure and search for current market 
+          className="btn btn-md btn-secondary focus-ring flex-1 font-semibold"
+          title="Analyze portfolio structure and search for current market 
              developments (uses web search for briefing, cached 2h)"
         >
           {isRunning ? (
             <>
               <span className="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />
-              Analysing…
+              Analyzing...
             </>
           ) : (
-            '🔍 Analyse Portfolio'
+            'Analyze portfolio'
           )}
         </button>
 
         {(structureResult || briefingResult) && !isRunning && (
           <button
+            type="button"
             onClick={clear}
-            className="text-[11px] font-mono text-muted hover:text-red-400
+            className="focus-ring text-ui-sm font-mono text-muted hover:text-red-400
                    transition-colors shrink-0"
             title="Clear all results"
           >
@@ -124,7 +129,6 @@ export function PortfolioPanel() {
         </div>
       )}
 
-      {/* ── Structure Result — erscheint sobald verfügbar ── */}
       {structureResult && (
         <div className={`mt-3 p-2 rounded border text-[11px] font-mono ${
           structureResult.severity === 'ok'
@@ -134,19 +138,25 @@ export function PortfolioPanel() {
             : 'border-red-400/30 bg-red-400/5'
         }`}>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <span className="text-[10px] text-muted uppercase tracking-wider font-mono">
+            <span className="text-ui-xs text-muted uppercase tracking-wider font-mono">
               Structure
             </span>
-            <span className={`ml-auto font-semibold ${
-              structureResult.severity === 'ok'      ? 'text-green-400' :
-              structureResult.severity === 'warning' ? 'text-amber-400' : 'text-red-400'
-            }`}>
+            <StatusBadge
+              tone={
+                structureResult.severity === 'ok'
+                  ? 'success'
+                  : structureResult.severity === 'warning'
+                    ? 'warning'
+                    : 'danger'
+              }
+              className="ml-auto"
+            >
               {structureResult.severity === 'ok'
                 ? '✓ OK'
                 : structureResult.severity === 'warning'
-                ? '⚠ Warning'
-                : '✗ Critical'}
-            </span>
+                  ? '⚠ Warning'
+                  : '✗ Critical'}
+            </StatusBadge>
           </div>
           <ul className="space-y-1">
             {structureResult.findings.map((f, i) => (
@@ -157,183 +167,137 @@ export function PortfolioPanel() {
       )}
 
       {structureError && structureStatus === 'error' && (
-        <div className="mt-2 text-[11px] font-mono text-red-400">
+        <div className="mt-2 text-ui-sm font-mono text-red-400">
           Structure error: {structureError}
         </div>
       )}
 
-      {/* ── Briefing Result — erscheint sobald verfügbar ── */}
       {briefingResult && (
         <div className="mt-3 flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-muted uppercase tracking-wider font-mono">
+            <span className="text-ui-xs text-muted uppercase tracking-wider font-mono">
               Market Briefing
             </span>
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-[10px] text-muted font-mono">
+              <span className="text-ui-xs text-muted font-mono">
                 {new Date(briefingResult.fetchedAt).toLocaleTimeString('en-GB')}
                 {briefingIsStale && (
                   <span className="text-amber-400 ml-1">(stale)</span>
                 )}
               </span>
               <button
+                type="button"
                 onClick={() => setBriefingExpanded(true)}
-                className="text-[10px] font-mono text-muted hover:text-gray-300"
+                className="btn btn-sm btn-ghost focus-ring"
                 title="Expand briefing"
               >
-                ⤢ expand
+                Expand
               </button>
             </div>
           </div>
 
           {briefingResult.macroContext && (
-            <div className="px-2 py-1.5 rounded border border-border bg-surface2/40
-                        text-[11px] font-mono text-muted leading-snug italic">
+            <div className="px-2 py-1.5 rounded border border-border bg-surface2/40 text-ui-sm font-mono text-muted leading-snug italic">
               {briefingResult.macroContext}
             </div>
           )}
 
           {briefingResult.findings.map((f, i) => (
-            <div
-              key={i}
-              className={`p-2 rounded border text-[11px] font-mono ${
-                f.priority === 'high'
-                  ? f.sentiment === 'negative'
-                    ? 'border-red-400/30 bg-red-400/5'
-                    : f.sentiment === 'positive'
-                    ? 'border-green-400/30 bg-green-400/5'
-                    : 'border-amber-400/30 bg-amber-400/5'
-                  : 'border-border bg-surface2/30'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <div className="flex flex-wrap gap-1">
-                  {f.instruments.map((name, j) => (
-                    <span
-                      key={j}
-                      className="text-[10px] px-1 py-0.5 rounded bg-surface2
-                             border border-border text-gray-400"
-                    >
-                      {name.length > 20 ? name.substring(0, 20) + '…' : name}
-                    </span>
-                  ))}
-                </div>
-                <span className={`shrink-0 text-[10px] ${
-                  f.priority === 'high'   ? 'text-red-400' :
-                  f.priority === 'medium' ? 'text-amber-400' : 'text-muted'
-                }`}>
-                  {f.priority}
-                </span>
-              </div>
-
-              <div className={`font-semibold mb-0.5 ${
-                f.sentiment === 'positive' ? 'text-green-400' :
-                f.sentiment === 'negative' ? 'text-red-400'   : 'text-gray-300'
-              }`}>
-                {f.sentiment === 'positive' ? '↑ ' :
-                 f.sentiment === 'negative' ? '↓ ' : '· '}
-                {f.headline}
-              </div>
-
-              <div className="text-muted leading-snug">{f.detail}</div>
-            </div>
+            <BriefingFindingCard key={i} finding={f} />
           ))}
         </div>
       )}
 
       {briefingError && briefingStatus === 'error' && (
-        <div className="mt-2 text-[11px] font-mono text-red-400">
+        <div className="mt-2 text-ui-sm font-mono text-red-400">
           Briefing error: {briefingError}
         </div>
       )}
 
       {briefingExpanded && briefingResult && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setBriefingExpanded(false)}
+        <ModalShell
+          title="Market Briefing"
+          subtitle={`${new Date(briefingResult.fetchedAt).toLocaleTimeString('en-GB')}${briefingIsStale ? ' (stale)' : ''}`}
+          onClose={() => setBriefingExpanded(false)}
+          widthClass="max-w-4xl"
         >
-          <div
-            className="w-full max-w-3xl max-h-[85vh] overflow-hidden rounded border border-border bg-surface2 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-              <span className="text-[11px] text-muted uppercase tracking-wider font-mono">
-                Market Briefing
-              </span>
-              <span className="text-[10px] text-muted font-mono ml-auto">
-                {new Date(briefingResult.fetchedAt).toLocaleTimeString('en-GB')}
-                {briefingIsStale && (
-                  <span className="text-amber-400 ml-1">(stale)</span>
-                )}
-              </span>
-              <button
-                onClick={() => setBriefingExpanded(false)}
-                className="text-[11px] font-mono text-muted hover:text-red-400"
-                title="Close"
-              >
-                × close
-              </button>
+          {briefingResult.macroContext && (
+            <div className="px-2 py-1.5 rounded border border-border bg-surface2/40 text-ui-sm font-mono text-muted leading-snug italic">
+              {briefingResult.macroContext}
             </div>
-
-            <div className="p-3 overflow-y-auto max-h-[80vh]">
-              {briefingResult.macroContext && (
-                <div className="px-2 py-1.5 rounded border border-border bg-surface2/40
-                        text-[11px] font-mono text-muted leading-snug italic">
-                  {briefingResult.macroContext}
-                </div>
-              )}
-
-              <div className="mt-2 flex flex-col gap-2">
-                {briefingResult.findings.map((f, i) => (
-                  <div
-                    key={i}
-                    className={`p-2 rounded border text-[11px] font-mono ${
-                      f.priority === 'high'
-                        ? f.sentiment === 'negative'
-                          ? 'border-red-400/30 bg-red-400/5'
-                          : f.sentiment === 'positive'
-                          ? 'border-green-400/30 bg-green-400/5'
-                          : 'border-amber-400/30 bg-amber-400/5'
-                        : 'border-border bg-surface2/30'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <div className="flex flex-wrap gap-1">
-                        {f.instruments.map((name, j) => (
-                          <span
-                            key={j}
-                            className="text-[10px] px-1 py-0.5 rounded bg-surface2
-                             border border-border text-gray-400"
-                          >
-                            {name.length > 20 ? name.substring(0, 20) + '…' : name}
-                          </span>
-                        ))}
-                      </div>
-                      <span className={`shrink-0 text-[10px] ${
-                        f.priority === 'high'   ? 'text-red-400' :
-                        f.priority === 'medium' ? 'text-amber-400' : 'text-muted'
-                      }`}>
-                        {f.priority}
-                      </span>
-                    </div>
-
-                    <div className={`font-semibold mb-0.5 ${
-                      f.sentiment === 'positive' ? 'text-green-400' :
-                      f.sentiment === 'negative' ? 'text-red-400'   : 'text-gray-300'
-                    }`}>
-                      {f.sentiment === 'positive' ? '↑ ' :
-                       f.sentiment === 'negative' ? '↓ ' : '· '}
-                      {f.headline}
-                    </div>
-
-                    <div className="text-muted leading-snug">{f.detail}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          )}
+          <div className="mt-2 flex flex-col gap-2">
+            {briefingResult.findings.map((f, i) => (
+              <BriefingFindingCard key={i} finding={f} />
+            ))}
           </div>
-        </div>
+        </ModalShell>
       )}
+    </div>
+  )
+}
+
+function BriefingFindingCard({
+  finding,
+}: {
+  finding: {
+    headline: string
+    detail: string
+    instruments: string[]
+    priority: 'high' | 'medium' | 'low'
+    sentiment: 'positive' | 'negative' | 'neutral'
+  }
+}) {
+  return (
+    <div
+      className={`rounded border p-2 text-ui-sm font-mono ${
+        finding.priority === 'high'
+          ? finding.sentiment === 'negative'
+            ? 'border-red-400/30 bg-red-400/5'
+            : finding.sentiment === 'positive'
+              ? 'border-green-400/30 bg-green-400/5'
+              : 'border-amber-400/30 bg-amber-400/5'
+          : 'border-border bg-surface2/30'
+      }`}
+    >
+      <div className="mb-1 flex items-start justify-between gap-2">
+        <div className="flex flex-wrap gap-1">
+          {finding.instruments.map((name, j) => (
+            <span
+              key={j}
+              className="rounded border border-border bg-surface2 px-1 py-0.5 text-ui-xs text-gray-400"
+            >
+              {name.length > 20 ? name.substring(0, 20) + '…' : name}
+            </span>
+          ))}
+        </div>
+        <span
+          className={`shrink-0 text-ui-xs ${
+            finding.priority === 'high'
+              ? 'text-red-400'
+              : finding.priority === 'medium'
+                ? 'text-amber-400'
+                : 'text-muted'
+          }`}
+        >
+          {finding.priority}
+        </span>
+      </div>
+
+      <div
+        className={`mb-0.5 font-semibold ${
+          finding.sentiment === 'positive'
+            ? 'text-green-400'
+            : finding.sentiment === 'negative'
+              ? 'text-red-400'
+              : 'text-gray-300'
+        }`}
+      >
+        {finding.sentiment === 'positive' ? '↑ ' : finding.sentiment === 'negative' ? '↓ ' : '· '}
+        {finding.headline}
+      </div>
+
+      <div className="leading-snug text-muted">{finding.detail}</div>
     </div>
   )
 }
@@ -348,7 +312,7 @@ function AnalysisProgressRow({
   status: 'idle' | 'loading' | 'done' | 'error'
 }) {
   return (
-    <div className="flex items-center gap-2 text-[11px] font-mono text-muted">
+    <div className="flex items-center gap-2 text-ui-sm font-mono text-muted">
       <span>{icon}</span>
       <span>{label}</span>
       <span className="ml-auto">

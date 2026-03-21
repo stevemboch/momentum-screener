@@ -38,9 +38,9 @@ export function RegimeBanner() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 text-[11px] font-mono text-muted">
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 text-ui-sm font-mono text-muted">
         <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" />
-        Marktregime wird analysiert...
+        Market regime is being analyzed...
       </div>
     )
   }
@@ -50,8 +50,7 @@ export function RegimeBanner() {
   const cfg = CONFIG[regime.regime]
 
   return (
-    <div className={`flex items-start justify-between gap-4 px-4 py-2 
-                     border-b text-[11px] font-mono ${cfg.color}`}>
+    <div className={`flex items-start justify-between gap-4 px-4 py-2 border-b text-ui-sm font-mono ${cfg.color}`}>
       <div className="flex items-start gap-3 flex-1 min-w-0">
         <span className="shrink-0">{cfg.icon}</span>
         <div>
@@ -64,8 +63,10 @@ export function RegimeBanner() {
           </div>
       </div>
       <button
+        type="button"
         onClick={() => setDismissed(true)}
-        className="text-muted hover:text-gray-300 shrink-0 mt-0.5"
+        className="focus-ring text-muted hover:text-gray-300 shrink-0 mt-0.5"
+        aria-label="Dismiss market regime banner"
       >
         ×
       </button>

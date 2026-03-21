@@ -1,7 +1,10 @@
 import { useState } from 'react'
-import { Settings, X } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import { useAppState } from '../store'
 import type { MomentumWeights } from '../types'
+import { FieldRow } from './ui/FieldRow'
+import { ModalShell } from './ui/ModalShell'
+import { ToggleRow } from './ui/ToggleRow'
 
 export function SettingsPanel() {
   const [open, setOpen] = useState(false)
@@ -15,7 +18,7 @@ export function SettingsPanel() {
     w6m: weights.w6m * 10,
   }
   const total = raw.w1m + raw.w3m + raw.w6m
-  const norm = (v: number) => total > 0 ? v / total : 1 / 3
+  const norm = (v: number) => (total > 0 ? v / total : 1 / 3)
   const fmtW = (v: number) => `${(norm(v) * 100).toFixed(0)}%`
 
   const updateWeight = (key: keyof MomentumWeights, value: number) => {
@@ -29,180 +32,179 @@ export function SettingsPanel() {
     dispatch({ type: 'SET_WEIGHTS', weights: normalized })
   }
 
+  const resetDefaults = () => {
+    dispatch({ type: 'SET_WEIGHTS', weights: { w1m: 1 / 3, w3m: 1 / 3, w6m: 1 / 3 } })
+    dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: 4 })
+    dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
+    dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })
+  }
+
   return (
     <>
       <button
+        type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 px-2 py-1.5 text-muted hover:text-gray-300 border border-border rounded text-xs font-mono transition-colors"
+        className="btn btn-sm btn-secondary focus-ring"
       >
         <Settings size={12} />
         Settings
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-surface border border-border rounded-lg w-[420px] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-sm font-semibold text-gray-200 font-mono">Settings</h2>
-              <button onClick={() => setOpen(false)} className="text-muted hover:text-gray-300"><X size={16} /></button>
-            </div>
-
-            {/* Momentum Weights */}
-            <Section label="Momentum Weights" hint="auto-normalised">
-              <WeightSlider label="1M" value={raw.w1m} effective={fmtW(raw.w1m)} onChange={(v) => updateWeight('w1m', v)} />
-              <WeightSlider label="3M" value={raw.w3m} effective={fmtW(raw.w3m)} onChange={(v) => updateWeight('w3m', v)} />
-              <WeightSlider label="6M" value={raw.w6m} effective={fmtW(raw.w6m)} onChange={(v) => updateWeight('w6m', v)} />
-              <div className="text-[10px] text-muted font-mono mt-1">
-                Effective: {fmtW(raw.w1m)} / {fmtW(raw.w3m)} / {fmtW(raw.w6m)}
-              </div>
-            </Section>
-
-            {/* ATR Multiplier */}
-            <Section label="Selling Threshold (ATR)" hint="Last Price − a × ATR(20)">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-muted w-4">a</span>
-                <input
-                  type="range" min={3} max={5} step={0.25} value={atrMultiplier}
-                  onChange={(e) => dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: Number(e.target.value) })}
-                  className="flex-1 accent-blue-500 h-1"
-                />
-                <span className="text-xs font-mono text-gray-300 w-8 text-right">{atrMultiplier.toFixed(2)}</span>
-              </div>
-              <div className="text-[10px] text-muted font-mono mt-1">
-                3 = tight stop · 5 = wide stop · current: {atrMultiplier}× ATR(20)
-              </div>
-            </Section>
-
-            {/* Dedup Filter */}
-            <Section label="Dedup Filter">
-              <ToggleRow
-                label="Deduplicated ETFs"
-                hint="Hide non-winners in each dedup group"
-                active={showDeduped}
-                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } })}
-              />
-            </Section>
-
-            {/* Risk-Free Filter */}
-            <Section label="Risk-Free Filter">
-              <ToggleRow
-                label="> Risk-Free"
-                hint={`Hide instruments below ${(riskFreeRate * 100).toFixed(1)}% p.a. (annualised)`}
-                active={filterBelowRiskFree}
-                onToggle={() => dispatch({ type: 'SET_TABLE_STATE', updates: { filterBelowRiskFree: !filterBelowRiskFree } })}
-              />
-            </Section>
-
-            {/* Risk-Free Rate */}
-            <Section label="Risk-Free Rate" hint="used for > Risk-Free filter">
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={(riskFreeRate * 100).toFixed(2)}
-                  onChange={(e) => dispatch({ type: 'SET_RISK_FREE_RATE', rate: Number(e.target.value) / 100 })}
-                  className="w-24 bg-bg border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 outline-none focus:border-accent"
-                  min={0} max={20} step={0.1}
-                />
-                <span className="text-muted text-xs font-mono">% p.a.</span>
-              </div>
-              <div className="text-[10px] text-muted font-mono mt-1">
-                ECB deposit rate ≈ 2.5% · Short-term EUR ≈ 3.5%
-              </div>
-            </Section>
-
-            {/* AUM Floor */}
-            <Section label="AUM Floor (ETFs)">
-              <div className="flex items-center gap-2">
-                <span className="text-muted text-xs font-mono">€</span>
-                <input
-                  type="number"
-                  value={aumFloor / 1_000_000}
-                  onChange={(e) => dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })}
-                  className="w-32 bg-bg border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 outline-none focus:border-accent"
-                  min={0} step={10}
-                />
-                <span className="text-muted text-xs font-mono">M</span>
-              </div>
-            </Section>
-
-            <div className="flex justify-end gap-2 mt-2">
-              <button
-                onClick={() => {
-                  dispatch({ type: 'SET_WEIGHTS', weights: { w1m: 1 / 3, w3m: 1 / 3, w6m: 1 / 3 } })
-                  dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: 4 })
-                  dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
-                  dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })
-                }}
-                className="px-3 py-1.5 text-xs font-mono text-muted hover:text-gray-300 border border-border rounded"
-              >
-                Zurücksetzen
+        <ModalShell
+          title="Settings"
+          subtitle="Scoring, risk, and visibility preferences"
+          onClose={() => setOpen(false)}
+          widthClass="max-w-lg"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={resetDefaults} className="btn btn-sm btn-ghost focus-ring">
+                Reset defaults
               </button>
-              <button onClick={() => setOpen(false)} className="px-3 py-1.5 text-xs font-mono text-muted hover:text-gray-300 border border-border rounded">
-                Schließen
+              <button type="button" onClick={() => setOpen(false)} className="btn btn-sm btn-secondary focus-ring">
+                Close
               </button>
             </div>
-          </div>
-        </div>
+          )}
+        >
+          <FieldRow label="Momentum Weights" hint="Auto-normalized">
+            <WeightSlider
+              label="1M"
+              value={raw.w1m}
+              effective={fmtW(raw.w1m)}
+              onChange={(v) => updateWeight('w1m', v)}
+            />
+            <WeightSlider
+              label="3M"
+              value={raw.w3m}
+              effective={fmtW(raw.w3m)}
+              onChange={(v) => updateWeight('w3m', v)}
+            />
+            <WeightSlider
+              label="6M"
+              value={raw.w6m}
+              effective={fmtW(raw.w6m)}
+              onChange={(v) => updateWeight('w6m', v)}
+            />
+            <div className="mt-1 text-ui-xs font-mono text-muted">
+              Effective: {fmtW(raw.w1m)} / {fmtW(raw.w3m)} / {fmtW(raw.w6m)}
+            </div>
+          </FieldRow>
+
+          <FieldRow label="Selling Threshold (ATR)" hint="Last Price - a × ATR(20)">
+            <div className="flex items-center gap-3">
+              <span className="w-4 text-ui-sm font-mono text-muted">a</span>
+              <input
+                type="range"
+                min={3}
+                max={5}
+                step={0.25}
+                value={atrMultiplier}
+                onChange={(e) =>
+                  dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: Number(e.target.value) })
+                }
+                className="h-1 flex-1 accent-blue-500"
+              />
+              <span className="w-10 text-right text-ui-sm font-mono text-gray-300">{atrMultiplier.toFixed(2)}</span>
+            </div>
+            <div className="mt-1 text-ui-xs font-mono text-muted">
+              3 = tighter stop · 5 = wider stop · current: {atrMultiplier}× ATR(20)
+            </div>
+          </FieldRow>
+
+          <FieldRow label="Dedup Filter">
+            <ToggleRow
+              label="Deduplicated ETFs"
+              hint="Hide non-winners in each dedup group"
+              active={showDeduped}
+              onToggle={() =>
+                dispatch({ type: 'SET_TABLE_STATE', updates: { showDeduped: !showDeduped } })
+              }
+            />
+          </FieldRow>
+
+          <FieldRow label="Risk-Free Filter">
+            <ToggleRow
+              label="Above risk-free rate"
+              hint={`Hide instruments below ${(riskFreeRate * 100).toFixed(1)}% annualized`}
+              active={filterBelowRiskFree}
+              onToggle={() =>
+                dispatch({
+                  type: 'SET_TABLE_STATE',
+                  updates: { filterBelowRiskFree: !filterBelowRiskFree },
+                })
+              }
+            />
+          </FieldRow>
+
+          <FieldRow label="Risk-Free Rate" hint="Used by the risk-free filter">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={(riskFreeRate * 100).toFixed(2)}
+                onChange={(e) =>
+                  dispatch({ type: 'SET_RISK_FREE_RATE', rate: Number(e.target.value) / 100 })
+                }
+                className="focus-ring w-24 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
+                min={0}
+                max={20}
+                step={0.1}
+                aria-label="Risk-free rate in percent"
+              />
+              <span className="text-ui-sm font-mono text-muted">% p.a.</span>
+            </div>
+            <div className="mt-1 text-ui-xs font-mono text-muted">
+              ECB deposit rate ~2.5% · short-term EUR yields ~3.5%
+            </div>
+          </FieldRow>
+
+          <FieldRow label="AUM Floor (ETFs)">
+            <div className="flex items-center gap-2">
+              <span className="text-ui-sm font-mono text-muted">EUR</span>
+              <input
+                type="number"
+                value={aumFloor / 1_000_000}
+                onChange={(e) =>
+                  dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })
+                }
+                className="focus-ring w-32 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
+                min={0}
+                step={10}
+                aria-label="AUM floor in millions"
+              />
+              <span className="text-ui-sm font-mono text-muted">M</span>
+            </div>
+          </FieldRow>
+        </ModalShell>
       )}
     </>
   )
 }
 
-function Section({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-5">
-      <div className="text-xs text-muted uppercase tracking-wider font-mono mb-3">
-        {label}
-        {hint && <span className="ml-2 text-[10px] normal-case">({hint})</span>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function WeightSlider({ label, value, effective, onChange }: { label: string; value: number; effective: string; onChange: (v: number) => void }) {
-  return (
-    <div className="flex items-center gap-3 mb-2">
-      <span className="text-xs font-mono text-muted w-4">{label}</span>
-      <input type="range" min={0} max={10} step={0.5} value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1 accent-blue-500 h-1"
-      />
-      <span className="text-xs font-mono text-gray-300 w-8 text-right">{effective}</span>
-    </div>
-  )
-}
-
-function ToggleRow({
+function WeightSlider({
   label,
-  hint,
-  active,
-  onToggle,
+  value,
+  effective,
+  onChange,
 }: {
   label: string
-  hint?: string
-  active: boolean
-  onToggle: () => void
+  value: number
+  effective: string
+  onChange: (v: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 mb-3">
-      <div className="min-w-0">
-        <div className="text-xs font-mono text-gray-300 truncate">{label}</div>
-        {hint && <div className="text-[10px] text-muted font-mono mt-0.5">{hint}</div>}
-      </div>
-      <button
-        onClick={onToggle}
-        aria-pressed={active}
-        className={`flex items-center px-2 py-1 text-xs font-mono rounded border transition-colors ${
-          active
-            ? 'bg-green-400/10 text-green-400 border-green-400/30'
-            : 'text-muted border-border hover:text-gray-300'
-        }`}
-      >
-        <span className={`relative inline-flex w-7 h-3.5 rounded-full transition-colors ${active ? 'bg-green-400' : 'bg-surface2 border border-border'}`}>
-          <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${active ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-        </span>
-      </button>
+    <div className="mb-2 flex items-center gap-3">
+      <span className="w-6 text-ui-sm font-mono text-muted">{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={10}
+        step={0.5}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-1 flex-1 accent-blue-500"
+      />
+      <span className="w-10 text-right text-ui-sm font-mono text-gray-300">{effective}</span>
     </div>
   )
 }

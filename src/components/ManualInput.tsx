@@ -99,13 +99,16 @@ export function ManualInput() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={PLACEHOLDER}
-          className="w-full h-32 bg-transparent text-gray-300 font-mono text-xs p-3 resize-none outline-none placeholder:text-muted"
+          className="focus-ring w-full h-32 bg-transparent text-gray-300 font-mono text-ui-sm p-3 resize-none placeholder:text-muted"
           spellCheck={false}
+          aria-label="Manual instrument input"
         />
         {text && (
           <button
+            type="button"
             onClick={() => setText('')}
-            className="absolute top-2 right-2 text-muted hover:text-gray-300 p-1"
+            className="icon-btn absolute top-2 right-2 h-6 w-6"
+            aria-label="Clear manual input"
           >
             <X size={12} />
           </button>
@@ -114,18 +117,20 @@ export function ManualInput() {
 
       <div className="flex gap-2">
         <button
+          type="button"
           onClick={handleLoad}
           disabled={!text.trim() || isLoading}
-          className="flex items-center gap-1.5 btn btn-accent text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+          className="btn btn-sm btn-primary focus-ring font-semibold"
         >
           <Play size={11} />
           Load
         </button>
 
         <button
+          type="button"
           onClick={() => fileRef.current?.click()}
           disabled={isLoading}
-          className="flex items-center gap-1.5 btn btn-muted bg-surface text-xs disabled:opacity-40"
+          className="btn btn-sm btn-secondary focus-ring"
         >
           <Upload size={11} />
           CSV
@@ -141,7 +146,7 @@ export function ManualInput() {
       </div>
 
       {lastParsed.length > 0 && (
-        <div className="flex flex-wrap gap-2 text-[11px] font-mono text-gray-300">
+        <div className="flex flex-wrap gap-2 text-ui-sm font-mono text-gray-300">
           {lastParsed.map((p) => {
             const inst = findInstrument(p)
             return (
@@ -149,8 +154,9 @@ export function ManualInput() {
                 <span className="text-muted">{p.raw}</span>
                 {inst ? (
                   <button
+                    type="button"
                     onClick={() => jumpTo(inst.isin)}
-                    className="text-accent hover:text-accent/80"
+                    className="focus-ring text-accent hover:text-accent/80"
                   >
                     Jump
                   </button>
@@ -164,8 +170,8 @@ export function ManualInput() {
       )}
 
       {csvMeta && (csvMeta.warnings.length > 0 || csvMeta.skipped > 0) && (
-        <div className="text-[11px] font-mono text-amber-300">
-          CSV: {csvMeta.accepted} accepted / {csvMeta.total} rows, {csvMeta.skipped} skipped
+        <div className="text-ui-sm font-mono text-amber-300">
+          CSV warning: {csvMeta.accepted} accepted / {csvMeta.total} rows, {csvMeta.skipped} skipped.
         </div>
       )}
     </div>
