@@ -1,4 +1,5 @@
 import type { XetraRow, Instrument } from '../types'
+import Papa from 'papaparse'
 
 // ─── Xetra CSV Parser ─────────────────────────────────────────────────────────
 
@@ -8,15 +9,29 @@ const KEEP_COLUMNS = [
   'Currency', 'First Trading Date',
 ]
 
+function normalizeCell(value: unknown): string {
+  if (value == null) return ''
+  return String(value).replace(/^\uFEFF/, '').trim()
+}
+
+function isEmptyRow(row: unknown[]): boolean {
+  return row.every((cell) => normalizeCell(cell) === '')
+}
+
 export function parseXetraCSV(csvText: string): XetraRow[] {
-  const lines = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  const parsed = Papa.parse<string[]>(csvText, {
+    delimiter: ';',
+    quoteChar: '"',
+    escapeChar: '"',
+    skipEmptyLines: false,
+    dynamicTyping: false,
+  })
+  const rows = parsed.data.map((row) => (Array.isArray(row) ? row.map(normalizeCell) : []))
 
   // Skip first 2 metadata rows, row 3 (index 2) is the header
-  if (lines.length < 4) return []
+  if (rows.length < 4) return []
 
-  const headerLine = lines[2]
-  const headers = headerLine.split(';').map((h) => h.trim().replace(/"/g, ''))
-
+  const headers = rows[2]
   const colIdx = (name: string) => headers.findIndex((h) => h === name)
   const isinIdx = colIdx('ISIN')
   const instIdx = colIdx('Instrument')
@@ -30,13 +45,9 @@ export function parseXetraCSV(csvText: string): XetraRow[] {
   if (isinIdx < 0 || typeIdx < 0) return []
 
   const results: XetraRow[] = []
-  const CHUNK = 300
-
-  for (let i = 3; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line) continue
-
-    const cells = line.split(';').map((c) => c.trim().replace(/"/g, ''))
+  for (let i = 3; i < rows.length; i++) {
+    const cells = rows[i]
+    if (!cells || isEmptyRow(cells)) continue
 
     const instrumentType = cells[typeIdx] || ''
     const currency = cells[currencyIdx] || ''
@@ -98,6 +109,18 @@ export interface ParsedIdentifier {
   type: IdentifierType
 }
 
+export interface CSVParseMeta {
+  total: number
+  accepted: number
+  skipped: number
+  warnings: string[]
+}
+
+export interface CSVParseResult {
+  identifiers: ParsedIdentifier[]
+  meta: CSVParseMeta
+}
+
 function normalizeTickerSuffix(raw: string): string {
   // Strip exchange suffixes for lookup purposes
   return raw.replace(/\.(DE|F|XETRA|ETR|BE|MU|HM|DU|SG|HA|BM)$/i, '').toUpperCase()
@@ -136,50 +159,79 @@ export function parseManualInput(input: string): ParsedIdentifier[] {
   return results
 }
 
-export function parseCSVFile(content: string): ParsedIdentifier[] {
-  // Auto-detect delimiter
-  const firstLine = content.split('\n')[0] || ''
-  const delimiters = [';', ',', '\t']
-  let delimiter = ','
-  let maxCount = 0
-  for (const d of delimiters) {
-    const count = (firstLine.match(new RegExp(`\\${d}`, 'g')) || []).length
-    if (count > maxCount) { maxCount = count; delimiter = d }
+export function parseCSVFileDetailed(content: string): CSVParseResult {
+  const parsed = Papa.parse<string[]>(content, {
+    quoteChar: '"',
+    escapeChar: '"',
+    skipEmptyLines: false,
+    dynamicTyping: false,
+    delimitersToGuess: [',', ';', '\t', '|'],
+  })
+  const rows = parsed.data.map((row) => (Array.isArray(row) ? row.map(normalizeCell) : []))
+
+  const warnings: string[] = []
+  for (const err of parsed.errors.slice(0, 5)) {
+    const rowInfo = Number.isFinite(err.row) ? `row ${err.row}` : 'row ?'
+    warnings.push(`${rowInfo}: ${err.message}`)
   }
 
-  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-  if (lines.length === 0) return []
+  const headerIdx = rows.findIndex((r) => !isEmptyRow(r))
+  if (headerIdx < 0) {
+    return {
+      identifiers: [],
+      meta: { total: 0, accepted: 0, skipped: 0, warnings },
+    }
+  }
 
-  // Try to find relevant column by header
-  const headerLine = lines[0]
-  const headers = headerLine.split(delimiter).map((h) => h.trim().toLowerCase().replace(/"/g, ''))
-
+  const headers = rows[headerIdx].map((h) => h.toLowerCase())
   const colNames = ['isin', 'wkn', 'ticker', 'symbol', 'mnemonic']
   const colIdx = colNames.map((name) => headers.findIndex((h) => h === name))
   const relevantCol = colIdx.find((idx) => idx >= 0)
 
   const allTokens: string[] = []
+  let total = 0
+  let skipped = 0
 
-  if (relevantCol !== undefined && relevantCol >= 0) {
-    // Use specific column
-    for (let i = 1; i < lines.length; i++) {
-      const cells = lines[i].split(delimiter).map((c) => c.trim().replace(/"/g, ''))
-      const val = cells[relevantCol]
-      if (val) allTokens.push(val)
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const cells = rows[i]
+    if (!cells || isEmptyRow(cells)) continue
+    total += 1
+
+    if (relevantCol !== undefined && relevantCol >= 0) {
+      const value = cells[relevantCol] || ''
+      if (value) allTokens.push(value)
+      else skipped += 1
+      continue
     }
-  } else {
-    // Scan all cells for valid identifiers
-    for (let i = 0; i < lines.length; i++) {
-      const cells = lines[i].split(delimiter).map((c) => c.trim().replace(/"/g, ''))
-      for (const cell of cells) {
-        if (ISIN_REGEX.test(cell) || WKN_REGEX.test(cell)) {
-          allTokens.push(cell)
-        }
+
+    let rowHasIdentifier = false
+    for (const cell of cells) {
+      if (ISIN_REGEX.test(cell) || WKN_REGEX.test(cell)) {
+        allTokens.push(cell)
+        rowHasIdentifier = true
       }
     }
+    if (!rowHasIdentifier) skipped += 1
   }
 
-  return parseManualInput(allTokens.join('\n'))
+  const identifiers = parseManualInput(allTokens.join('\n'))
+  if (skipped > 0) {
+    warnings.push(`${skipped} rows skipped (empty or no valid identifier)`)
+  }
+
+  return {
+    identifiers,
+    meta: {
+      total,
+      accepted: identifiers.length,
+      skipped,
+      warnings,
+    },
+  }
+}
+
+export function parseCSVFile(content: string): ParsedIdentifier[] {
+  return parseCSVFileDetailed(content).identifiers
 }
 
 // ─── Instrument Type from OpenFIGI ───────────────────────────────────────────

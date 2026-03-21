@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { Upload, Play, X } from 'lucide-react'
 import { usePipeline } from '../hooks/usePipeline'
 import { useAppState } from '../store'
-import { parseManualInput, parseCSVFile, type ParsedIdentifier } from '../utils/parsers'
+import { parseManualInput, parseCSVFileDetailed, type CSVParseMeta, type ParsedIdentifier } from '../utils/parsers'
 
 const PLACEHOLDER = `Paste tickers, ISINs or WKNs here — one per line or comma-separated.
 
@@ -17,6 +17,7 @@ export function ManualInput() {
   const [text, setText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [lastParsed, setLastParsed] = useState<ParsedIdentifier[]>([])
+  const [csvMeta, setCsvMeta] = useState<CSVParseMeta | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const { processManualInput } = usePipeline()
   const { state } = useAppState()
@@ -25,13 +26,21 @@ export function ManualInput() {
   const handleLoad = () => {
     if (!text.trim() || isLoading) return
     setLastParsed(parseManualInput(text))
+    setCsvMeta(null)
     processManualInput(text, false)
   }
 
   const handleFile = async (file: File) => {
     const content = await file.text()
     const isCSV = file.name.endsWith('.csv') || file.type.includes('csv')
-    setLastParsed(isCSV ? parseCSVFile(content) : parseManualInput(content))
+    if (isCSV) {
+      const parsed = parseCSVFileDetailed(content)
+      setLastParsed(parsed.identifiers)
+      setCsvMeta(parsed.meta)
+    } else {
+      setLastParsed(parseManualInput(content))
+      setCsvMeta(null)
+    }
     processManualInput(content, isCSV)
     setText(content.substring(0, 200) + (content.length > 200 ? '...' : ''))
   }
@@ -151,6 +160,12 @@ export function ManualInput() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {csvMeta && (csvMeta.warnings.length > 0 || csvMeta.skipped > 0) && (
+        <div className="text-[11px] font-mono text-amber-300">
+          CSV: {csvMeta.accepted} accepted / {csvMeta.total} rows, {csvMeta.skipped} skipped
         </div>
       )}
     </div>
