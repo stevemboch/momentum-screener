@@ -1273,16 +1273,12 @@ function MobileInstrumentCard({
   onToggleExpanded,
   onTogglePortfolio,
   onRemove,
-  onLoadPrices,
-  onLoadAnalyst,
 }: {
   inst: Instrument
   expanded: boolean
   onToggleExpanded: () => void
   onTogglePortfolio: () => void
   onRemove: () => void
-  onLoadPrices: () => void
-  onLoadAnalyst: () => void
 }) {
   return (
     <article className="rounded border border-border bg-surface px-3 py-2">
@@ -1322,10 +1318,20 @@ function MobileInstrumentCard({
         </div>
       </div>
 
+      {inst.priceFetched && inst.closes && inst.closes.length > 0 && (
+        <div className="mt-2 flex justify-end">
+          <Sparkline closes={inst.closes} />
+        </div>
+      )}
+
       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-ui-sm">
         <div>
           <span className="text-muted">Combined:</span>{' '}
           <span className={scoreColor(inst.combinedScore)}>{inst.combinedScore?.toFixed(2) ?? '—'}</span>
+        </div>
+        <div>
+          <span className="text-muted">1M:</span>{' '}
+          <span className={returnColor(inst.r1m)}>{fmtPct(inst.r1m)}</span>
         </div>
         <div>
           <span className="text-muted">3M:</span>{' '}
@@ -1346,16 +1352,6 @@ function MobileInstrumentCard({
           <div>Momentum rank: #{inst.momentumRank ?? '—'}</div>
           <div>TFA: <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} summary={generateTfaSummary(inst)} inst={inst} /></div>
           <div>Breakout: <BreakoutBadge score={inst.breakoutScore} flags={inst.breakoutFlags} /></div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" onClick={onLoadPrices} className="btn btn-sm btn-secondary focus-ring">
-              Load prices
-            </button>
-            {(inst.type === 'Stock' || inst.type === 'Unknown') && inst.yahooTicker ? (
-              <button type="button" onClick={onLoadAnalyst} className="btn btn-sm btn-secondary focus-ring">
-                Load analyst
-              </button>
-            ) : null}
-          </div>
         </div>
       )}
     </article>
@@ -1370,6 +1366,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const instruments = useDisplayedInstruments()
   const allInstruments = state.instruments   // full list incl. non-winners
   const { sortColumn, sortDirection } = state.tableState
+  const isMomentumMode = !state.tableState.tfaMode && !state.tableState.pullbackMode
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
   const hiddenKeys = new Set(
     state.tableState.hiddenColumnGroups.flatMap((g) => COLUMN_GROUPS[g])
@@ -1421,6 +1418,34 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
       />
 
       <div className="lg:hidden space-y-2 p-3">
+        {isMomentumMode && (
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {([
+              { key: 'combinedScore', label: 'Combined' },
+              { key: 'riskAdjustedScore', label: 'Risk-Adj' },
+              { key: 'momentumScore', label: 'Momentum' },
+            ] as const).map((opt) => {
+              const active = sortColumn === opt.key
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => handleSort(opt.key)}
+                  className={`focus-ring rounded border px-2 py-1 font-mono text-ui-xs transition-colors ${
+                    active
+                      ? 'border-accent/40 bg-accent/15 text-accent'
+                      : 'border-border text-muted hover:text-gray-300'
+                  }`}
+                  aria-label={`Sort by ${opt.label}`}
+                >
+                  {opt.label}
+                  {active ? ` ${sortDirection === 'desc' ? '↓' : '↑'}` : ''}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {instruments.map((inst) => (
           <MobileInstrumentCard
             key={inst.isin}
@@ -1429,8 +1454,6 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             onToggleExpanded={() => setExpandedISIN(expandedISIN === inst.isin ? null : inst.isin)}
             onTogglePortfolio={() => dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin })}
             onRemove={() => dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin })}
-            onLoadPrices={() => fetchSingleInstrumentPrices(inst.isin)}
-            onLoadAnalyst={() => fetchSingleInstrumentAnalyst(inst.isin)}
           />
         ))}
       </div>

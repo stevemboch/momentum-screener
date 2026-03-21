@@ -267,7 +267,7 @@ export function FilterBar() {
         instruments
       </span>
 
-      <div className="relative ml-auto" ref={colMenuRef}>
+      <div className="relative ml-auto hidden lg:block" ref={colMenuRef}>
         <button
           type="button"
           onClick={() => setColMenuOpen(!colMenuOpen)}
