@@ -199,11 +199,18 @@ export interface AppSettings {
 
 export type MarketRegime = 'RISK_ON' | 'RISK_OFF' | 'SIDEWAYS' | 'TRANSITION'
 
+export interface RegimeBenchmark {
+  label: string
+  ticker: string
+  aboveMa200: boolean | null
+}
+
 export interface RegimeResult {
   regime: MarketRegime
   confidence: number
   summary: string
   suggestion: string
+  benchmarks?: RegimeBenchmark[]
   computedAt: number
 }
 

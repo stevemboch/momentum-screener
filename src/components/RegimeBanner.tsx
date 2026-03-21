@@ -48,6 +48,12 @@ export function RegimeBanner() {
   if (!regime) return null
 
   const cfg = CONFIG[regime.regime]
+  const benchmarkLine = regime.benchmarks?.length
+    ? regime.benchmarks.map((b) => {
+      if (b.aboveMa200 == null) return `${b.label} n/a`
+      return `${b.label} ${b.aboveMa200 ? 'above' : 'below'} SMA200`
+    }).join(' · ')
+    : null
 
   return (
     <div className={`flex items-start justify-between gap-4 px-4 py-2 border-b text-ui-sm font-mono ${cfg.color}`}>
@@ -59,6 +65,9 @@ export function RegimeBanner() {
             <span>{regime.confidence}% confidence</span>
             <span className="text-muted mx-1.5">—</span>
             <span>{regime.summary}</span>
+            {benchmarkLine ? (
+              <div className="mt-0.5 text-muted">{benchmarkLine}</div>
+            ) : null}
             <div className="mt-0.5 text-muted">→ {regime.suggestion}</div>
           </div>
       </div>

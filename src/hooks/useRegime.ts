@@ -1,10 +1,35 @@
 import { useCallback } from 'react'
 import { useAppState } from '../store'
 import { computeRegimeInputs } from '../utils/regimeInputs'
-import type { Instrument } from '../types'
+import { calculateMAs } from '../utils/calculations'
+import type { Instrument, RegimeBenchmark } from '../types'
 import { apiFetchJson } from '../api/client'
 
 const REGIME_TTL = 60 * 60 * 1000  // 60 Minuten
+const BENCHMARKS: Array<Pick<RegimeBenchmark, 'label' | 'ticker'>> = [
+  { label: 'S&P 500', ticker: 'SPY' },
+  { label: 'MSCI World', ticker: 'URTH' },
+  { label: 'MSCI Europe', ticker: 'IEUR' },
+  { label: 'MSCI EM', ticker: 'EEM' },
+]
+
+async function fetchBenchmarks(): Promise<RegimeBenchmark[]> {
+  const tickers = BENCHMARKS.map((b) => b.ticker)
+  const data = await apiFetchJson<any[]>('/api/yahoo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tickers }),
+  })
+
+  return BENCHMARKS.map((benchmark, idx) => {
+    const result = Array.isArray(data) ? data[idx] : null
+    if (!result || result.error || !Array.isArray(result.closes)) {
+      return { ...benchmark, aboveMa200: null }
+    }
+    const { aboveMa200 } = calculateMAs(result.closes as number[])
+    return { ...benchmark, aboveMa200: aboveMa200 ?? null }
+  })
+}
 
 export function useRegime() {
   const { state, dispatch } = useAppState()
@@ -27,15 +52,21 @@ export function useRegime() {
     if (inputs.instrumentCount < 10) return
 
     try {
-      const data = await apiFetchJson<any>('/api/claude-regime', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inputs),
-      })
+      const [regimeRes, benchmarksRes] = await Promise.allSettled([
+        apiFetchJson<any>('/api/claude-regime', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(inputs),
+        }),
+        fetchBenchmarks(),
+      ])
+      if (regimeRes.status !== 'fulfilled') return
+      const data = regimeRes.value
       if (data.error) return
+      const benchmarks = benchmarksRes.status === 'fulfilled' ? benchmarksRes.value : undefined
       dispatch({
         type: 'SET_MARKET_REGIME',
-        regime: { ...data, computedAt: Date.now() }
+        regime: { ...data, benchmarks, computedAt: Date.now() }
       })
     } catch {
       // Regime ist optional — Fehler still ignorieren
