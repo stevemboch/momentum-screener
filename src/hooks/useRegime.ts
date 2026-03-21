@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { useAppState } from '../store'
 import { computeRegimeInputs } from '../utils/regimeInputs'
 import { calculateMAs } from '../utils/calculations'
@@ -33,8 +33,10 @@ async function fetchBenchmarks(): Promise<RegimeBenchmark[]> {
 
 export function useRegime() {
   const { state, dispatch } = useAppState()
+  const inFlightRef = useRef(false)
 
   const compute = useCallback(async (overrides?: { instruments?: Instrument[]; referenceR3m?: number | null }) => {
+    if (inFlightRef.current) return
     if (state.marketRegime) {
       const age = Date.now() - state.marketRegime.computedAt
       if (age < REGIME_TTL) return
@@ -51,6 +53,7 @@ export function useRegime() {
     const inputs = computeRegimeInputs(withSignals, referenceR3m)
     if (inputs.instrumentCount < 10) return
 
+    inFlightRef.current = true
     try {
       const [regimeRes, benchmarksRes] = await Promise.allSettled([
         apiFetchJson<any>('/api/claude-regime', {
@@ -67,9 +70,11 @@ export function useRegime() {
       dispatch({
         type: 'SET_MARKET_REGIME',
         regime: { ...data, benchmarks, computedAt: Date.now() }
-      })
+        })
     } catch {
       // Regime ist optional — Fehler still ignorieren
+    } finally {
+      inFlightRef.current = false
     }
   }, [state.instruments, state.referenceR3m, state.marketRegime, dispatch])
 

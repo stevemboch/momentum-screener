@@ -16,9 +16,14 @@ export function RegimeBanner() {
   const [dismissed, setDismissed] = useState(false)
   const [loading, setLoading] = useState(false)
   const REGIME_DELAY_MS = 1500
+  const REGIME_TTL = 60 * 60 * 1000
 
   useEffect(() => {
     if (state.fetchStatus.phase !== 'done') return
+    if (regime) {
+      const age = Date.now() - regime.computedAt
+      if (age < REGIME_TTL) return
+    }
     let cancelled = false
     setLoading(true)
     const t = setTimeout(() => {
