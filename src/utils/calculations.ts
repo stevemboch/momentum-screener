@@ -793,6 +793,13 @@ function buildPercentileMap(
 export function applyRanks(instruments: Instrument[]): Instrument[] {
   const result = instruments.map((inst) => ({ ...inst }))
   const indexMap = new Map(result.map((inst, i) => [inst.isin, i]))
+  const rankFieldMap: Partial<Record<keyof Instrument, keyof Instrument>> = {
+    momentumScore: 'momentumRank',
+    riskAdjustedScore: 'riskAdjustedRank',
+    combinedScore: 'combinedRank',
+    earningsYield: 'earningsYieldRank',
+    returnOnAssets: 'returnOnAssetsRank',
+  }
 
   const rank = (
     arr: { inst: Instrument; i: number }[],
@@ -809,7 +816,10 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
       .forEach(({ inst }, rank) => {
         const idx = indexMap.get(inst.isin)
         if (idx !== undefined) {
-          const rankField = field === 'riskAdjustedScore' ? 'riskAdjustedRank' : `${String(field)}Rank`
+          // Keep rank target fields explicit so UI/type contracts stay stable.
+          const explicitRankField = rankFieldMap[field]
+          const fallbackRankField = `${String(field)}Rank` as keyof Instrument
+          const rankField = explicitRankField ?? fallbackRankField
           ;(result[idx] as any)[rankField] = rank + 1
         }
       })
