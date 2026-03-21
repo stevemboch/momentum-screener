@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
+import { useAuth } from './auth/AuthProvider'
 import { ManualInput } from './components/ManualInput'
 import { PortfolioPanel } from './components/PortfolioPanel'
 import { XetraPanel } from './components/XetraPanel'
@@ -7,11 +8,17 @@ import { RankingTable } from './components/RankingTable'
 import { FilterBar } from './components/FilterBar'
 import { SettingsPanel } from './components/SettingsPanel'
 import { RegimeBanner } from './components/RegimeBanner'
+import { AuthGate } from './components/AuthGate'
 
 export default function App() {
+  const { status, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [portfolioOpen, setPortfolioOpen] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
+
+  if (status !== 'authenticated') {
+    return <AuthGate />
+  }
 
   return (
     <div className="h-screen flex flex-col bg-bg text-gray-200 font-sans overflow-hidden">
@@ -26,6 +33,12 @@ export default function App() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => void logout()}
+            className="px-2 py-1.5 text-muted hover:text-gray-300 border border-border rounded text-xs font-mono transition-colors"
+          >
+            Logout
+          </button>
           <SettingsPanel />
         </div>
       </header>

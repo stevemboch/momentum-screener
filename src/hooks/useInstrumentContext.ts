@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { apiFetchJson } from '../api/client'
 
 const CONTEXT_TTL = 6 * 60 * 60 * 1000  // 6 Stunden
 
@@ -38,12 +39,11 @@ export function useInstrumentContext(isin: string) {
   ) => {
     setLoading(true)
     try {
-      const res = await fetch('/api/claude-context', {
+      const data = await apiFetchJson<any>('/api/claude-context', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, name, lastPrice, targetPrice }),
       })
-      const data = await res.json()
       const withTs = { ...data, fetchedAt: Date.now() }
       setResult(withTs)
       try {

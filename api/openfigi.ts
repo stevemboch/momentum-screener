@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireAuth } from './_auth'
 
 interface FigiJob {
   idType: string
@@ -19,6 +20,7 @@ interface FigiResult {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
 
   const jobs: FigiJob[] = req.body
   if (!Array.isArray(jobs) || jobs.length === 0) {

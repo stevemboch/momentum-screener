@@ -1,8 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { geminiSearchChat, parseJSON } from './_gemini'
+import { requireAuth } from './_auth'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
   const { ticker, name, lastPrice, targetPrice } = req.body
   if (!ticker || !name) return res.status(400).json({ error: 'ticker und name required' })
 

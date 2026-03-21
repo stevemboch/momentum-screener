@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import * as zlib from 'zlib'
 import { promisify } from 'util'
+import { requireAuth } from './_auth'
 const inflateRaw = promisify(zlib.inflateRaw)
 
 export interface ETFStats {
@@ -247,6 +248,7 @@ async function getStatsMap(): Promise<Map<string, { name: string | null; aum: nu
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
 
   const isins: string[] = req.body?.isins
   if (!Array.isArray(isins) || isins.length === 0) {

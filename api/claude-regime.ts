@@ -1,10 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { parseJSON } from './_openrouter'
 import { aiChat } from './_ai'
+import { requireAuth } from './_auth'
 import type { RegimeInputs } from '../src/utils/regimeInputs'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
   const inputs: RegimeInputs = req.body
   if (!inputs || inputs.instrumentCount < 10)
     return res.status(400).json({ error: 'Not enough instruments (min. 10)' })

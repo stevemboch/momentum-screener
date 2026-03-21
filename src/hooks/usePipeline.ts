@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import type { Instrument } from '../types'
-import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFile, resolveInstrumentType, toDisplayName } from '../utils/parsers'
+import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFileDetailed, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails, calculateTfaFDetails5Y } from '../utils/calculations'
+import { apiFetchJson, apiFetchText } from '../api/client'
 
 /**
  * Leitet die Financial Currency (Berichtswährung) aus dem ISIN-Prefix ab.
@@ -51,10 +52,41 @@ const OPENFIGI_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
+const LEEWAY_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const LEEWAY_TOP_N = 50
+const LEEWAY_EXTENDED_N = 100
+const LEEWAY_EXTEND_AFTER_MS = 36 * 60 * 60 * 1000
 const TFA_AUTO_FUNDAMENTALS_LIMIT = 25
 const TFA_CATALYST_TTL_MS = 24 * 60 * 60 * 1000
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
+
+function normalizeTickerForCache(ticker: string): string {
+  return ticker.trim().toUpperCase()
+}
+
+function normalizeMnemonicForCache(mnemonic?: string): string | null {
+  if (!mnemonic) return null
+  const normalized = mnemonic.trim().toUpperCase()
+  return normalized.length > 0 ? normalized : null
+}
+
+function buildYahooCacheKey(ticker: string): string {
+  return `cache:yahoo:v2:${normalizeTickerForCache(ticker)}`
+}
+
+function buildLegacyYahooCacheKey(ticker: string): string {
+  return `cache:yahoo:${ticker}`
+}
+
+function buildAnalystCacheKey(ticker: string, mnemonic?: string): string {
+  const m = normalizeMnemonicForCache(mnemonic) ?? '__NO_MNEMONIC__'
+  return `cache:analyst:v4:${normalizeTickerForCache(ticker)}:${m}`
+}
+
+function buildLegacyAnalystCacheKey(ticker: string): string {
+  return `cache:analyst:v4:${ticker}`
+}
 
 function cacheGet<T>(key: string, ttlMs = CACHE_TTL_MS): T | null {
   if (!hasStorage()) return null
@@ -84,36 +116,34 @@ interface OpenFIGIResult { name?: string; securityDescription?: string; isin?: s
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
-  const res = await fetch('/api/openfigi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(jobs) })
-  if (!res.ok) throw new Error(`OpenFIGI API error: ${res.status}`)
-  return res.json()
+  return apiFetchJson<OpenFIGIResult[]>('/api/openfigi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(jobs),
+  })
 }
 
 async function apiYahooSingle(ticker: string): Promise<any> {
-  const res = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: [ticker] }) })
-  if (!res.ok) throw new Error(`Yahoo API error: ${res.status}`)
-  const data = await res.json()
+  const data = await apiFetchJson<any[]>('/api/yahoo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tickers: [ticker] }),
+  })
   return data[0] ?? null
 }
 
-async function apiYahooAnalyst(ticker: string): Promise<any> {
-  const res = await fetch('/api/yahoo-analyst', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker }) })
-  if (!res.ok) throw new Error(`Yahoo Analyst API error: ${res.status}`)
-  return res.json()
-}
-
 async function apiStats(isins: string[]): Promise<StatsResult[]> {
-  const res = await fetch('/api/xetra-stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isins }) })
-  if (!res.ok) throw new Error(`Stats API error: ${res.status}`)
-  return res.json()
+  return apiFetchJson<StatsResult[]>('/api/xetra-stats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isins }),
+  })
 }
 
 async function apiXetra() {
   const cached = cacheGet<string>('cache:xetra', XETRA_TTL_MS)
   if (cached) return cached
-  const res = await fetch('/api/xetra')
-  if (!res.ok) throw new Error(`Xetra API error: ${res.status}`)
-  const text = await res.text()
+  const text = await apiFetchText('/api/xetra')
   cacheSet('cache:xetra', text, XETRA_TTL_MS)
   return text
 }
@@ -161,6 +191,7 @@ export function usePipeline() {
   const tfaInFlight = useRef<Set<string>>(new Set())
   const tfaFundInFlight = useRef<Set<string>>(new Set())
   const tfaAutoRunning = useRef(false)
+  const leewayRunning = useRef(false)
 
   const setStatus = (message: string, current = 0, total = 0) =>
     dispatch({ type: 'SET_FETCH_STATUS', status: { message, current, total } })
@@ -247,7 +278,7 @@ export function usePipeline() {
     const cachedResults: any[] = new Array(withTickers.length)
     const tasks: { idx: number; ticker: string }[] = []
     withTickers.forEach((inst, idx) => {
-      const key = `cache:yahoo:v2:${inst.yahooTicker}`
+      const key = buildYahooCacheKey(inst.yahooTicker)
       const cached = cacheGet<any>(key, YAHOO_TTL_MS)
       if (cached) cachedResults[idx] = cached
       else tasks.push({ idx, ticker: inst.yahooTicker })
@@ -264,7 +295,7 @@ export function usePipeline() {
     fetched.forEach((r: any, i: number) => {
       const t = tasks[i]
       results[t.idx] = r
-      if (r) cacheSet(`cache:yahoo:v2:${t.ticker}`, r, YAHOO_TTL_MS)
+      if (r) cacheSet(buildYahooCacheKey(t.ticker), r, YAHOO_TTL_MS)
     })
 
     const errorCount = fetched.filter((r: any) => !r || r.error).length
@@ -313,9 +344,13 @@ export function usePipeline() {
   const processManualInput = useCallback(async (text: string, isCSV = false) => {
     abortRef.current = false
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: 'Parsing input...', current: 0, total: 0 } })
-    const parsed = isCSV ? parseCSVFile(text) : parseManualInput(text)
+    const csvParsed = isCSV ? parseCSVFileDetailed(text) : null
+    const parsed = csvParsed ? csvParsed.identifiers : parseManualInput(text)
     if (parsed.length === 0) {
-      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'idle', message: 'No valid identifiers found', current: 0, total: 0 } })
+      const csvHint = csvParsed && csvParsed.meta.warnings.length > 0
+        ? ` (${csvParsed.meta.skipped} rows skipped)`
+        : ''
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'idle', message: `No valid identifiers found${csvHint}`, current: 0, total: 0 } })
       return
     }
     const existing = state.instruments
@@ -605,8 +640,15 @@ export function usePipeline() {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker) return
     try {
-      const cacheKey = `cache:yahoo:${inst.yahooTicker}`
+      const cacheKey = buildYahooCacheKey(inst.yahooTicker)
       let r = cacheGet<any>(cacheKey, YAHOO_TTL_MS)
+      if (!r) {
+        const legacy = cacheGet<any>(buildLegacyYahooCacheKey(inst.yahooTicker), YAHOO_TTL_MS)
+        if (legacy) {
+          r = legacy
+          cacheSet(cacheKey, legacy, YAHOO_TTL_MS)
+        }
+      }
       if (!r) {
         r = await apiYahooSingle(inst.yahooTicker)
         if (r) cacheSet(cacheKey, r, YAHOO_TTL_MS)
@@ -637,25 +679,37 @@ export function usePipeline() {
     }
   }, [state.instruments])
 
-  const fetchSingleInstrumentAnalyst = useCallback(async (isin: string) => {
+  const fetchSingleInstrumentAnalyst = useCallback(async (
+    isin: string,
+    options?: { suppressGemini?: boolean },
+  ) => {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
     if (inst.tfaPhase === 'watch') {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
     }
     try {
-      const cacheKey = `cache:analyst:v4:${inst.yahooTicker}`
-      let r = cacheGet<any>(cacheKey, ANALYST_TTL_MS)
+      const cacheKey = buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic)
+      const analystTtlMs = inst.mnemonic ? LEEWAY_TTL_MS : ANALYST_TTL_MS
+      let r = cacheGet<any>(cacheKey, analystTtlMs)
       if (!r) {
-        r = await fetch('/api/yahoo-analyst', {
+        const legacy = cacheGet<any>(buildLegacyAnalystCacheKey(inst.yahooTicker), analystTtlMs)
+        if (legacy) {
+          r = legacy
+          cacheSet(cacheKey, legacy, analystTtlMs)
+        }
+      }
+      if (!r) {
+        r = await apiFetchJson<any>('/api/yahoo-analyst', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticker: inst.yahooTicker, isin: inst.isin }),
-        }).then((res) => {
-          if (!res.ok) throw new Error(`Yahoo Analyst API error: ${res.status}`)
-          return res.json()
+          body: JSON.stringify({
+            ticker: inst.yahooTicker,
+            isin: inst.isin,
+            mnemonic: inst.mnemonic ?? undefined,
+          }),
         })
-        if (r) cacheSet(cacheKey, r, ANALYST_TTL_MS)
+        if (r) cacheSet(cacheKey, r, analystTtlMs)
       }
       if (!r) return
       const updates: any = {
@@ -676,8 +730,13 @@ export function usePipeline() {
       if (r.ebitda != null) updates.ebitda = r.ebitda
       if (r.enterpriseValue != null) updates.enterpriseValue = r.enterpriseValue
       if (r.returnOnAssets != null) updates.returnOnAssets = r.returnOnAssets
-      if (r.pe != null || r.pb != null || r.ebitda != null || r.enterpriseValue != null || r.returnOnAssets != null) {
+      if (r.marketCap != null) updates.marketCap = r.marketCap
+      if (r.pe != null || r.pb != null || r.ebitda != null || r.enterpriseValue != null || r.returnOnAssets != null || r.marketCap != null) {
         updates.fundamentalsFetched = true
+      }
+      if (inst.mnemonic) {
+        updates.leewayFetched = true
+        updates.leewayError = r.leewayUsed ? null : 'Keine Leeway-Daten'
       }
 
       const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
@@ -843,6 +902,7 @@ export function usePipeline() {
 
       const updatedPhase = updates.tfaPhase
       if (
+        !options?.suppressGemini &&
         inst.type === 'Stock' &&
         (updatedPhase === 'watch' || updatedPhase === 'above_all_mas' ||
          inst.tfaPhase === 'watch' || inst.tfaPhase === 'above_all_mas') &&
@@ -856,7 +916,7 @@ export function usePipeline() {
           let data = cacheGet<any>(catalystCacheKey, TFA_CATALYST_TTL_MS)
 
           if (!data) {
-            const res = await fetch('/api/tfa-catalyst', {
+            data = await apiFetchJson<any>('/api/tfa-catalyst', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -868,11 +928,6 @@ export function usePipeline() {
                 scenario: phase1.scenario ?? inst.tfaScenario ?? '52w',
               }),
             })
-            if (!res.ok) {
-              dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'watch' } })
-              return
-            }
-            data = await res.json()
             cacheSet(catalystCacheKey, data, TFA_CATALYST_TTL_MS)
           }
 
@@ -959,6 +1014,75 @@ export function usePipeline() {
       }
     })()
   }, [displayedInstruments, state.fetchStatus.phase, state.tableState.tfaMode, fetchSingleInstrumentAnalyst, dispatch])
+
+  useEffect(() => {
+    if (!['done', 'idle'].includes(state.fetchStatus.phase)) return
+    if (leewayRunning.current) return
+
+    const allStocksWithPrices = state.instruments.filter(
+      (i) => i.type === 'Stock' && i.priceFetched && i.mnemonic
+    )
+    if (allStocksWithPrices.length === 0) return
+
+    const top50Fetched = allStocksWithPrices.filter(
+      (i) => i.leewayFetched && (i.riskAdjustedRank ?? 9999) <= LEEWAY_TOP_N
+    )
+    const top50Available = allStocksWithPrices.filter(
+      (i) => (i.riskAdjustedRank ?? 9999) <= LEEWAY_TOP_N
+    )
+
+    const top50CacheAge = (() => {
+      if (!hasStorage()) return null
+      if (top50Fetched.length < top50Available.length) return null
+      if (top50Fetched.length === 0) return null
+      let oldest = Date.now()
+      for (const inst of top50Fetched) {
+        try {
+          const raw = JSON.parse(localStorage.getItem(buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic)) ?? 'null')
+            ?? JSON.parse(localStorage.getItem(buildLegacyAnalystCacheKey(inst.yahooTicker)) ?? 'null')
+          if (!raw?.ts) return null
+          if (raw.ts < oldest) oldest = raw.ts
+        } catch {
+          return null
+        }
+      }
+      return Date.now() - oldest
+    })()
+
+    const maxRank = (
+      top50CacheAge != null &&
+      top50CacheAge > LEEWAY_EXTEND_AFTER_MS &&
+      top50Available.length >= LEEWAY_TOP_N
+    )
+      ? LEEWAY_EXTENDED_N
+      : LEEWAY_TOP_N
+
+    const candidates = allStocksWithPrices
+      .filter((i) =>
+        !i.leewayFetched &&
+        !i.analystFetched &&
+        (i.riskAdjustedRank ?? 9999) <= maxRank
+      )
+      .sort((a, b) => (a.riskAdjustedRank ?? 9999) - (b.riskAdjustedRank ?? 9999))
+
+    if (candidates.length === 0) return
+
+    leewayRunning.current = true
+    void (async () => {
+      try {
+        for (const inst of candidates) {
+          await fetchSingleInstrumentAnalyst(inst.isin, { suppressGemini: true })
+          await new Promise((r) => setTimeout(r, 200))
+        }
+      } finally {
+        leewayRunning.current = false
+      }
+    })()
+  }, [
+    state.fetchStatus.phase,
+    state.instruments.filter((i) => i.type === 'Stock' && i.priceFetched).length,
+    fetchSingleInstrumentAnalyst,
+  ])
 
   const fetchPortfolioPrices = useCallback(async (isins: string[]) => {
     const targets = state.instruments.filter((i) => isins.includes(i.isin) && i.yahooTicker)

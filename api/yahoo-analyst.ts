@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireAuth } from './_auth'
 
 interface AnalystResult {
   ticker: string
@@ -17,7 +18,9 @@ interface AnalystResult {
   returnOnAssets?: number | null
   pe?: number | null
   pb?: number | null
-  source?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
+  marketCap?: number | null
+  source?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite' | 'leeway'
+  leewayUsed?: boolean
   error?: string
 }
 
@@ -33,6 +36,19 @@ function stripTicker(raw: string): string {
 
 function stripTickerUpper(raw: string): string {
   return raw.split(/[.:]/)[0].toUpperCase()
+}
+
+function normalizeMnemonic(raw?: string): string | null {
+  if (!raw || typeof raw !== 'string') return null
+  const normalized = raw.trim().toUpperCase()
+  return normalized.length > 0 ? normalized : null
+}
+
+function buildAnalystCacheKey(ticker: string, mnemonic?: string): string {
+  const normalizedTicker = ticker.trim().toUpperCase()
+  const normalizedMnemonic = normalizeMnemonic(mnemonic)
+  const mnemonicPart = normalizedMnemonic ?? '__NO_MNEMONIC__'
+  return `${normalizedTicker}::${mnemonicPart}`
 }
 
 function parseMoney(text: string | null): number | null {
@@ -377,7 +393,100 @@ async function fetchFromOptionAnalysisSuiteWithRetry(ticker: string): Promise<Pa
   throw lastErr || new Error('OptionsAnalysisSuite error')
 }
 
-async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResult> {
+async function fetchFromLeeway(mnemonic: string): Promise<Partial<AnalystResult>> {
+  const apiToken = process.env.LEEWAY_API_TOKEN
+  if (!apiToken) throw new Error('LEEWAY_API_TOKEN not configured')
+
+  const ticker = `${mnemonic.toUpperCase()}.XETRA`
+  const url = `https://api.leeway.tech/api/v1/public/fundamentals/${encodeURIComponent(ticker)}?apitoken=${apiToken}`
+  const res = await fetch(url, { headers: { Accept: 'application/json' } })
+  if (res.status === 404) throw new Error(`Leeway: ${ticker} not found`)
+  if (!res.ok) throw new Error(`Leeway error: ${res.status}`)
+
+  const data = await res.json()
+  const h = data?.Highlights ?? data?.highlights ?? {}
+
+  const num = (v: any): number | null =>
+    v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null
+
+  const latestYearly = (section: any, ...fields: string[]): number | null => {
+    if (!section || typeof section !== 'object') return null
+    const keys = Object.keys(section).sort().reverse()
+    for (const k of keys) {
+      for (const f of fields) {
+        const v = section[k]?.[f]
+        if (v != null && v !== '' && Number.isFinite(Number(v))) return Number(v)
+      }
+    }
+    return null
+  }
+
+  const incomeYearly = data?.Financials?.Income_Statement?.yearly
+    ?? data?.financials?.income_statement?.yearly
+    ?? {}
+
+  const pe = num(h.PERatio ?? h.peRatio ?? h.PriceEarningsTTM ?? h.pe_ratio)
+  const pb = num(h.PriceBookMRQ ?? h.priceBook ?? h.PriceBook ?? h.price_book)
+  const marketCap = num(h.MarketCapitalization ?? h.marketCap ?? h.market_cap)
+  const ebitda = num(h.EBITDA ?? h.ebitda) ?? latestYearly(incomeYearly, 'ebitda', 'EBITDA')
+  const enterpriseValue = num(h.EnterpriseValue ?? h.enterpriseValue ?? h.enterprise_value)
+  const returnOnAssets = num(h.ReturnOnAssetsTTM ?? h.returnOnAssets ?? h.return_on_assets)
+
+  const analystData = data?.AnalystRatings ?? data?.analystRatings ?? h
+  const strongBuy = num(analystData?.StrongBuy ?? analystData?.strong_buy) ?? 0
+  const buy = num(analystData?.Buy ?? analystData?.buy) ?? 0
+  const hold = num(analystData?.Hold ?? analystData?.hold) ?? 0
+  const sell = num(analystData?.Sell ?? analystData?.sell) ?? 0
+  const strongSell = num(analystData?.StrongSell ?? analystData?.strong_sell) ?? 0
+  const total = strongBuy + buy + hold + sell + strongSell
+
+  const recommendationMean = total > 0
+    ? (strongBuy * 1 + buy * 2 + hold * 3 + sell * 4 + strongSell * 5) / total
+    : null
+
+  const recommendationKey = recommendationMean == null ? null
+    : recommendationMean <= 1.5 ? 'strongbuy'
+    : recommendationMean <= 2.5 ? 'buy'
+    : recommendationMean <= 3.5 ? 'hold'
+    : recommendationMean <= 4.5 ? 'sell'
+    : 'strongsell'
+
+  const targetMeanPrice = num(
+    analystData?.TargetPrice
+    ?? analystData?.targetPrice
+    ?? analystData?.target_price
+    ?? h.AnalystTargetPrice
+    ?? h.analystTargetPrice
+  )
+
+  const result: Partial<AnalystResult> = {
+    leewayUsed: true,
+    source: 'leeway',
+  }
+  if (pe != null) result.pe = pe
+  if (pb != null) result.pb = pb
+  if (marketCap != null) result.marketCap = marketCap
+  if (ebitda != null) result.ebitda = ebitda
+  if (enterpriseValue != null) result.enterpriseValue = enterpriseValue
+  if (returnOnAssets != null) result.returnOnAssets = returnOnAssets
+  if (recommendationMean != null) result.recommendationMean = recommendationMean
+  if (recommendationKey != null) result.recommendationKey = recommendationKey
+  if (total > 0) result.numberOfAnalystOpinions = total
+  if (targetMeanPrice != null) result.targetMeanPrice = targetMeanPrice
+
+  const hasUsefulData = pe != null || pb != null || marketCap != null || ebitda != null ||
+    enterpriseValue != null || returnOnAssets != null ||
+    recommendationMean != null || targetMeanPrice != null
+  if (!hasUsefulData) throw new Error('Leeway: keine verwertbaren Daten in der Antwort')
+
+  return result
+}
+
+async function fetchAnalyst(
+  ticker: string,
+  isin?: string,
+  mnemonic?: string,
+): Promise<AnalystResult> {
   const base: AnalystResult = {
     ticker,
     recommendationMean: null,
@@ -390,6 +499,16 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     currency: null,
     financialCurrency: null,
     fxRate: null,
+  }
+
+  // Leeway zuerst versuchen — liefert oft bessere Fundamentals + Analyst-Konsens.
+  if (mnemonic) {
+    try {
+      const leeway = await fetchFromLeeway(mnemonic)
+      Object.assign(base, leeway)
+    } catch {
+      // Leeway-Fehler still ignorieren, reguläre Fallback-Kette läuft weiter.
+    }
   }
 
   try {
@@ -417,16 +536,16 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
     const rt = summary.recommendationTrend || {}
     const trend0 = Array.isArray(rt.trend) ? rt.trend[0] : null
 
-    base.recommendationMean = fd.recommendationMean?.raw ?? null
-    base.recommendationKey = fd.recommendationKey ?? trend0?.trend ?? null
-    base.numberOfAnalystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
-    base.targetMeanPrice = fd.targetMeanPrice?.raw ?? null
-    base.targetLowPrice = fd.targetLowPrice?.raw ?? null
-    base.targetHighPrice = fd.targetHighPrice?.raw ?? null
-    base.currentPrice = fd.currentPrice?.raw ?? null
-    base.currency = price.currency ?? null
-    base.financialCurrency = fd.financialCurrency ?? null
-    base.source = 'yahoo'
+    if (base.recommendationMean == null) base.recommendationMean = fd.recommendationMean?.raw ?? null
+    if (base.recommendationKey == null) base.recommendationKey = fd.recommendationKey ?? trend0?.trend ?? null
+    if (base.numberOfAnalystOpinions == null) base.numberOfAnalystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
+    if (base.targetMeanPrice == null) base.targetMeanPrice = fd.targetMeanPrice?.raw ?? null
+    if (base.targetLowPrice == null) base.targetLowPrice = fd.targetLowPrice?.raw ?? null
+    if (base.targetHighPrice == null) base.targetHighPrice = fd.targetHighPrice?.raw ?? null
+    base.currentPrice = fd.currentPrice?.raw ?? base.currentPrice ?? null
+    base.currency = price.currency ?? base.currency ?? null
+    base.financialCurrency = fd.financialCurrency ?? base.financialCurrency ?? null
+    if (!base.leewayUsed) base.source = 'yahoo'
 
     // ISIN-basierte Currency als Fallback wenn Yahoo nichts oder falsch liefert
     const isinPrefix = (isin ?? '').slice(0, 2).toUpperCase()
@@ -483,19 +602,19 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
       if (!hasData) throw new Error('MarketScreener: empty data')
       return {
         ...base,
-        recommendationKey: ms.recommendationKey ?? null,
-        numberOfAnalystOpinions: ms.numberOfAnalystOpinions ?? null,
-        targetMeanPrice: ms.targetMeanPrice ?? null,
-        targetLowPrice: ms.targetLowPrice ?? null,
-        targetHighPrice: ms.targetHighPrice ?? null,
-        currentPrice: ms.currentPrice ?? null,
-        financialCurrency: ms.financialCurrency ?? ms.currency ?? null,
-        pe: ms.pe ?? null,
-        pb: ms.pb ?? null,
-        ebitda: ms.ebitda ?? null,
-        enterpriseValue: ms.enterpriseValue ?? null,
-        returnOnAssets: ms.returnOnAssets ?? null,
-        source: 'marketscreener',
+        recommendationKey: base.recommendationKey ?? ms.recommendationKey ?? null,
+        numberOfAnalystOpinions: base.numberOfAnalystOpinions ?? ms.numberOfAnalystOpinions ?? null,
+        targetMeanPrice: base.targetMeanPrice ?? ms.targetMeanPrice ?? null,
+        targetLowPrice: base.targetLowPrice ?? ms.targetLowPrice ?? null,
+        targetHighPrice: base.targetHighPrice ?? ms.targetHighPrice ?? null,
+        currentPrice: base.currentPrice ?? ms.currentPrice ?? null,
+        financialCurrency: base.financialCurrency ?? ms.financialCurrency ?? ms.currency ?? null,
+        pe: base.pe ?? ms.pe ?? null,
+        pb: base.pb ?? ms.pb ?? null,
+        ebitda: base.ebitda ?? ms.ebitda ?? null,
+        enterpriseValue: base.enterpriseValue ?? ms.enterpriseValue ?? null,
+        returnOnAssets: base.returnOnAssets ?? ms.returnOnAssets ?? null,
+        source: base.leewayUsed ? 'leeway' : 'marketscreener',
       }
     } catch (msErr: any) {
       // Fallback 2: OptionsAnalysisSuite (public HTML)
@@ -503,12 +622,12 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
         const fallback = await fetchFromOptionAnalysisSuiteWithRetry(ticker)
         return {
           ...base,
-          recommendationKey: fallback.recommendationKey ?? null,
-          targetMeanPrice: fallback.targetMeanPrice ?? null,
-          targetLowPrice: fallback.targetLowPrice ?? null,
-          targetHighPrice: fallback.targetHighPrice ?? null,
-          financialCurrency: fallback.financialCurrency ?? fallback.currency ?? null,
-          source: 'optionsanalysissuite',
+          recommendationKey: base.recommendationKey ?? fallback.recommendationKey ?? null,
+          targetMeanPrice: base.targetMeanPrice ?? fallback.targetMeanPrice ?? null,
+          targetLowPrice: base.targetLowPrice ?? fallback.targetLowPrice ?? null,
+          targetHighPrice: base.targetHighPrice ?? fallback.targetHighPrice ?? null,
+          financialCurrency: base.financialCurrency ?? fallback.financialCurrency ?? fallback.currency ?? null,
+          source: base.leewayUsed ? 'leeway' : 'optionsanalysissuite',
         }
       } catch (fallbackErr: any) {
         base.error = [err?.message, msErr?.message, fallbackErr?.message].filter(Boolean).join(' | ')
@@ -521,15 +640,17 @@ async function fetchAnalyst(ticker: string, isin?: string): Promise<AnalystResul
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
   const ticker: string | undefined = req.body?.ticker
   const isin: string | undefined = req.body?.isin
+  const mnemonic: string | undefined = normalizeMnemonic(req.body?.mnemonic) ?? undefined
   if (!ticker) return res.status(400).json({ error: 'ticker required' })
-  const cacheKey = `${ticker}`
+  const cacheKey = buildAnalystCacheKey(ticker, mnemonic)
   const cached = analystCache.get(cacheKey)
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
     return res.status(200).json(cached.data)
   }
-  const result = await fetchAnalyst(ticker, isin)
+  const result = await fetchAnalyst(ticker, isin, mnemonic)
   analystCache.set(cacheKey, { ts: Date.now(), data: result })
   return res.status(200).json(result)
 }

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import type { ColumnGroup, TypeFilter } from '../types'
+import { isAiFilterPlan } from '../utils/aiFilter'
+import { apiFetchJson } from '../api/client'
 
 const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
   scores: 'Scores',
@@ -104,19 +106,22 @@ export function FilterBar() {
     setAiLoading(true)
     setAiError(null)
     try {
-      const res = await fetch('/api/ai-filter', {
+      const data = await apiFetchJson<any>('/api/ai-filter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: q }),
       })
-      const data = await res.json()
-      if (!res.ok || data.error) {
+      if (data.error) {
         setAiError(data.error ?? 'Fehler')
+        return
+      }
+      if (!isAiFilterPlan(data.plan)) {
+        setAiError('Ungültiger KI-Filter')
         return
       }
       dispatch({
         type: 'SET_TABLE_STATE',
-        updates: { aiFilterFn: data.fn, aiFilterQuery: data.query, aiFilterActive: true },
+        updates: { aiFilterPlan: data.plan, aiFilterQuery: data.query, aiFilterActive: true },
       })
       setAiInput('')
     } catch (err: any) {
@@ -127,14 +132,14 @@ export function FilterBar() {
   }
 
   const clearAiFilter = () => {
-    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterFn: null, aiFilterQuery: null, aiFilterActive: false } })
+    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterPlan: null, aiFilterQuery: null, aiFilterActive: false } })
     setAiError(null)
   }
 
   const editAiFilter = () => {
     if (!aiFilterQuery) return
     setAiInput(aiFilterQuery)
-    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterFn: null, aiFilterQuery: null, aiFilterActive: false } })
+    dispatch({ type: 'SET_TABLE_STATE', updates: { aiFilterPlan: null, aiFilterQuery: null, aiFilterActive: false } })
     setAiError(null)
   }
 

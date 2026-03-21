@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useAppState } from '../store'
 import { computeRegimeInputs } from '../utils/regimeInputs'
 import type { Instrument } from '../types'
+import { apiFetchJson } from '../api/client'
 
 const REGIME_TTL = 60 * 60 * 1000  // 60 Minuten
 
@@ -26,12 +27,11 @@ export function useRegime() {
     if (inputs.instrumentCount < 10) return
 
     try {
-      const res = await fetch('/api/claude-regime', {
+      const data = await apiFetchJson<any>('/api/claude-regime', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inputs),
       })
-      const data = await res.json()
       if (data.error) return
       dispatch({
         type: 'SET_MARKET_REGIME',

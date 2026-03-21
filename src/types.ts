@@ -80,7 +80,7 @@ export interface Instrument {
   targetFxApplied?: boolean
   targetCurrencyUnknown?: boolean
   marketCap?: number | null
-  analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite'
+  analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite' | 'leeway'
   analystFetched?: boolean
   analystError?: string
 
@@ -106,6 +106,8 @@ export interface Instrument {
   enterpriseValue?: number | null
   returnOnAssets?: number | null
   fundamentalsFetched?: boolean
+  leewayFetched?: boolean
+  leewayError?: string | null
   earningsYieldRank?: number
   returnOnAssetsRank?: number
 
@@ -238,6 +240,21 @@ export type TfaPhase =
   | 'rejected'
   | 'ko'
 
+export type AiFilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in'
+
+export interface AiFilterRule {
+  field: string
+  operator: AiFilterOperator
+  value: string | number | boolean | null | Array<string | number | boolean | null>
+  fallback?: string | number | boolean | null
+}
+
+export interface AiFilterPlan {
+  version: 1
+  match: 'all' | 'any'
+  rules: AiFilterRule[]
+}
+
 export interface TableState {
   sortColumn: SortColumn
   sortDirection: SortDirection
@@ -247,7 +264,7 @@ export interface TableState {
   filterBelowAllMAs: boolean
   tfaMode: boolean
   pullbackMode: boolean
-  aiFilterFn: string | null
+  aiFilterPlan: AiFilterPlan | null
   aiFilterQuery: string | null
   aiFilterActive: boolean
   hiddenColumnGroups: ColumnGroup[]

@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireAuth } from './_auth'
 
 interface JustETFResult {
   isin: string
@@ -65,6 +66,7 @@ async function scrapeJustETF(isin: string): Promise<JustETFResult> {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
 
   const isins: string[] = req.body?.isins
   if (!Array.isArray(isins) || isins.length === 0) {

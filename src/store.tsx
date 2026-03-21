@@ -4,6 +4,7 @@ import type {
 } from './types'
 import { ETF_GROUPS, STOCK_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
+import { applyAiFilterPlan } from './utils/aiFilter'
 
 interface AppState {
   instruments: Instrument[]
@@ -136,7 +137,7 @@ const DEFAULT_STATE: AppState = {
     filterBelowAllMAs: false,
     tfaMode: false,
     pullbackMode: false,
-    aiFilterFn: null,
+    aiFilterPlan: null,
     aiFilterQuery: null,
     aiFilterActive: false,
     hiddenColumnGroups: persistedHiddenColumns,
@@ -445,15 +446,8 @@ export function useDisplayedInstruments() {
   }
 
   // KI-Freitext-Filter
-  if (tableState.aiFilterActive && tableState.aiFilterFn) {
-    try {
-      const filterFn = new Function('inst', `"use strict"; return (${tableState.aiFilterFn})(inst)`)
-      filtered = filtered.filter((inst) => {
-        try { return Boolean(filterFn(inst)) } catch { return true }
-      })
-    } catch {
-      // Bei Parse-Fehler: Filter ignorieren, alle behalten
-    }
+  if (tableState.aiFilterActive && tableState.aiFilterPlan) {
+    filtered = applyAiFilterPlan(filtered, tableState.aiFilterPlan)
   }
 
   // Sort

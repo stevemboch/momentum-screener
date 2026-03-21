@@ -1,107 +1,121 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { geminiChat } from './_gemini'
+import { geminiChat, parseJSON } from './_gemini'
+import { requireAuth } from './_auth'
+
+type Primitive = string | number | boolean | null
+type Operator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in'
+
+interface AiFilterRule {
+  field: string
+  operator: Operator
+  value: Primitive | Primitive[]
+  fallback?: Primitive
+}
+
+interface AiFilterPlan {
+  version: 1
+  match: 'all' | 'any'
+  rules: AiFilterRule[]
+}
+
+const MAX_RULES = 20
+const MAX_IN_VALUES = 30
+
+const ALLOWED_FIELDS = new Set([
+  'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'inPortfolio',
+  'aum', 'ter',
+  'r1m', 'r3m', 'r6m', 'vola', 'rsi14', 'levyRS',
+  'ma50', 'ma100', 'ma200', 'aboveMa10', 'aboveMa50', 'aboveMa100', 'aboveMa200',
+  'momentumRank', 'riskAdjustedRank', 'combinedRank',
+  'momentumScore', 'riskAdjustedScore', 'combinedScore', 'pullbackScore', 'breakoutScore',
+  'pe', 'pb', 'returnOnAssets', 'ebitda', 'enterpriseValue', 'earningsYield',
+  'analystRating', 'analystOpinions', 'marketCap',
+  'drawFromHigh', 'drawFrom5YHigh', 'drawFrom7YHigh',
+  'tfaPhase', 'tfaScore', 'tfaScenario', 'tfaEScore', 'tfaKO',
+  'priceFetched', 'analystFetched', 'fundamentalsFetched',
+])
 
 const SYSTEM_PROMPT = `Du bist ein Filter-Generator fuer einen Xetra-Aktien-Screener.
-Deine Aufgabe: Wandle einen Nutzerwunsch in eine JavaScript-Pfeilfunktion um.
-Die Funktion nimmt ein "inst"-Objekt und gibt true/false zurueck.
-Gib AUSSCHLIESSLICH die Pfeilfunktion zurueck, kein JSON, keine Erklaerung, keine Backticks.
+Wandle einen Nutzerwunsch in ein strikt valides JSON-Objekt mit diesem Schema:
+{
+  "version": 1,
+  "match": "all" | "any",
+  "rules": [
+    {
+      "field": string,
+      "operator": "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in",
+      "value": string | number | boolean | null | Array<string|number|boolean|null>,
+      "fallback": string | number | boolean | null (optional)
+    }
+  ]
+}
 
-VERFUEGBARE FELDER:
+WICHTIG:
+- Gib NUR JSON zurueck. Keine Erklaerung, keine Markdown-Backticks.
+- Nur Felder aus dieser Liste: ${Array.from(ALLOWED_FIELDS).join(', ')}.
+- "in" nutzt ein nicht-leeres Array in "value".
+- max. 12 Regeln.
+- Falls etwas unklar ist: konservativ bleiben (wenige Regeln, keine riskanten Annahmen).
 
-// Stammdaten
-inst.type: 'ETF' | 'ETC' | 'Stock'
-inst.isin: string
-inst.displayName: string
-inst.currency: string | null
-inst.xetraGroup: string | null
-  Moegliche Werte: 'DAX', 'MDAX', 'SDAX', 'DEUTSCHLAND', 'NORDAMERIKA',
-  'FRANKREICH', 'GROSSBRITANNIEN', 'SKANDINAVIEN', 'SCHWEIZ LIECHTENSTEIN',
-  'BELGIEN NIEDERLANDE LUXEMBURG', 'ITALIEN GRIECHENLAND', 'OESTERREICH', 'SPANIEN PORTUGAL'
-inst.inPortfolio: boolean
+Beispiele:
+Nutzerwunsch: "nur profitable Stocks mit RSI unter 50"
+{
+  "version": 1,
+  "match": "all",
+  "rules": [
+    { "field": "type", "operator": "eq", "value": "Stock" },
+    { "field": "returnOnAssets", "operator": "gt", "value": 0, "fallback": -1 },
+    { "field": "rsi14", "operator": "lt", "value": 50, "fallback": 100 }
+  ]
+}
 
-// ETF-spezifisch
-inst.aum: number | null     (in EUR, z.B. 1000000000 = 1 Mrd)
-inst.ter: number | null     (in Prozent, z.B. 0.07 = 0.07%)
+Nutzerwunsch: "Top-50 Momentum nicht im Portfolio"
+{
+  "version": 1,
+  "match": "all",
+  "rules": [
+    { "field": "momentumRank", "operator": "lte", "value": 50, "fallback": 9999 },
+    { "field": "inPortfolio", "operator": "eq", "value": false, "fallback": false }
+  ]
+}`
 
-// Kurs & Performance
-inst.r1m: number | null     (Return, z.B. 0.05 = +5%, -0.10 = -10%)
-inst.r3m: number | null
-inst.r6m: number | null
-inst.vola: number | null    (annualisiert, z.B. 0.25 = 25%)
-inst.rsi14: number | null   (0-100)
-inst.levyRS: number | null  (>1.0 = ueber Halbjahres-Trend)
+function isPrimitive(value: unknown): value is Primitive {
+  return value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
 
-// Gleitende Durchschnitte
-inst.ma50/ma100/ma200: number | null
-inst.aboveMa10/aboveMa50/aboveMa100/aboveMa200: boolean | null
+function isOperator(value: unknown): value is Operator {
+  return value === 'eq' || value === 'neq' || value === 'gt' || value === 'gte' || value === 'lt' || value === 'lte' || value === 'in'
+}
 
-// Rankings (1 = bestes Instrument im Universum)
-inst.momentumRank: number | undefined
-inst.riskAdjustedRank: number | undefined
-inst.combinedRank: number | undefined
+function isRule(value: unknown): value is AiFilterRule {
+  if (!value || typeof value !== 'object') return false
+  const obj = value as Record<string, unknown>
+  if (typeof obj.field !== 'string' || !ALLOWED_FIELDS.has(obj.field)) return false
+  if (!isOperator(obj.operator)) return false
 
-// Scores (0-1, hoeher = besser)
-inst.momentumScore: number | null
-inst.riskAdjustedScore: number | null
-inst.combinedScore: number | null
-inst.pullbackScore: number | null
-inst.breakoutScore: number | null   (0-5 Punkte)
+  if (obj.operator === 'in') {
+    if (!Array.isArray(obj.value) || obj.value.length === 0 || obj.value.length > MAX_IN_VALUES) return false
+    if (!obj.value.every((v) => isPrimitive(v))) return false
+  } else if (!isPrimitive(obj.value)) {
+    return false
+  }
 
-// Fundamentals (Stocks)
-inst.pe: number | null              (KGV)
-inst.pb: number | null              (KBV)
-inst.returnOnAssets: number | null  (z.B. 0.08 = 8%)
-inst.ebitda: number | null
-inst.enterpriseValue: number | null
-inst.earningsYield: number | null
-inst.analystRating: number | null   (1=Strong Buy, 5=Sell)
-inst.analystOpinions: number | null
-inst.marketCap: number | null       (in EUR)
+  if (obj.fallback !== undefined && !isPrimitive(obj.fallback)) return false
+  return true
+}
 
-// Drawdown (negativ, z.B. -0.45 = 45% unter Hoch)
-inst.drawFromHigh: number | null    (vs. 52W-Hoch)
-inst.drawFrom5YHigh: number | null
-inst.drawFrom7YHigh: number | null
-
-// TFA
-inst.tfaPhase: 'none'|'monitoring'|'above_all_mas'|'watch'|'fetching'|'qualified'|'rejected'|'ko' | undefined
-inst.tfaScore: number | null
-inst.tfaScenario: '52w'|'5y'|'7y' | null
-inst.tfaEScore: number | null
-inst.tfaKO: boolean | undefined
-
-// Datenstatus
-inst.priceFetched: boolean | undefined
-inst.analystFetched: boolean | undefined
-inst.fundamentalsFetched: boolean | undefined
-
-REGELN:
-- Nutze ?? fuer nullable Felder: (inst.rsi14 ?? 100) < 40
-- xetraGroup: inst.xetraGroup === 'DAX' oder Array.includes()
-- Fuer "Deutschland": ['DAX','MDAX','SDAX','DEUTSCHLAND'].includes(inst.xetraGroup ?? '')
-- AUM in Mrd: inst.aum > 1_000_000_000
-- TER direkt in %: inst.ter < 0.2
-- Returns: 0.10 = +10%
-- Unbekannte Felder: konservativ true zurueckgeben
-
-BEISPIELE:
-Wunsch: "nur profitable Stocks mit RSI unter 50"
-Output: (inst) => inst.type === 'Stock' && (inst.returnOnAssets ?? -1) > 0 && (inst.rsi14 ?? 100) < 50
-
-Wunsch: "ETFs mit TER unter 0.2% und AUM ueber 500 Mio"
-Output: (inst) => (inst.type === 'ETF' || inst.type === 'ETC') && (inst.ter ?? 99) < 0.2 && (inst.aum ?? 0) > 500_000_000
-
-Wunsch: "deutsche Aktien im Aufwaertstrend"
-Output: (inst) => inst.type === 'Stock' && ['DAX','MDAX','SDAX','DEUTSCHLAND'].includes(inst.xetraGroup ?? '') && inst.aboveMa200 === true
-
-Wunsch: "TFA-Kandidaten noch nicht analysiert"
-Output: (inst) => inst.type === 'Stock' && (inst.tfaPhase === 'monitoring' || inst.tfaPhase === 'watch') && !inst.analystFetched
-
-Wunsch: "Top-50 Momentum nicht im Portfolio"
-Output: (inst) => (inst.momentumRank ?? 9999) <= 50 && !inst.inPortfolio`
+function isAiFilterPlan(value: unknown): value is AiFilterPlan {
+  if (!value || typeof value !== 'object') return false
+  const obj = value as Record<string, unknown>
+  if (obj.version !== 1) return false
+  if (obj.match !== 'all' && obj.match !== 'any') return false
+  if (!Array.isArray(obj.rules) || obj.rules.length > MAX_RULES) return false
+  return obj.rules.every((r) => isRule(r))
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
   const { query } = req.body
   if (!query || typeof query !== 'string' || query.trim().length === 0) {
     return res.status(400).json({ error: 'query required' })
@@ -109,23 +123,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const raw = await geminiChat(SYSTEM_PROMPT, `Nutzerwunsch: "${query.trim()}"`)
-
-    const fn = raw
-      .replace(/^```(?:javascript|js|typescript|ts)?\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim()
-
-    if (!fn.startsWith('(inst)') && !fn.startsWith('inst =>') && !fn.startsWith('inst=>')) {
-      return res.status(422).json({ error: 'Ungueltige Funktion generiert', raw: fn })
-    }
-
+    let plan: unknown
     try {
-      new Function('inst', `"use strict"; return (${fn})(inst)`)
-    } catch (syntaxErr: any) {
-      return res.status(422).json({ error: 'Syntax-Fehler', details: syntaxErr.message, raw: fn })
+      plan = parseJSON<unknown>(raw)
+    } catch {
+      return res.status(422).json({ error: 'Ungueltiges JSON generiert' })
     }
-
-    return res.status(200).json({ fn, query: query.trim() })
+    if (!isAiFilterPlan(plan)) {
+      return res.status(422).json({ error: 'Ungueltiges Filter-JSON generiert' })
+    }
+    return res.status(200).json({ plan, query: query.trim() })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

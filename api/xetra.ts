@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireAuth } from './_auth'
 
 async function findXetraCSVUrl(): Promise<string | null> {
   try {
@@ -37,6 +38,7 @@ async function findXetraCSVUrl(): Promise<string | null> {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
 
   // Try to find the current CSV URL from the downloads page
   let csvUrl = await findXetraCSVUrl()

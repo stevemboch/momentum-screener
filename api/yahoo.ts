@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireAuth } from './_auth'
 
 interface PriceResult {
   ticker: string
@@ -133,6 +134,7 @@ async function runWithConcurrency<T>(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAuth(req, res)) return
   const tickers: string[] = req.body?.tickers
   if (!Array.isArray(tickers) || tickers.length === 0)
     return res.status(400).json({ error: 'tickers array required' })

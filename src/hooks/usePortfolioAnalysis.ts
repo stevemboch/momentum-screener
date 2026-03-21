@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useAppState } from '../store'
+import { apiFetchJson } from '../api/client'
 
 const BRIEFING_TTL = 2 * 60 * 60 * 1000  // 2h Cache
 
@@ -88,12 +89,11 @@ export function usePortfolioAnalysis() {
     setStructureStatus('loading')
     setStructureError(null)
     try {
-      const res = await fetch('/api/claude-portfolio', {
+      const data = await apiFetchJson<any>('/api/claude-portfolio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instruments: payload }),
       })
-      const data = await res.json()
       if (data.error) throw new Error(data.error)
       setStructureResult(data)
       setStructureStatus('done')
@@ -107,12 +107,11 @@ export function usePortfolioAnalysis() {
     setBriefingStatus('loading')
     setBriefingError(null)
     try {
-      const res = await fetch('/api/portfolio-briefing', {
+      const data = await apiFetchJson<any>('/api/portfolio-briefing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instruments: payload }),
       })
-      const data = await res.json()
       if (data.error) throw new Error(data.error)
       const withTs = { ...data, fetchedAt: Date.now() }
       setBriefingResult(withTs)
