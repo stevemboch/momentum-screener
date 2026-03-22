@@ -64,9 +64,15 @@ const STATUS_EMIT_MIN_DELTA_PCT = 0.01
 const LEEWAY_START_DELAY_MS = 1500
 const CACHE_EVICT_MAX_KEYS = 80
 const CACHE_RECOVERY_COOLDOWN_MS = 1000
-const YAHOO_STOCK_BATCH_SIZE = 6
-const YAHOO_FUND_BATCH_SIZE = 10
+const YAHOO_STOCK_BATCH_MIN = 4
+const YAHOO_STOCK_BATCH_MAX = 10
+const YAHOO_FUND_BATCH_MIN = 6
+const YAHOO_FUND_BATCH_MAX = 14
 const YAHOO_REQUEST_CONCURRENCY_MAX = 6
+const YAHOO_REQUEST_CONCURRENCY_MIN = 2
+const YAHOO_ADAPTIVE_COOLDOWN_MS = 2000
+const YAHOO_P95_SLOW_MS = 4500
+const YAHOO_P95_FAST_MS = 1800
 
 function isBlockingLeewayPhase(phase: string): boolean {
   return phase === 'prices' || phase === 'openfigi' || phase === 'justetf' || phase === 'dedup'
@@ -75,6 +81,21 @@ function isBlockingLeewayPhase(phase: string): boolean {
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 let lastCacheRecoveryAttemptTs = 0
 let lastCacheWriteWarnTs = 0
+let yahooStockBatchSize = 6
+let yahooFundBatchSize = 10
+let yahooRequestConcurrencyHint = 4
+let lastYahooAdaptiveTuneTs = 0
+
+function clamp(num: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, num))
+}
+
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))
+  return sorted[idx]
+}
 
 function normalizeTickerForCache(ticker: string): string {
   return ticker.trim().toUpperCase()
@@ -481,7 +502,7 @@ export function usePipeline() {
     const fetched: Array<{ task: (typeof tasks)[number]; result: any }> = []
     const batchJobs: Array<{ profile: YahooProfile; includeWeekly: boolean; batch: YahooFetchTask[] }> = []
     for (const group of requestGroups) {
-      const batchSize = group.profile === 'fund' ? YAHOO_FUND_BATCH_SIZE : YAHOO_STOCK_BATCH_SIZE
+      const batchSize = group.profile === 'fund' ? yahooFundBatchSize : yahooStockBatchSize
       for (let i = 0; i < group.items.length; i += batchSize) {
         batchJobs.push({
           profile: group.profile,
@@ -491,11 +512,16 @@ export function usePipeline() {
       }
     }
 
-    const requestConcurrency = Math.max(2, Math.min(YAHOO_REQUEST_CONCURRENCY_MAX, limit))
+    const batchLatenciesMs: number[] = []
+    const requestConcurrency = Math.max(
+      YAHOO_REQUEST_CONCURRENCY_MIN,
+      Math.min(YAHOO_REQUEST_CONCURRENCY_MAX, limit, yahooRequestConcurrencyHint)
+    )
     const batchResults = batchJobs.length > 0
       ? await parallelLimit(
           batchJobs.map((job) => async () => {
             const { batch } = job
+            const startedAt = Date.now()
             try {
               const tickers = batch.map((t) => t.ticker)
               const payload = await apiYahooBatch(tickers, {
@@ -512,6 +538,7 @@ export function usePipeline() {
                 result: { error: err?.message ?? 'Yahoo batch failed', ticker: task.ticker },
               }))
             } finally {
+              batchLatenciesMs.push(Date.now() - startedAt)
               done += batch.reduce((sum, item) => sum + item.resultIndices.length, 0)
               setStatus(`Fetching prices: ${done} / ${withTickers.length}`, done, withTickers.length)
             }
@@ -531,8 +558,32 @@ export function usePipeline() {
 
     const errorCount = fetched.filter(({ result }) => !result || result.error).length
     const errorRate = fetched.length > 0 ? errorCount / fetched.length : 0
+    const p95BatchLatencyMs = percentile(batchLatenciesMs, 0.95)
     if (errorRate >= 0.2 && yahooConcurrency > YAHOO_CONCURRENCY_MIN) yahooConcurrency -= 1
     else if (errorRate === 0 && fetched.length > 0 && yahooConcurrency < YAHOO_CONCURRENCY_MAX) yahooConcurrency += 1
+
+    const now = Date.now()
+    if (tasks.length >= 8 && now - lastYahooAdaptiveTuneTs >= YAHOO_ADAPTIVE_COOLDOWN_MS) {
+      if (errorRate >= 0.2 || p95BatchLatencyMs >= YAHOO_P95_SLOW_MS) {
+        yahooStockBatchSize = clamp(yahooStockBatchSize - 1, YAHOO_STOCK_BATCH_MIN, YAHOO_STOCK_BATCH_MAX)
+        yahooFundBatchSize = clamp(yahooFundBatchSize - 1, YAHOO_FUND_BATCH_MIN, YAHOO_FUND_BATCH_MAX)
+        yahooRequestConcurrencyHint = clamp(
+          yahooRequestConcurrencyHint - 1,
+          YAHOO_REQUEST_CONCURRENCY_MIN,
+          YAHOO_REQUEST_CONCURRENCY_MAX
+        )
+        lastYahooAdaptiveTuneTs = now
+      } else if (errorRate <= 0.05 && p95BatchLatencyMs > 0 && p95BatchLatencyMs <= YAHOO_P95_FAST_MS) {
+        yahooStockBatchSize = clamp(yahooStockBatchSize + 1, YAHOO_STOCK_BATCH_MIN, YAHOO_STOCK_BATCH_MAX)
+        yahooFundBatchSize = clamp(yahooFundBatchSize + 1, YAHOO_FUND_BATCH_MIN, YAHOO_FUND_BATCH_MAX)
+        yahooRequestConcurrencyHint = clamp(
+          yahooRequestConcurrencyHint + 1,
+          YAHOO_REQUEST_CONCURRENCY_MIN,
+          YAHOO_REQUEST_CONCURRENCY_MAX
+        )
+        lastYahooAdaptiveTuneTs = now
+      }
+    }
 
     const updated = [...instruments]
     const byTicker = new Map<string, number[]>()
