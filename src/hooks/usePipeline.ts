@@ -43,8 +43,8 @@ function isinToFinancialCurrency(isin: string | null | undefined): string | null
 }
 
 const YAHOO_FETCH_CONCURRENCY_LIMIT = 8
-const OPENFIGI_BATCH = 150
-const OPENFIGI_DELAY = 100
+const OPENFIGI_BATCH = 100
+const OPENFIGI_DELAY = 0
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const OPENFIGI_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -129,6 +129,10 @@ function buildAnalystCacheKey(ticker: string, mnemonic?: string): string {
 
 function buildLegacyAnalystCacheKey(ticker: string): string {
   return `cache:analyst:v4:${ticker}`
+}
+
+function buildOpenFigiCacheKey(idType: string, idValue: string): string {
+  return `cache:openfigi:v3:${idType}:${idValue.trim().toUpperCase()}`
 }
 
 function cacheGet<T>(key: string, ttlMs = CACHE_TTL_MS): T | null {
@@ -229,6 +233,8 @@ function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS): boolean {
 }
 
 interface OpenFIGIResult { name?: string; securityDescription?: string; isin?: string; ticker?: string; securityType?: string; securityType2?: string }
+interface OpenFIGIEmptyCache { __empty: true }
+type OpenFIGICacheEntry = OpenFIGIResult | OpenFIGIEmptyCache
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 type YahooProfile = 'stock' | 'fund'
 interface YahooRequestOptions { includeWeekly?: boolean; profile?: YahooProfile }
@@ -382,33 +388,50 @@ export function usePipeline() {
       if (inst.wkn?.length === 6) return { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
       return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker }
     })
-    const cacheKey = 'cache:openfigi:v2'
-    const cache = cacheGet<Record<string, OpenFIGIResult>>(cacheKey, OPENFIGI_TTL_MS) || {}
-    const keyFor = (j: { idType: string; idValue: string }) => `${j.idType}:${j.idValue}`
-
-    const missing: { job: { idType: string; idValue: string }; idx: number }[] = []
-    const results: OpenFIGIResult[] = new Array(jobs.length)
-    jobs.forEach((j, i) => {
-      const k = keyFor(j)
-      const cached = cache[k]
-      if (cached) results[i] = cached
-      else missing.push({ job: j, idx: i })
+    const jobKeyToIndexes = new Map<string, number[]>()
+    const jobByKey = new Map<string, { idType: string; idValue: string }>()
+    jobs.forEach((job, idx) => {
+      const key = `${job.idType}:${job.idValue.trim().toUpperCase()}`
+      const indices = jobKeyToIndexes.get(key)
+      if (indices) indices.push(idx)
+      else {
+        jobKeyToIndexes.set(key, [idx])
+        jobByKey.set(key, job)
+      }
     })
 
-    if (missing.length > 0) {
+    const uniqueKeys = Array.from(jobKeyToIndexes.keys())
+    const results: Array<OpenFIGIResult | null> = new Array(jobs.length).fill(null)
+    const missingUnique: Array<{ key: string; job: { idType: string; idValue: string } }> = []
+    uniqueKeys.forEach((key) => {
+      const job = jobByKey.get(key)
+      if (!job) return
+      const cached = cacheGet<OpenFIGICacheEntry>(buildOpenFigiCacheKey(job.idType, job.idValue), OPENFIGI_TTL_MS)
+      if (cached) {
+        const resolved: OpenFIGIResult | null = '__empty' in cached ? null : cached
+        const indices = jobKeyToIndexes.get(key) || []
+        for (const idx of indices) results[idx] = resolved
+      } else {
+        missingUnique.push({ key, job })
+      }
+    })
+
+    if (missingUnique.length > 0) {
       const fetched = await processBatches(
-        missing.map((m) => m.job),
+        missingUnique.map((m) => m.job),
         OPENFIGI_BATCH,
         OPENFIGI_DELAY,
         (batch) => apiOpenFIGI(batch),
         (done, total) => setStatus(`Enriching names: ${done} / ${total}`, done, total)
       )
       fetched.forEach((r, i) => {
-        const { job, idx } = missing[i]
-        results[idx] = r
-        cache[keyFor(job)] = r
+        const miss = missingUnique[i]
+        if (!miss) return
+        const indices = jobKeyToIndexes.get(miss.key) || []
+        for (const idx of indices) results[idx] = r ?? null
+        const cacheValue: OpenFIGICacheEntry = r ?? { __empty: true }
+        cacheSet(buildOpenFigiCacheKey(miss.job.idType, miss.job.idValue), cacheValue, OPENFIGI_TTL_MS)
       })
-      cacheSet(cacheKey, cache, OPENFIGI_TTL_MS)
     } else {
       setStatus(`Enriching names: ${jobs.length} / ${jobs.length}`, jobs.length, jobs.length)
     }
