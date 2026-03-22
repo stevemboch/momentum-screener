@@ -43,7 +43,7 @@ function isinToFinancialCurrency(isin: string | null | undefined): string | null
 }
 
 const YAHOO_FETCH_CONCURRENCY_LIMIT = 8
-const OPENFIGI_BATCH = 75
+const OPENFIGI_BATCH = 100
 const OPENFIGI_DELAY = 100
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const OPENFIGI_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -397,11 +397,29 @@ export function usePipeline() {
   }, [dispatch, state.fetchStatus.phase])
 
   const enrichWithOpenFIGI = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
-    const jobs = instruments.map((inst) => {
+    // Xetra-Stocks haben ISIN, mnemonic, yahooTicker und displayName bereits
+    // aus dem CSV — OpenFIGI liefert nur einen marginal besseren Namen.
+    // ETFs/ETCs/Unknown brauchen OpenFIGI für Typ-Klärung und ISIN-Bestätigung.
+    const needsEnrichment = (inst: Instrument): boolean =>
+      inst.source !== 'xetra' ||
+      inst.type === 'ETF' ||
+      inst.type === 'ETC' ||
+      inst.type === 'Unknown'
+
+    const toEnrich = instruments.filter(needsEnrichment)
+    const skipEnrich = instruments.filter((i) => !needsEnrichment(i))
+
+    if (toEnrich.length === 0) {
+      setStatus(`Enriching names: ${instruments.length} / ${instruments.length}`, instruments.length, instruments.length)
+      return instruments
+    }
+
+    const jobs = toEnrich.map((inst) => {
       if (inst.isin?.length === 12) return { idType: 'ID_ISIN', idValue: inst.isin }
       if (inst.wkn?.length === 6) return { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
       return { idType: 'TICKER', idValue: inst.mnemonic || inst.yahooTicker }
     })
+
     const jobKeyToIndexes = new Map<string, number[]>()
     const jobByKey = new Map<string, { idType: string; idValue: string }>()
     jobs.forEach((job, idx) => {
@@ -431,24 +449,36 @@ export function usePipeline() {
     })
 
     if (missingUnique.length > 0) {
-      const fetched = await processBatches(
-        missingUnique.map((m) => m.job),
-        OPENFIGI_BATCH,
-        OPENFIGI_DELAY,
-        async (batch) => {
+      // Batches bilden
+      const chunks: Array<typeof missingUnique> = []
+      for (let i = 0; i < missingUnique.length; i += OPENFIGI_BATCH) {
+        chunks.push(missingUnique.slice(i, i + OPENFIGI_BATCH))
+      }
+
+      let doneCount = uniqueKeys.length - missingUnique.length // bereits gecacht
+      setStatus(`Enriching names: ${doneCount} / ${uniqueKeys.length}`, doneCount, uniqueKeys.length)
+
+      // Zwei parallele Batches statt sequenziell
+      const fetchedChunks = await parallelLimit(
+        chunks.map((chunk) => async () => {
           try {
-            const rows = await apiOpenFIGI(batch)
-            if (rows.length === batch.length) return rows
-            const padded = new Array<OpenFIGIResult | null>(batch.length).fill(null)
-            for (let i = 0; i < batch.length; i++) padded[i] = rows[i] ?? null
-            return padded
+            const rows = await apiOpenFIGI(chunk.map((m) => m.job))
+            return rows.length === chunk.length
+              ? rows
+              : chunk.map((_, i) => rows[i] ?? null)
           } catch (err: any) {
             console.warn(`[openfigi] batch failed; continuing without enrichment (${err?.message || 'unknown error'})`)
-            return new Array<OpenFIGIResult | null>(batch.length).fill(null)
+            return new Array<OpenFIGIResult | null>(chunk.length).fill(null)
+          } finally {
+            doneCount += chunk.length
+            setStatus(`Enriching names: ${Math.min(doneCount, uniqueKeys.length)} / ${uniqueKeys.length}`, Math.min(doneCount, uniqueKeys.length), uniqueKeys.length)
           }
-        },
-        (done, total) => setStatus(`Enriching names: ${done} / ${total}`, done, total)
+        }),
+        2,
       )
+
+      const fetched = fetchedChunks.flat()
+
       let cacheWritesAllowed = canWriteOpenFigiCache()
       fetched.forEach((r, i) => {
         const miss = missingUnique[i]
@@ -470,10 +500,11 @@ export function usePipeline() {
         }
       })
     } else {
-      setStatus(`Enriching names: ${jobs.length} / ${jobs.length}`, jobs.length, jobs.length)
+      setStatus(`Enriching names: ${uniqueKeys.length} / ${uniqueKeys.length}`, uniqueKeys.length, uniqueKeys.length)
     }
 
-    return instruments.map((inst, i) => {
+    // Ergebnisse auf toEnrich-Instrumente anwenden
+    const enrichedToEnrich = toEnrich.map((inst, i) => {
       const figi = results[i]
       if (!figi) return inst
       const candidateNames = [figi.securityDescription, figi.name].filter((v): v is string => !!v && v.trim().length > 1)
@@ -495,6 +526,13 @@ export function usePipeline() {
         displayName: toDisplayName(longName, inst.displayName),
       }
     })
+
+    // Reihenfolge der ursprünglichen instruments-Liste wiederherstellen
+    const enrichedMap = new Map(enrichedToEnrich.map((i) => [i.isin, i]))
+    const skippedMap = new Map(skipEnrich.map((i) => [i.isin, i]))
+    return instruments.map((inst) =>
+      enrichedMap.get(inst.isin) ?? skippedMap.get(inst.isin) ?? inst
+    )
   }, [])
 
   const ensureReferenceR3m = useCallback(async () => {

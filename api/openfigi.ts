@@ -151,7 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Small delay between batches to respect rate limits
     if (i + BATCH_SIZE < jobs.length) {
-      await new Promise((r) => setTimeout(r, 300))
+      await new Promise((r) => setTimeout(r, 80))
     }
   }
 
