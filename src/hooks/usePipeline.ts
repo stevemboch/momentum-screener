@@ -43,10 +43,11 @@ function isinToFinancialCurrency(isin: string | null | undefined): string | null
 }
 
 const YAHOO_FETCH_CONCURRENCY_LIMIT = 8
-const OPENFIGI_BATCH = 100
-const OPENFIGI_DELAY = 0
+const OPENFIGI_BATCH = 75
+const OPENFIGI_DELAY = 100
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const OPENFIGI_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const OPENFIGI_CLIENT_TIMEOUT_MS = 30_000
 const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
@@ -62,6 +63,7 @@ const STATUS_EMIT_MIN_DELTA_PCT = 0.01
 const LEEWAY_START_DELAY_MS = 1500
 const CACHE_EVICT_MAX_KEYS = 80
 const CACHE_RECOVERY_COOLDOWN_MS = 1000
+const OPENFIGI_CACHE_WRITE_COOLDOWN_MS = 30_000
 const YAHOO_STOCK_BATCH_MIN = 4
 const YAHOO_STOCK_BATCH_MAX = 10
 const YAHOO_FUND_BATCH_MIN = 6
@@ -85,6 +87,7 @@ function isBlockingLeewayPhase(phase: string): boolean {
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 let lastCacheRecoveryAttemptTs = 0
 let lastCacheWriteWarnTs = 0
+let openFigiCacheWritesBlockedUntilTs = 0
 let yahooStockBatchSize = 6
 let yahooFundBatchSize = 10
 let yahooRequestConcurrencyHint = 4
@@ -196,13 +199,15 @@ function evictOldestCacheEntries(limit: number, avoidKey?: string): number {
   return toRemove
 }
 
-function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS): boolean {
+function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS, options?: { allowRecovery?: boolean }): boolean {
   if (!hasStorage()) return false
+  const allowRecovery = options?.allowRecovery !== false
   const payload = JSON.stringify({ ts: Date.now(), ttl: ttlMs, data })
   try {
     localStorage.setItem(key, payload)
     return true
   } catch {
+    if (!allowRecovery) return false
     const now = Date.now()
     if (now - lastCacheRecoveryAttemptTs >= CACHE_RECOVERY_COOLDOWN_MS) {
       lastCacheRecoveryAttemptTs = now
@@ -232,6 +237,14 @@ function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS): boolean {
   }
 }
 
+function canWriteOpenFigiCache(now = Date.now()): boolean {
+  return now >= openFigiCacheWritesBlockedUntilTs
+}
+
+function blockOpenFigiCacheWrites(now = Date.now()) {
+  openFigiCacheWritesBlockedUntilTs = now + OPENFIGI_CACHE_WRITE_COOLDOWN_MS
+}
+
 interface OpenFIGIResult { name?: string; securityDescription?: string; isin?: string; ticker?: string; securityType?: string; securityType2?: string }
 interface OpenFIGIEmptyCache { __empty: true }
 type OpenFIGICacheEntry = OpenFIGIResult | OpenFIGIEmptyCache
@@ -245,11 +258,12 @@ interface YahooFetchTask {
   resultIndices: number[]
 }
 
-async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
-  return apiFetchJson<OpenFIGIResult[]>('/api/openfigi', {
+async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<Array<OpenFIGIResult | null>> {
+  return apiFetchJson<Array<OpenFIGIResult | null>>('/api/openfigi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(jobs),
+    timeoutMs: OPENFIGI_CLIENT_TIMEOUT_MS,
   })
 }
 
@@ -421,16 +435,39 @@ export function usePipeline() {
         missingUnique.map((m) => m.job),
         OPENFIGI_BATCH,
         OPENFIGI_DELAY,
-        (batch) => apiOpenFIGI(batch),
+        async (batch) => {
+          try {
+            const rows = await apiOpenFIGI(batch)
+            if (rows.length === batch.length) return rows
+            const padded = new Array<OpenFIGIResult | null>(batch.length).fill(null)
+            for (let i = 0; i < batch.length; i++) padded[i] = rows[i] ?? null
+            return padded
+          } catch (err: any) {
+            console.warn(`[openfigi] batch failed; continuing without enrichment (${err?.message || 'unknown error'})`)
+            return new Array<OpenFIGIResult | null>(batch.length).fill(null)
+          }
+        },
         (done, total) => setStatus(`Enriching names: ${done} / ${total}`, done, total)
       )
+      let cacheWritesAllowed = canWriteOpenFigiCache()
       fetched.forEach((r, i) => {
         const miss = missingUnique[i]
         if (!miss) return
         const indices = jobKeyToIndexes.get(miss.key) || []
         for (const idx of indices) results[idx] = r ?? null
+        if (!cacheWritesAllowed) return
         const cacheValue: OpenFIGICacheEntry = r ?? { __empty: true }
-        cacheSet(buildOpenFigiCacheKey(miss.job.idType, miss.job.idValue), cacheValue, OPENFIGI_TTL_MS)
+        const cacheOk = cacheSet(
+          buildOpenFigiCacheKey(miss.job.idType, miss.job.idValue),
+          cacheValue,
+          OPENFIGI_TTL_MS,
+          { allowRecovery: true }
+        )
+        if (!cacheOk) {
+          blockOpenFigiCacheWrites()
+          cacheWritesAllowed = false
+          console.warn('[openfigi] cache writes paused after quota pressure; proceeding without cache writes')
+        }
       })
     } else {
       setStatus(`Enriching names: ${jobs.length} / ${jobs.length}`, jobs.length, jobs.length)

@@ -16,6 +16,10 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number
+}
+
 async function parseJsonSafe(res: Response): Promise<any> {
   try {
     return await res.json()
@@ -24,19 +28,63 @@ async function parseJsonSafe(res: Response): Promise<any> {
   }
 }
 
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const res = await fetch(path, {
-    ...init,
-    credentials: 'include',
-  })
-  if (res.status === 401) {
-    unauthorizedHandler?.()
-    throw new ApiError('Unauthorized', 401)
+function mergeAbortSignals(timeoutMs: number | undefined, externalSignal?: AbortSignal | null): {
+  signal?: AbortSignal
+  cleanup: () => void
+} {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return { signal: externalSignal ?? undefined, cleanup: () => {} }
   }
-  return res
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let externalAbortHandler: (() => void) | null = null
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort()
+    } else {
+      externalAbortHandler = () => controller.abort()
+      externalSignal.addEventListener('abort', externalAbortHandler, { once: true })
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer)
+      if (externalSignal && externalAbortHandler) {
+        externalSignal.removeEventListener('abort', externalAbortHandler)
+      }
+    },
+  }
 }
 
-export async function apiFetchJson<T = any>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiFetch(path: string, init: ApiFetchOptions = {}): Promise<Response> {
+  const { timeoutMs, signal: externalSignal, ...requestInit } = init
+  const { signal, cleanup } = mergeAbortSignals(timeoutMs, externalSignal)
+  try {
+    const res = await fetch(path, {
+      ...requestInit,
+      signal,
+      credentials: 'include',
+    })
+    if (res.status === 401) {
+      unauthorizedHandler?.()
+      throw new ApiError('Unauthorized', 401)
+    }
+    return res
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new ApiError('Request timed out', 408)
+    }
+    throw err
+  } finally {
+    cleanup()
+  }
+}
+
+export async function apiFetchJson<T = any>(path: string, init: ApiFetchOptions = {}): Promise<T> {
   const res = await apiFetch(path, init)
   const data = await parseJsonSafe(res)
   if (!res.ok) {
@@ -45,7 +93,7 @@ export async function apiFetchJson<T = any>(path: string, init: RequestInit = {}
   return data as T
 }
 
-export async function apiFetchText(path: string, init: RequestInit = {}): Promise<string> {
+export async function apiFetchText(path: string, init: ApiFetchOptions = {}): Promise<string> {
   const res = await apiFetch(path, init)
   const text = await res.text()
   if (!res.ok) {

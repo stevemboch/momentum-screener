@@ -18,6 +18,67 @@ interface FigiResult {
   securityType2?: string
 }
 
+const BATCH_SIZE = 100
+const FETCH_TIMEOUT_MS = 10_000
+const MAX_RETRIES = 1
+const RETRY_BASE_DELAY_MS = 400
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function withBatchLength<T>(arr: T[], expectedLength: number, fill: T): T[] {
+  const out: T[] = new Array(expectedLength).fill(fill)
+  for (let i = 0; i < expectedLength; i++) {
+    if (i < arr.length && arr[i] != null) out[i] = arr[i]
+  }
+  return out
+}
+
+async function fetchOpenFigiBatch(batch: FigiJob[], apiKey: string): Promise<any[]> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    try {
+      const response = await fetch('https://api.openfigi.com/v3/mapping', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-OPENFIGI-APIKEY': apiKey,
+        },
+        body: JSON.stringify(batch),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        console.error(`OpenFIGI error ${response.status}:`, text)
+        const retryable = response.status === 429 || response.status >= 500
+        if (retryable && attempt < MAX_RETRIES) {
+          await sleep(RETRY_BASE_DELAY_MS * (attempt + 1))
+          continue
+        }
+        return new Array(batch.length).fill(null)
+      }
+
+      const parsed = await response.json().catch(() => null)
+      const rows = Array.isArray(parsed) ? parsed : []
+      return withBatchLength(rows, batch.length, null)
+    } catch (err: any) {
+      const isTimeout = err?.name === 'AbortError'
+      console.error(`OpenFIGI batch error${isTimeout ? ' (timeout)' : ''}:`, err)
+      if (attempt < MAX_RETRIES) {
+        await sleep(RETRY_BASE_DELAY_MS * (attempt + 1))
+        continue
+      }
+      return new Array(batch.length).fill(null)
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+  return new Array(batch.length).fill(null)
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!requireAuth(req, res)) return
@@ -30,36 +91,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const apiKey = process.env.OPENFIGI_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'OpenFIGI API key not configured' })
 
-  // Process in batches of 100 (OpenFIGI limit)
-  const BATCH_SIZE = 100
   const allResults: any[] = []
 
   for (let i = 0; i < jobs.length; i += BATCH_SIZE) {
     const batch = jobs.slice(i, i + BATCH_SIZE)
 
     try {
-      const response = await fetch('https://api.openfigi.com/v3/mapping', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-OPENFIGI-APIKEY': apiKey,
-        },
-        body: JSON.stringify(batch),
-      })
-
-      if (!response.ok) {
-        const text = await response.text()
-        console.error(`OpenFIGI error ${response.status}:`, text)
-        // Push nulls for failed batch
-        for (let j = 0; j < batch.length; j++) allResults.push(null)
-        continue
-      }
-
-      const data = await response.json()
+      const data = await fetchOpenFigiBatch(batch, apiKey)
 
       // For each result, pick the best match
       for (const result of data) {
-        if (!result.data || result.data.length === 0) {
+        if (!result?.data || !Array.isArray(result.data) || result.data.length === 0) {
           allResults.push(null)
           continue
         }
