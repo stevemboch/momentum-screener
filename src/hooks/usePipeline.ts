@@ -88,9 +88,9 @@ const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !=
 let lastCacheRecoveryAttemptTs = 0
 let lastCacheWriteWarnTs = 0
 let openFigiCacheWritesBlockedUntilTs = 0
-let yahooStockBatchSize = 6
-let yahooFundBatchSize = 10
-let yahooRequestConcurrencyHint = 4
+let yahooStockBatchSize = 8
+let yahooFundBatchSize = 12
+let yahooRequestConcurrencyHint = 5
 let lastYahooAdaptiveTuneTs = 0
 let yahooAdaptiveRunCount = 0
 let yahooBadStreak = 0

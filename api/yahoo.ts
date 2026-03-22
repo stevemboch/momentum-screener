@@ -55,7 +55,7 @@ async function fetchOneTicker(
       ),
       includeWeekly
         ? fetch(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=10y&interval=1wk&includePrePost=false`,
+            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=7y&interval=1wk&includePrePost=false`,
             { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
           )
         : Promise.resolve(null),
@@ -155,7 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!Array.isArray(tickers) || tickers.length === 0)
     return res.status(400).json({ error: 'tickers array required' })
 
-  const concurrency = profile === 'fund' ? 8 : 6
+  const concurrency = profile === 'fund' ? 10 : 8
   const results = await runWithConcurrency(
     tickers,
     concurrency,
