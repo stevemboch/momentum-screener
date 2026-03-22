@@ -42,9 +42,7 @@ function isinToFinancialCurrency(isin: string | null | undefined): string | null
   return map[prefix] ?? null
 }
 
-const YAHOO_CONCURRENCY_MIN = 3
-const YAHOO_CONCURRENCY_MAX = 12
-let yahooConcurrency = 8
+const YAHOO_FETCH_CONCURRENCY_LIMIT = 8
 const OPENFIGI_BATCH = 150
 const OPENFIGI_DELAY = 100
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -70,9 +68,15 @@ const YAHOO_FUND_BATCH_MIN = 6
 const YAHOO_FUND_BATCH_MAX = 14
 const YAHOO_REQUEST_CONCURRENCY_MAX = 6
 const YAHOO_REQUEST_CONCURRENCY_MIN = 2
-const YAHOO_ADAPTIVE_COOLDOWN_MS = 2000
-const YAHOO_P95_SLOW_MS = 4500
-const YAHOO_P95_FAST_MS = 1800
+const YAHOO_ADAPTIVE_COOLDOWN_MS = 12_000
+const YAHOO_ADAPTIVE_MIN_TASKS = 16
+const YAHOO_P95_SLOW_MS = 5000
+const YAHOO_P95_FAST_MS = 2200
+const YAHOO_BAD_ERROR_RATE = 0.15
+const YAHOO_GOOD_ERROR_RATE = 0.03
+const YAHOO_BAD_STREAK_REQUIRED = 2
+const YAHOO_GOOD_STREAK_REQUIRED = 3
+const YAHOO_ADAPTIVE_WARMUP_RUNS = 3
 
 function isBlockingLeewayPhase(phase: string): boolean {
   return phase === 'prices' || phase === 'openfigi' || phase === 'justetf' || phase === 'dedup'
@@ -85,6 +89,9 @@ let yahooStockBatchSize = 6
 let yahooFundBatchSize = 10
 let yahooRequestConcurrencyHint = 4
 let lastYahooAdaptiveTuneTs = 0
+let yahooAdaptiveRunCount = 0
+let yahooBadStreak = 0
+let yahooGoodStreak = 0
 
 function clamp(num: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, num))
@@ -482,7 +489,7 @@ export function usePipeline() {
       }
     })
     const tasks = Array.from(tasksByKey.values())
-    const limit = Math.max(YAHOO_CONCURRENCY_MIN, Math.min(YAHOO_CONCURRENCY_MAX, yahooConcurrency))
+    const limit = YAHOO_FETCH_CONCURRENCY_LIMIT
     const requestGroups = [
       {
         profile: 'stock' as YahooProfile,
@@ -559,28 +566,74 @@ export function usePipeline() {
     const errorCount = fetched.filter(({ result }) => !result || result.error).length
     const errorRate = fetched.length > 0 ? errorCount / fetched.length : 0
     const p95BatchLatencyMs = percentile(batchLatenciesMs, 0.95)
-    if (errorRate >= 0.2 && yahooConcurrency > YAHOO_CONCURRENCY_MIN) yahooConcurrency -= 1
-    else if (errorRate === 0 && fetched.length > 0 && yahooConcurrency < YAHOO_CONCURRENCY_MAX) yahooConcurrency += 1
 
     const now = Date.now()
-    if (tasks.length >= 8 && now - lastYahooAdaptiveTuneTs >= YAHOO_ADAPTIVE_COOLDOWN_MS) {
-      if (errorRate >= 0.2 || p95BatchLatencyMs >= YAHOO_P95_SLOW_MS) {
-        yahooStockBatchSize = clamp(yahooStockBatchSize - 1, YAHOO_STOCK_BATCH_MIN, YAHOO_STOCK_BATCH_MAX)
-        yahooFundBatchSize = clamp(yahooFundBatchSize - 1, YAHOO_FUND_BATCH_MIN, YAHOO_FUND_BATCH_MAX)
-        yahooRequestConcurrencyHint = clamp(
-          yahooRequestConcurrencyHint - 1,
-          YAHOO_REQUEST_CONCURRENCY_MIN,
-          YAHOO_REQUEST_CONCURRENCY_MAX
-        )
-        lastYahooAdaptiveTuneTs = now
-      } else if (errorRate <= 0.05 && p95BatchLatencyMs > 0 && p95BatchLatencyMs <= YAHOO_P95_FAST_MS) {
-        yahooStockBatchSize = clamp(yahooStockBatchSize + 1, YAHOO_STOCK_BATCH_MIN, YAHOO_STOCK_BATCH_MAX)
-        yahooFundBatchSize = clamp(yahooFundBatchSize + 1, YAHOO_FUND_BATCH_MIN, YAHOO_FUND_BATCH_MAX)
-        yahooRequestConcurrencyHint = clamp(
-          yahooRequestConcurrencyHint + 1,
-          YAHOO_REQUEST_CONCURRENCY_MIN,
-          YAHOO_REQUEST_CONCURRENCY_MAX
-        )
+    if (tasks.length >= YAHOO_ADAPTIVE_MIN_TASKS) {
+      yahooAdaptiveRunCount += 1
+    }
+
+    const isWarmup = yahooAdaptiveRunCount <= YAHOO_ADAPTIVE_WARMUP_RUNS
+    const isBadWindow = errorRate >= YAHOO_BAD_ERROR_RATE || p95BatchLatencyMs >= YAHOO_P95_SLOW_MS
+    const isGoodWindow = errorRate <= YAHOO_GOOD_ERROR_RATE && p95BatchLatencyMs > 0 && p95BatchLatencyMs <= YAHOO_P95_FAST_MS
+
+    if (isBadWindow) {
+      yahooBadStreak += 1
+      yahooGoodStreak = 0
+    } else if (isGoodWindow) {
+      yahooGoodStreak += 1
+      yahooBadStreak = 0
+    } else {
+      yahooBadStreak = 0
+      yahooGoodStreak = 0
+    }
+
+    if (
+      tasks.length >= YAHOO_ADAPTIVE_MIN_TASKS &&
+      !isWarmup &&
+      now - lastYahooAdaptiveTuneTs >= YAHOO_ADAPTIVE_COOLDOWN_MS
+    ) {
+      let changed = false
+      if (yahooBadStreak >= YAHOO_BAD_STREAK_REQUIRED) {
+        if (yahooRequestConcurrencyHint > YAHOO_REQUEST_CONCURRENCY_MIN) {
+          yahooRequestConcurrencyHint = clamp(
+            yahooRequestConcurrencyHint - 1,
+            YAHOO_REQUEST_CONCURRENCY_MIN,
+            YAHOO_REQUEST_CONCURRENCY_MAX
+          )
+          changed = true
+        } else if (yahooStockBatchSize > YAHOO_STOCK_BATCH_MIN) {
+          yahooStockBatchSize = clamp(yahooStockBatchSize - 1, YAHOO_STOCK_BATCH_MIN, YAHOO_STOCK_BATCH_MAX)
+          changed = true
+        } else if (yahooFundBatchSize > YAHOO_FUND_BATCH_MIN) {
+          yahooFundBatchSize = clamp(yahooFundBatchSize - 1, YAHOO_FUND_BATCH_MIN, YAHOO_FUND_BATCH_MAX)
+          changed = true
+        }
+        if (changed) {
+          yahooBadStreak = 0
+          yahooGoodStreak = 0
+        }
+      } else if (yahooGoodStreak >= YAHOO_GOOD_STREAK_REQUIRED) {
+        if (yahooRequestConcurrencyHint < YAHOO_REQUEST_CONCURRENCY_MAX) {
+          yahooRequestConcurrencyHint = clamp(
+            yahooRequestConcurrencyHint + 1,
+            YAHOO_REQUEST_CONCURRENCY_MIN,
+            YAHOO_REQUEST_CONCURRENCY_MAX
+          )
+          changed = true
+        } else if (yahooStockBatchSize < YAHOO_STOCK_BATCH_MAX) {
+          yahooStockBatchSize = clamp(yahooStockBatchSize + 1, YAHOO_STOCK_BATCH_MIN, YAHOO_STOCK_BATCH_MAX)
+          changed = true
+        } else if (yahooFundBatchSize < YAHOO_FUND_BATCH_MAX) {
+          yahooFundBatchSize = clamp(yahooFundBatchSize + 1, YAHOO_FUND_BATCH_MIN, YAHOO_FUND_BATCH_MAX)
+          changed = true
+        }
+        if (changed) {
+          yahooBadStreak = 0
+          yahooGoodStreak = 0
+        }
+      }
+
+      if (changed) {
         lastYahooAdaptiveTuneTs = now
       }
     }
