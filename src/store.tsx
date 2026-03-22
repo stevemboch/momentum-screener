@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useReducer } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
 import type {
   Instrument, AppSettings, FetchStatus, ETFGroup, TableState, MomentumWeights, RegimeResult, ColumnGroup,
 } from './types'
@@ -252,8 +252,18 @@ function reducer(state: AppState, action: Action): AppState {
       }
       return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m) }
     }
-    case 'SET_FETCH_STATUS':
-      return { ...state, fetchStatus: { ...state.fetchStatus, ...action.status } }
+    case 'SET_FETCH_STATUS': {
+      const nextFetchStatus = { ...state.fetchStatus, ...action.status }
+      if (
+        nextFetchStatus.phase === state.fetchStatus.phase &&
+        nextFetchStatus.message === state.fetchStatus.message &&
+        nextFetchStatus.current === state.fetchStatus.current &&
+        nextFetchStatus.total === state.fetchStatus.total
+      ) {
+        return state
+      }
+      return { ...state, fetchStatus: nextFetchStatus }
+    }
     case 'SET_WEIGHTS': {
       const instruments = recalculateAll(state.instruments, action.weights, state.settings.atrMultiplier, state.referenceR3m)
       return { ...state, settings: { ...state.settings, weights: action.weights }, instruments }
@@ -372,111 +382,126 @@ export function useAppState() {
 export function useDisplayedInstruments() {
   const { state } = useAppState()
   const { instruments, tableState, settings } = state
+  return useMemo(() => {
+    let filtered = [...instruments]
 
-  let filtered = [...instruments]
-
-  // Type filter
-  if (tableState.typeFilter === 'etf') {
-    filtered = filtered.filter((i) =>
-      i.type === 'ETF' || i.type === 'ETC' || (i.type === 'Unknown' && i.source === 'manual')
-    )
-  } else if (tableState.typeFilter === 'stock') {
-    filtered = filtered.filter((i) =>
-      i.type === 'Stock' || (i.type === 'Unknown' && i.source === 'manual')
-    )
-  }
-
-  // TFA mode — only stocks in the -40%..-80% drawdown window, excluding KO
-  if (tableState.tfaMode) {
-    filtered = filtered.filter((i) => i.type === 'Stock')
-    const allowed = new Set(['monitoring', 'above_all_mas', 'watch', 'fetching', 'qualified'])
-    filtered = filtered.filter((i) => allowed.has(i.tfaPhase ?? 'none'))
-    filtered = filtered.filter((i) => i.tfaKO !== true)
-  }
-
-  // Pullback-Modus — Top-Momentum-Stocks mit RSI-Rücksetzer
-  if (tableState.pullbackMode) {
-    filtered = filtered.filter((i) => i.type === 'Stock')
-    filtered = filtered.filter((i) => i.aboveMa200 === true)
-    filtered = filtered.filter((i) => (i.r3m ?? -1) > 0)
-    filtered = filtered.filter((i) => i.pullbackScore !== null && i.pullbackScore !== undefined)
-    // Nur Titel die Gate bestanden haben (pullbackScore !== null = alle Gates erfüllt)
-  }
-
-  // Dedup filter — hides non-winners when enabled
-  if (tableState.showDeduped) {
-    filtered = filtered.filter((i) => {
-      if (i.type === 'Stock') return true
-      if (i.source !== 'xetra') return true
-      return i.isDedupWinner !== false
-    })
-  }
-
-  // AUM floor — always applied (independent of dedup toggle)
-  filtered = filtered.filter((i) => {
-    if (i.type === 'Stock' || i.source === 'manual') return true
-    if (i.aum == null) return true
-    return i.aum >= settings.aumFloor
-  })
-
-  // Risk-free rate filter
-  // Compares 6M return (annualised × 2) against risk-free rate.
-  // Falls back to 3M (×4) if 6M unavailable.
-  if (tableState.filterBelowRiskFree) {
-    const rfr = settings.riskFreeRate
-    filtered = filtered.filter((i) => {
-      if (i.r6m !== null && i.r6m !== undefined) {
-        return i.r6m * 2 >= rfr  // annualise 6M return
-      }
-      if (i.r3m !== null && i.r3m !== undefined) {
-        return i.r3m * 4 >= rfr  // annualise 3M return
-      }
-      return true // no data → keep
-    })
-  }
-
-  // MA filter — keeps only instruments above all computed MAs (10/50/100/200)
-  if (tableState.filterBelowAllMAs) {
-    filtered = filtered.filter((i) => {
-      const flags = [i.aboveMa10, i.aboveMa50, i.aboveMa100, i.aboveMa200]
-      const hasAny = flags.some((v) => v !== null && v !== undefined)
-      if (!hasAny) return true
-      return flags.every((v) => v == null || v === true)
-    })
-  }
-
-  // KI-Freitext-Filter
-  if (tableState.aiFilterActive && tableState.aiFilterPlan) {
-    filtered = applyAiFilterPlan(filtered, tableState.aiFilterPlan)
-  }
-
-  // Sort
-  const col = tableState.sortColumn
-  const dir = tableState.sortDirection === 'desc' ? -1 : 1
-  const sorted = [...filtered].sort((a, b) => {
-    const getVal = (inst: Instrument) => {
-      if (col === 'tfaScore' && tableState.tfaMode) {
-        return (inst as any).tfaScore ?? (inst as any).tfaTScore ?? null
-      }
-      if (col === 'pullbackScore' && tableState.pullbackMode) {
-        return (inst as any).pullbackScore ?? null
-      }
-      return (inst as any)[col] ?? null
+    // Type filter
+    if (tableState.typeFilter === 'etf') {
+      filtered = filtered.filter((i) =>
+        i.type === 'ETF' || i.type === 'ETC' || (i.type === 'Unknown' && i.source === 'manual')
+      )
+    } else if (tableState.typeFilter === 'stock') {
+      filtered = filtered.filter((i) =>
+        i.type === 'Stock' || (i.type === 'Unknown' && i.source === 'manual')
+      )
     }
-    const avRaw = getVal(a)
-    const bvRaw = getVal(b)
-    if (avRaw == null && bvRaw == null) return a.displayName.localeCompare(b.displayName)
-    if (avRaw == null) return 1
-    if (bvRaw == null) return -1
-    const av = typeof avRaw === 'number' ? avRaw : Number(avRaw)
-    const bv = typeof bvRaw === 'number' ? bvRaw : Number(bvRaw)
-    if (!Number.isFinite(av) && !Number.isFinite(bv)) return a.displayName.localeCompare(b.displayName)
-    if (!Number.isFinite(av)) return 1
-    if (!Number.isFinite(bv)) return -1
-    const diff = (av - bv) * dir
-    if (diff !== 0) return diff
-    return a.displayName.localeCompare(b.displayName)
-  })
 
-  return sorted
+    // TFA mode — only stocks in the -40%..-80% drawdown window, excluding KO
+    if (tableState.tfaMode) {
+      filtered = filtered.filter((i) => i.type === 'Stock')
+      const allowed = new Set(['monitoring', 'above_all_mas', 'watch', 'fetching', 'qualified'])
+      filtered = filtered.filter((i) => allowed.has(i.tfaPhase ?? 'none'))
+      filtered = filtered.filter((i) => i.tfaKO !== true)
+    }
+
+    // Pullback-Modus — Top-Momentum-Stocks mit RSI-Rücksetzer
+    if (tableState.pullbackMode) {
+      filtered = filtered.filter((i) => i.type === 'Stock')
+      filtered = filtered.filter((i) => i.aboveMa200 === true)
+      filtered = filtered.filter((i) => (i.r3m ?? -1) > 0)
+      filtered = filtered.filter((i) => i.pullbackScore !== null && i.pullbackScore !== undefined)
+      // Nur Titel die Gate bestanden haben (pullbackScore !== null = alle Gates erfüllt)
+    }
+
+    // Dedup filter — hides non-winners when enabled
+    if (tableState.showDeduped) {
+      filtered = filtered.filter((i) => {
+        if (i.type === 'Stock') return true
+        if (i.source !== 'xetra') return true
+        return i.isDedupWinner !== false
+      })
+    }
+
+    // AUM floor — always applied (independent of dedup toggle)
+    filtered = filtered.filter((i) => {
+      if (i.type === 'Stock' || i.source === 'manual') return true
+      if (i.aum == null) return true
+      return i.aum >= settings.aumFloor
+    })
+
+    // Risk-free rate filter
+    // Compares 6M return (annualised × 2) against risk-free rate.
+    // Falls back to 3M (×4) if 6M unavailable.
+    if (tableState.filterBelowRiskFree) {
+      const rfr = settings.riskFreeRate
+      filtered = filtered.filter((i) => {
+        if (i.r6m !== null && i.r6m !== undefined) {
+          return i.r6m * 2 >= rfr  // annualise 6M return
+        }
+        if (i.r3m !== null && i.r3m !== undefined) {
+          return i.r3m * 4 >= rfr  // annualise 3M return
+        }
+        return true // no data → keep
+      })
+    }
+
+    // MA filter — keeps only instruments above all computed MAs (10/50/100/200)
+    if (tableState.filterBelowAllMAs) {
+      filtered = filtered.filter((i) => {
+        const flags = [i.aboveMa10, i.aboveMa50, i.aboveMa100, i.aboveMa200]
+        const hasAny = flags.some((v) => v !== null && v !== undefined)
+        if (!hasAny) return true
+        return flags.every((v) => v == null || v === true)
+      })
+    }
+
+    // KI-Freitext-Filter
+    if (tableState.aiFilterActive && tableState.aiFilterPlan) {
+      filtered = applyAiFilterPlan(filtered, tableState.aiFilterPlan)
+    }
+
+    // Sort
+    const col = tableState.sortColumn
+    const dir = tableState.sortDirection === 'desc' ? -1 : 1
+    const sorted = [...filtered].sort((a, b) => {
+      const getVal = (inst: Instrument) => {
+        if (col === 'tfaScore' && tableState.tfaMode) {
+          return (inst as any).tfaScore ?? (inst as any).tfaTScore ?? null
+        }
+        if (col === 'pullbackScore' && tableState.pullbackMode) {
+          return (inst as any).pullbackScore ?? null
+        }
+        return (inst as any)[col] ?? null
+      }
+      const avRaw = getVal(a)
+      const bvRaw = getVal(b)
+      if (avRaw == null && bvRaw == null) return a.displayName.localeCompare(b.displayName)
+      if (avRaw == null) return 1
+      if (bvRaw == null) return -1
+      const av = typeof avRaw === 'number' ? avRaw : Number(avRaw)
+      const bv = typeof bvRaw === 'number' ? bvRaw : Number(bvRaw)
+      if (!Number.isFinite(av) && !Number.isFinite(bv)) return a.displayName.localeCompare(b.displayName)
+      if (!Number.isFinite(av)) return 1
+      if (!Number.isFinite(bv)) return -1
+      const diff = (av - bv) * dir
+      if (diff !== 0) return diff
+      return a.displayName.localeCompare(b.displayName)
+    })
+
+    return sorted
+  }, [
+    instruments,
+    tableState.typeFilter,
+    tableState.tfaMode,
+    tableState.pullbackMode,
+    tableState.showDeduped,
+    tableState.filterBelowRiskFree,
+    tableState.filterBelowAllMAs,
+    tableState.aiFilterActive,
+    tableState.aiFilterPlan,
+    tableState.sortColumn,
+    tableState.sortDirection,
+    settings.aumFloor,
+    settings.riskFreeRate,
+  ])
 }

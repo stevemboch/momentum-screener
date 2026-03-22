@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { useInstrumentContext } from '../hooks/useInstrumentContext'
@@ -1246,12 +1246,14 @@ function TableToolbar({
   hiddenGroupCount,
   sortColumn,
   sortDirection,
+  isUpdating,
 }: {
   total: number
   shown: number
   hiddenGroupCount: number
   sortColumn: string
   sortDirection: 'asc' | 'desc'
+  isUpdating: boolean
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-3 py-2">
@@ -1259,6 +1261,7 @@ function TableToolbar({
         Showing {shown.toLocaleString()} / {total.toLocaleString()} instruments
       </div>
       <div className="flex items-center gap-2 text-ui-xs font-mono text-muted">
+        {isUpdating ? <span className="text-gray-400">Updating data...</span> : null}
         <span>Sort: {sortColumn}</span>
         <span>{sortDirection === 'desc' ? '↓' : '↑'}</span>
         {hiddenGroupCount > 0 ? <span>{hiddenGroupCount} column groups hidden</span> : null}
@@ -1364,10 +1367,38 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { state, dispatch } = useAppState()
   const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst } = usePipeline()
   const instruments = useDisplayedInstruments()
+  const isPriceUpdating = state.fetchStatus.phase === 'prices'
   const allInstruments = state.instruments   // full list incl. non-winners
   const { sortColumn, sortDirection } = state.tableState
   const isMomentumMode = !state.tableState.tfaMode && !state.tableState.pullbackMode
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
+  const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
+  const interactionKey = [
+    sortColumn,
+    sortDirection,
+    state.tableState.typeFilter,
+    state.tableState.showDeduped ? '1' : '0',
+    state.tableState.filterBelowRiskFree ? '1' : '0',
+    state.tableState.filterBelowAllMAs ? '1' : '0',
+    state.tableState.tfaMode ? '1' : '0',
+    state.tableState.pullbackMode ? '1' : '0',
+    state.tableState.aiFilterActive ? '1' : '0',
+    state.tableState.aiFilterQuery ?? '',
+    state.settings.aumFloor.toString(),
+    state.settings.riskFreeRate.toString(),
+  ].join('|')
+  const lastInteractionKeyRef = useRef(interactionKey)
+
+  useEffect(() => {
+    const interactionChanged = lastInteractionKeyRef.current !== interactionKey
+    lastInteractionKeyRef.current = interactionKey
+    if (!isPriceUpdating || interactionChanged) {
+      setRenderSnapshot(instruments)
+    }
+  }, [instruments, interactionKey, isPriceUpdating])
+
+  const visibleInstruments = isPriceUpdating ? renderSnapshot : instruments
+
   const hiddenKeys = new Set(
     state.tableState.hiddenColumnGroups.flatMap((g) => COLUMN_GROUPS[g])
   )
@@ -1389,7 +1420,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     return <span className="text-accent ml-1">{sortDirection === 'desc' ? '↓' : '↑'}</span>
   }
 
-  if (instruments.length === 0) {
+  if (visibleInstruments.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted font-mono">
         <div className="text-sm">No instruments loaded.</div>
@@ -1411,10 +1442,11 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     <div className="flex-1 min-h-0 overflow-auto">
       <TableToolbar
         total={state.instruments.length}
-        shown={instruments.length}
+        shown={visibleInstruments.length}
         hiddenGroupCount={state.tableState.hiddenColumnGroups.length}
         sortColumn={sortColumn}
         sortDirection={sortDirection}
+        isUpdating={isPriceUpdating}
       />
 
       <div className="lg:hidden space-y-2 p-3">
@@ -1446,7 +1478,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           </div>
         )}
 
-        {instruments.map((inst) => (
+        {visibleInstruments.map((inst) => (
           <MobileInstrumentCard
             key={inst.isin}
             inst={inst}
@@ -1488,7 +1520,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           </tr>
         </thead>
         <tbody key={`${sortColumn}:${sortDirection}:${state.tableState.typeFilter}:${state.tableState.showDeduped}:${state.tableState.tfaMode}:${state.tableState.pullbackMode}`}>
-          {instruments.map((inst, idx) => {
+          {visibleInstruments.map((inst, idx) => {
             const isExpanded = expandedISIN === inst.isin
             const rowBg = idx % 2 === 0 ? 'bg-bg' : 'bg-surface'
             const portfolioClass = inst.inPortfolio ? 'bg-accent/5' : ''

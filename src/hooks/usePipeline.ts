@@ -58,8 +58,23 @@ const LEEWAY_EXTENDED_N = 100
 const LEEWAY_EXTEND_AFTER_MS = 36 * 60 * 60 * 1000
 const TFA_AUTO_FUNDAMENTALS_LIMIT = 25
 const TFA_CATALYST_TTL_MS = 24 * 60 * 60 * 1000
+const STATUS_EMIT_INTERVAL_MS = 250
+const STATUS_EMIT_MIN_DELTA_ITEMS = 5
+const STATUS_EMIT_MIN_DELTA_PCT = 0.01
+const LEEWAY_START_DELAY_MS = 1500
+const CACHE_EVICT_MAX_KEYS = 80
+const CACHE_RECOVERY_COOLDOWN_MS = 1000
+const YAHOO_STOCK_BATCH_SIZE = 6
+const YAHOO_FUND_BATCH_SIZE = 10
+const YAHOO_REQUEST_CONCURRENCY_MAX = 6
+
+function isBlockingLeewayPhase(phase: string): boolean {
+  return phase === 'prices' || phase === 'openfigi' || phase === 'justetf' || phase === 'dedup'
+}
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined'
+let lastCacheRecoveryAttemptTs = 0
+let lastCacheWriteWarnTs = 0
 
 function normalizeTickerForCache(ticker: string): string {
   return ticker.trim().toUpperCase()
@@ -103,12 +118,85 @@ function cacheGet<T>(key: string, ttlMs = CACHE_TTL_MS): T | null {
   }
 }
 
-function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS) {
-  if (!hasStorage()) return
+function parseCacheMeta(raw: string | null): { ts: number; ttl: number } | null {
+  if (!raw) return null
   try {
-    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), ttl: ttlMs, data }))
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const ts = typeof parsed.ts === 'number' ? parsed.ts : 0
+    const ttl = typeof parsed.ttl === 'number' ? parsed.ttl : CACHE_TTL_MS
+    return { ts, ttl }
   } catch {
-    // ignore quota errors
+    return null
+  }
+}
+
+function removeExpiredCacheEntries(now = Date.now()): number {
+  if (!hasStorage()) return 0
+  let removed = 0
+  const keys = Object.keys(localStorage).filter((k) => k.startsWith('cache:'))
+  for (const cacheKey of keys) {
+    const meta = parseCacheMeta(localStorage.getItem(cacheKey))
+    if (!meta || meta.ts <= 0) continue
+    if (now - meta.ts > meta.ttl) {
+      localStorage.removeItem(cacheKey)
+      removed++
+    }
+  }
+  return removed
+}
+
+function evictOldestCacheEntries(limit: number, avoidKey?: string): number {
+  if (!hasStorage()) return 0
+  const entries: Array<{ key: string; ts: number }> = []
+  const keys = Object.keys(localStorage).filter((k) => k.startsWith('cache:'))
+  for (const cacheKey of keys) {
+    if (cacheKey === avoidKey) continue
+    const meta = parseCacheMeta(localStorage.getItem(cacheKey))
+    if (!meta) continue
+    entries.push({ key: cacheKey, ts: meta.ts })
+  }
+  entries.sort((a, b) => a.ts - b.ts)
+  const toRemove = Math.min(limit, entries.length)
+  for (let i = 0; i < toRemove; i++) {
+    localStorage.removeItem(entries[i].key)
+  }
+  return toRemove
+}
+
+function cacheSet<T>(key: string, data: T, ttlMs = CACHE_TTL_MS): boolean {
+  if (!hasStorage()) return false
+  const payload = JSON.stringify({ ts: Date.now(), ttl: ttlMs, data })
+  try {
+    localStorage.setItem(key, payload)
+    return true
+  } catch {
+    const now = Date.now()
+    if (now - lastCacheRecoveryAttemptTs >= CACHE_RECOVERY_COOLDOWN_MS) {
+      lastCacheRecoveryAttemptTs = now
+      try {
+        removeExpiredCacheEntries(now)
+      } catch {
+        // ignore cleanup errors
+      }
+      try {
+        evictOldestCacheEntries(CACHE_EVICT_MAX_KEYS, key)
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+
+    try {
+      localStorage.setItem(key, payload)
+      return true
+    } catch {
+      if (now - lastCacheWriteWarnTs > 10_000) {
+        lastCacheWriteWarnTs = now
+        // Without this signal cache failures look like random cold fetches.
+        console.warn(`[cache] localStorage quota prevents cache writes (key=${key})`)
+      }
+      return false
+    }
   }
 }
 
@@ -116,6 +204,12 @@ interface OpenFIGIResult { name?: string; securityDescription?: string; isin?: s
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 type YahooProfile = 'stock' | 'fund'
 interface YahooRequestOptions { includeWeekly?: boolean; profile?: YahooProfile }
+interface YahooFetchTask {
+  ticker: string
+  profile: YahooProfile
+  includeWeekly: boolean
+  resultIndices: number[]
+}
 
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<OpenFIGIResult[]> {
   return apiFetchJson<OpenFIGIResult[]>('/api/openfigi', {
@@ -212,9 +306,47 @@ export function usePipeline() {
   const tfaFundInFlight = useRef<Set<string>>(new Set())
   const tfaAutoRunning = useRef(false)
   const leewayRunning = useRef(false)
+  const leewayStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastStatusEmitRef = useRef<{
+    phase: string
+    message: string
+    current: number
+    total: number
+    ts: number
+  }>({
+    phase: state.fetchStatus.phase,
+    message: state.fetchStatus.message,
+    current: state.fetchStatus.current,
+    total: state.fetchStatus.total,
+    ts: 0,
+  })
 
-  const setStatus = (message: string, current = 0, total = 0) =>
+  const setStatus = useCallback((message: string, current = 0, total = 0) => {
+    const phase = state.fetchStatus.phase
+    const now = Date.now()
+    const prev = lastStatusEmitRef.current
+    const progressDeltaAbs = Math.abs(current - prev.current)
+    const denominator = total > 0 ? total : (prev.total > 0 ? prev.total : 0)
+    const progressDeltaPct = denominator > 0 ? progressDeltaAbs / denominator : (progressDeltaAbs > 0 ? 1 : 0)
+    const progressDeltaMinItems = Math.max(
+      STATUS_EMIT_MIN_DELTA_ITEMS,
+      denominator > 0 ? Math.ceil(denominator * STATUS_EMIT_MIN_DELTA_PCT) : STATUS_EMIT_MIN_DELTA_ITEMS
+    )
+
+    const shouldEmit =
+      prev.phase !== phase ||
+      prev.message !== message ||
+      (total > 0 && current >= total) ||
+      (
+        now - prev.ts >= STATUS_EMIT_INTERVAL_MS &&
+        (progressDeltaAbs >= progressDeltaMinItems || progressDeltaPct >= STATUS_EMIT_MIN_DELTA_PCT)
+      )
+
+    if (!shouldEmit) return
+
+    lastStatusEmitRef.current = { phase, message, current, total, ts: now }
     dispatch({ type: 'SET_FETCH_STATUS', status: { message, current, total } })
+  }, [dispatch, state.fetchStatus.phase])
 
   const enrichWithOpenFIGI = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const jobs = instruments.map((inst) => {
@@ -296,7 +428,7 @@ export function usePipeline() {
     const withTickers = instruments.filter((i) => i.yahooTicker)
     if (withTickers.length === 0) return instruments
     const cachedResults: any[] = new Array(withTickers.length)
-    const tasksByKey = new Map<string, { ticker: string; profile: YahooProfile; includeWeekly: boolean; resultIndices: number[] }>()
+    const tasksByKey = new Map<string, YahooFetchTask>()
     let cachedCount = 0
     withTickers.forEach((inst, idx) => {
       const key = buildYahooCacheKey(inst.yahooTicker)
@@ -347,43 +479,47 @@ export function usePipeline() {
     setStatus(`Fetching prices: ${done} / ${withTickers.length}`, done, withTickers.length)
 
     const fetched: Array<{ task: (typeof tasks)[number]; result: any }> = []
+    const batchJobs: Array<{ profile: YahooProfile; includeWeekly: boolean; batch: YahooFetchTask[] }> = []
     for (const group of requestGroups) {
-      const batchSize = group.profile === 'fund' ? 20 : 12
-      const batches: typeof group.items[] = []
+      const batchSize = group.profile === 'fund' ? YAHOO_FUND_BATCH_SIZE : YAHOO_STOCK_BATCH_SIZE
       for (let i = 0; i < group.items.length; i += batchSize) {
-        batches.push(group.items.slice(i, i + batchSize))
+        batchJobs.push({
+          profile: group.profile,
+          includeWeekly: group.includeWeekly,
+          batch: group.items.slice(i, i + batchSize),
+        })
       }
-
-      const requestConcurrency = Math.max(
-        1,
-        Math.min(group.profile === 'fund' ? 4 : 3, Math.ceil(limit / 4))
-      )
-      const batchResults = await parallelLimit(
-        batches.map((batch) => async () => {
-          try {
-            const tickers = batch.map((t) => t.ticker)
-            const payload = await apiYahooBatch(tickers, {
-              profile: group.profile,
-              includeWeekly: group.includeWeekly,
-            })
-            return batch.map((task, idx) => ({
-              task,
-              result: payload[idx] ?? { error: 'Empty Yahoo payload', ticker: task.ticker },
-            }))
-          } catch (err: any) {
-            return batch.map((task) => ({
-              task,
-              result: { error: err?.message ?? 'Yahoo batch failed', ticker: task.ticker },
-            }))
-          } finally {
-            done += batch.reduce((sum, item) => sum + item.resultIndices.length, 0)
-            setStatus(`Fetching prices: ${done} / ${withTickers.length}`, done, withTickers.length)
-          }
-        }),
-        requestConcurrency,
-      )
-      fetched.push(...batchResults.flat())
     }
+
+    const requestConcurrency = Math.max(2, Math.min(YAHOO_REQUEST_CONCURRENCY_MAX, limit))
+    const batchResults = batchJobs.length > 0
+      ? await parallelLimit(
+          batchJobs.map((job) => async () => {
+            const { batch } = job
+            try {
+              const tickers = batch.map((t) => t.ticker)
+              const payload = await apiYahooBatch(tickers, {
+                profile: job.profile,
+                includeWeekly: job.includeWeekly,
+              })
+              return batch.map((task, idx) => ({
+                task,
+                result: payload[idx] ?? { error: 'Empty Yahoo payload', ticker: task.ticker },
+              }))
+            } catch (err: any) {
+              return batch.map((task) => ({
+                task,
+                result: { error: err?.message ?? 'Yahoo batch failed', ticker: task.ticker },
+              }))
+            } finally {
+              done += batch.reduce((sum, item) => sum + item.resultIndices.length, 0)
+              setStatus(`Fetching prices: ${done} / ${withTickers.length}`, done, withTickers.length)
+            }
+          }),
+          requestConcurrency,
+        )
+      : []
+    fetched.push(...batchResults.flat())
 
     const results = [...cachedResults]
     fetched.forEach(({ task, result }) => {
@@ -1124,6 +1260,13 @@ export function usePipeline() {
   }, [displayedInstruments, state.fetchStatus.phase, state.tableState.tfaMode, fetchSingleInstrumentAnalyst, dispatch])
 
   useEffect(() => {
+    if (isBlockingLeewayPhase(state.fetchStatus.phase)) {
+      if (leewayStartTimerRef.current) {
+        clearTimeout(leewayStartTimerRef.current)
+        leewayStartTimerRef.current = null
+      }
+      return
+    }
     if (!['done', 'idle'].includes(state.fetchStatus.phase)) return
     if (leewayRunning.current) return
 
@@ -1175,17 +1318,33 @@ export function usePipeline() {
 
     if (candidates.length === 0) return
 
-    leewayRunning.current = true
-    void (async () => {
-      try {
-        for (const inst of candidates) {
-          await fetchSingleInstrumentAnalyst(inst.isin, { suppressGemini: true })
-          await new Promise((r) => setTimeout(r, 200))
+    let cancelled = false
+    const timer = setTimeout(() => {
+      if (cancelled) return
+      if (isBlockingLeewayPhase(state.fetchStatus.phase)) return
+      if (leewayRunning.current) return
+
+      leewayRunning.current = true
+      void (async () => {
+        try {
+          for (const inst of candidates) {
+            await fetchSingleInstrumentAnalyst(inst.isin, { suppressGemini: true })
+            await new Promise((r) => setTimeout(r, 200))
+          }
+        } finally {
+          leewayRunning.current = false
         }
-      } finally {
-        leewayRunning.current = false
+      })()
+    }, LEEWAY_START_DELAY_MS)
+    leewayStartTimerRef.current = timer
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      if (leewayStartTimerRef.current === timer) {
+        leewayStartTimerRef.current = null
       }
-    })()
+    }
   }, [
     state.fetchStatus.phase,
     state.instruments.filter((i) => i.type === 'Stock' && i.priceFetched).length,
