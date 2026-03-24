@@ -22,7 +22,6 @@ const COLUMNS: Col[] = [
   { key: 'r6m',           label: '6M',       title: '6-month return' },
   { key: 'vola',          label: 'Vola',     title: 'Annualised 6M volatility' },
   { key: 'rsi14',         label: 'RSI',      title: 'RSI(14)' },
-  { key: 'weeklyRsi14',   label: 'RSI(W)',   title: 'RSI(14) weekly' },
   { key: 'aum',           label: 'AUM',      title: 'Assets under management' },
   { key: 'ter',           label: 'TER',      title: 'Total expense ratio' },
   { key: 'pe',            label: 'P/E',      title: 'Price / Earnings' },
@@ -33,6 +32,7 @@ const COLUMNS: Col[] = [
   { key: 'drawFrom5YHigh', label: '5Y',      title: '% below 5-year high (weekly)' },
   { key: 'drawFrom7YHigh', label: '7Y',      title: '% below 7-year high (capped ATH)' },
   { key: 'levyRS',        label: 'Levy',     title: 'Levy RS (price / 26-week MA)' },
+  { key: 'weeklyRsi14',   label: 'RSI(W)',   title: 'RSI(14) weekly' },
   { key: 'weeklyVolaRatio', label: 'VolaR',  title: 'Volatility ratio 3M/1Y weekly (< 0.7 = compression)' },
   { key: 'tfaTScore',     label: 'T-Score',  title: 'TFA technical score (0–1)' },
   { key: 'tfaFScore',     label: 'F-Score',  title: 'TFA fundamental score (0–1)' },
@@ -498,6 +498,11 @@ function CandidateRow({
       {!hiddenKeys.has('vola') && (
         <td className="px-2 py-1.5 text-right text-muted">{fmtVola(candidate.vola)}</td>
       )}
+      {!hiddenKeys.has('rsi14') && (
+        <td className={`px-2 py-1.5 text-right ${rsiColor(candidate.rsi14)}`}>
+          {candidate.rsi14 != null ? candidate.rsi14.toFixed(1) : '—'}
+        </td>
+      )}
       {!hiddenKeys.has('aum') && (
         <td className="px-2 py-1.5 text-right text-gray-400">{candidate.aum != null ? fmtAUM(candidate.aum) : '—'}</td>
       )}
@@ -545,18 +550,13 @@ function CandidateRow({
           {fmtPct(candidate.drawFrom7YHigh)}
         </td>
       )}
-      {!hiddenKeys.has('rsi14') && (
-        <td className={`px-2 py-1.5 text-right ${rsiColor(candidate.rsi14)}`}>
-          {candidate.rsi14 != null ? candidate.rsi14.toFixed(1) : '—'}
-        </td>
-      )}
-      {!hiddenKeys.has('weeklyRsi14') && (
-        <td className="px-2 py-1.5 text-right text-muted">—</td>
-      )}
       {!hiddenKeys.has('levyRS') && (
         <td className="px-2 py-1.5 text-right text-gray-300">
           {candidate.levyRS != null ? candidate.levyRS.toFixed(2) : '—'}
         </td>
+      )}
+      {!hiddenKeys.has('weeklyRsi14') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
       {!hiddenKeys.has('weeklyVolaRatio') && (
         <td className="px-2 py-1.5 text-right text-muted">—</td>
@@ -1642,6 +1642,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     <td className="px-2 py-1.5 text-right text-muted">{fmtVola(inst.vola)}</td>
                   )}
 
+                  {!hiddenKeys.has('rsi14') && (
+                    <td className={`px-2 py-1.5 text-right ${rsiColor(inst.rsi14)}`}>
+                      {inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}
+                    </td>
+                  )}
+
                   {!hiddenKeys.has('aum') && (
                     <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.aum != null ? fmtAUM(inst.aum) : (inst.justEtfFetched ? '—' : '')}
@@ -1690,21 +1696,15 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     <td className={`px-2 py-1.5 text-right ${returnColor(inst.drawFrom7YHigh)}`}>{fmtPct(inst.drawFrom7YHigh)}</td>
                   )}
 
-                  {!hiddenKeys.has('rsi14') && (
-                    <td className={`px-2 py-1.5 text-right ${rsiColor(inst.rsi14)}`}>
-                      {inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}
+                  {!hiddenKeys.has('levyRS') && (
+                    <td className="px-2 py-1.5 text-right text-gray-300">
+                      {inst.levyRS != null ? inst.levyRS.toFixed(2) : '—'}
                     </td>
                   )}
 
                   {!hiddenKeys.has('weeklyRsi14') && (
                     <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.weeklyRsi14 != null ? inst.weeklyRsi14.toFixed(1) : '—'}
-                    </td>
-                  )}
-
-                  {!hiddenKeys.has('levyRS') && (
-                    <td className="px-2 py-1.5 text-right text-gray-300">
-                      {inst.levyRS != null ? inst.levyRS.toFixed(2) : '—'}
                     </td>
                   )}
 
