@@ -688,6 +688,12 @@ function ExpandedDetail({
               {inst.mnemonic && <div>Mnemonic: <span className="text-gray-300">{inst.mnemonic}</span></div>}
               {inst.yahooTicker && <div>Yahoo: <span className="text-gray-300">{inst.yahooTicker}</span></div>}
               {inst.xetraGroup && <div>Group: <span className="text-gray-300">{inst.xetraGroup}</span></div>}
+              {inst.sector && (
+                <div>Sector: <span className="text-gray-300">{inst.sector}</span></div>
+              )}
+              {inst.industry && (
+                <div>Industry: <span className="text-gray-300">{inst.industry}</span></div>
+              )}
               {inst.longName && <div>OpenFIGI: <span className="text-gray-300">{inst.longName}</span></div>}
               {inst.yahooLongName && <div>Yahoo long name: <span className="text-gray-300">{inst.yahooLongName}</span></div>}
               <div className="mt-1 flex items-center gap-2">
@@ -1589,6 +1595,14 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                         {inst.currency && ` · ${inst.currency}`}
                       </span>
                     </div>
+                    {inst.type === 'Stock' && inst.sector && (
+                      <div className="text-[10px] text-muted mt-0.5 truncate" title={inst.industry ?? inst.sector}>
+                        {inst.sector}
+                        {inst.industry && (
+                          <span className="text-muted/60"> · {inst.industry}</span>
+                        )}
+                      </div>
+                    )}
                   </td>
 
                   {!hiddenKeys.has('riskAdjustedScore') && (
