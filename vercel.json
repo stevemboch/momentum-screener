@@ -4,13 +4,43 @@
   "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/tfa-catalyst", "destination": "/api/tfa-catalyst" },
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api).*)", "destination": "/index.html" }
+    {
+      "source": "/api/tfa-catalyst",
+      "destination": "/api/tfa-catalyst"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api).*)",
+      "destination": "/index.html"
+    }
   ],
   "functions": {
-    "api/ai-filter.ts": { "maxDuration": 15 },
-    "api/xetra-stats.ts": { "maxDuration": 60 },
-    "api/tfa-catalyst.ts": { "maxDuration": 45 }
+    "api/ai-filter.ts": {
+      "maxDuration": 15
+    },
+    "api/xetra-stats.ts": {
+      "maxDuration": 60
+    },
+    "api/tfa-catalyst.ts": {
+      "maxDuration": 45
+    },
+    "api/claude-regime.ts": {
+      "maxDuration": 30
+    },
+    "api/claude-portfolio.ts": {
+      "maxDuration": 30
+    },
+    "api/claude-context.ts": {
+      "maxDuration": 30
+    },
+    "api/portfolio-briefing.ts": {
+      "maxDuration": 30
+    },
+    "api/yahoo-analyst.ts": {
+      "maxDuration": 30
+    }
   }
 }

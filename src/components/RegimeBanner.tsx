@@ -26,14 +26,18 @@ export function RegimeBanner() {
     }
     let cancelled = false
     setLoading(true)
+    // Safety: clear loading after 20s max regardless of API outcome
+    const safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false) }, 20_000)
     const t = setTimeout(() => {
       compute().finally(() => {
         if (!cancelled) setLoading(false)
+        clearTimeout(safetyTimer)
       })
     }, REGIME_DELAY_MS)
     return () => {
       cancelled = true
       clearTimeout(t)
+      clearTimeout(safetyTimer)
     }
   }, [state.fetchStatus.phase, state.instruments.length, state.referenceR3m, compute])
 

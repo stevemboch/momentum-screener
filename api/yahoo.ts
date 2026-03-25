@@ -51,10 +51,29 @@ async function fetchOneTicker(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
-      fetch(
-        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
-        { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
-      ),
+      (async () => {
+        // Try query1 first (less rate-limited from server IPs), fall back to query2
+        const urls = [
+          `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
+          `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
+        ]
+        for (const url of urls) {
+          const r = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'application/json',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://finance.yahoo.com',
+              'Origin': 'https://finance.yahoo.com',
+            }
+          })
+          if (r.ok) return r
+        }
+        // Return last response even if not ok, so caller can log status
+        return await fetch(urls[1], {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' }
+        })
+      })(),
       includeWeekly
         ? fetch(
             `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=7y&interval=1wk&includePrePost=false`,
