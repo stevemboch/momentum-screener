@@ -20,6 +20,8 @@ interface PriceResult {
   returnOnAssets: number | null
   aum: number | null
   ter: number | null
+  sector?: string | null
+  industry?: string | null
   error?: string
 }
 
@@ -33,14 +35,14 @@ async function fetchOneTicker(
   const profile: YahooProfile = options?.profile ?? 'stock'
   const quoteModules =
     profile === 'fund'
-      ? 'price,summaryDetail,fundProfile'
-      : 'price,defaultKeyStatistics,financialData,summaryDetail,fundProfile'
+      ? 'price,summaryDetail,fundProfile,assetProfile'
+      : 'price,defaultKeyStatistics,financialData,summaryDetail,fundProfile,assetProfile'
 
   const base: PriceResult = {
     ticker, longName: null, currency: null, closes: [], highs: [], lows: [], timestamps: [],
     volumes: [], closesWeekly: [], timestampsWeekly: [], marketCap: null,
     pe: null, pb: null, ebitda: null, enterpriseValue: null,
-    returnOnAssets: null, aum: null, ter: null,
+    returnOnAssets: null, aum: null, ter: null, sector: null, industry: null,
   }
 
   try {
@@ -122,6 +124,9 @@ async function fetchOneTicker(
         base.returnOnAssets = fd.returnOnAssets?.raw ?? null
         base.aum = sd.totalAssets?.raw ?? ks.totalAssets?.raw ?? null
         base.ter = fp.annualReportExpenseRatio?.raw ?? null
+        const ap = summary.assetProfile || {}
+        base.sector = ap.sector ?? null
+        base.industry = ap.industry ?? null
       }
     }
   } catch (err: any) {

@@ -770,6 +770,8 @@ export function usePipeline() {
           pe: r.pe ?? null, pb: r.pb ?? null,
           ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
           returnOnAssets: r.returnOnAssets ?? null,
+          sector: r.sector ?? updated[idx].sector ?? null,
+          industry: r.industry ?? updated[idx].industry ?? null,
           yahooLongName: r.longName ?? updated[idx].yahooLongName,
           longName: nextLongName,
           displayName: nextLongName ? toDisplayName(nextLongName, updated[idx].displayName) : updated[idx].displayName,

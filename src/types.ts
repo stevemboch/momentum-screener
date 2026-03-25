@@ -15,6 +15,8 @@ export interface Instrument {
   priceCurrency?: string | null
   firstTradingDate?: string
   xetraGroup?: string
+  sector?: string | null
+  industry?: string | null
 
   // Names
   xetraName?: string
