@@ -46,39 +46,36 @@ async function fetchOneTicker(
   }
 
   try {
-    const [chartRes, quoteRes, weeklyRes] = await Promise.all([
+    const [chartRes, quoteRes, weeklyRes, v7Res] = await Promise.all([
       fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
         { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
       ),
       (async () => {
-        // Try query1 first (less rate-limited from server IPs), fall back to query2
         const urls = [
           `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
           `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
         ]
         for (const url of urls) {
-          const r = await fetch(url, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Referer': 'https://finance.yahoo.com',
-              'Origin': 'https://finance.yahoo.com',
-            }
-          })
-          if (r.ok) return r
+          try {
+            const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } })
+            if (r.ok) return r
+          } catch {}
         }
-        // Return last response even if not ok, so caller can log status
-        return await fetch(urls[1], {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' }
-        })
+        return null
       })(),
       includeWeekly
         ? fetch(
             `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=7y&interval=1wk&includePrePost=false`,
             { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
           )
+        : Promise.resolve(null),
+      // v7/finance/quote — works from server IPs, returns sector/industry for stocks
+      profile !== 'fund'
+        ? fetch(
+            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=sector,industry,longName`,
+            { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
+          ).catch(() => null)
         : Promise.resolve(null),
     ])
 
@@ -125,8 +122,18 @@ async function fetchOneTicker(
       }
     }
 
-    if (quoteRes.ok) {
-      const quoteData = await quoteRes.json()
+    // v7/finance/quote — sector/industry for stocks (works when v10 is blocked)
+    if (v7Res?.ok) {
+      try {
+        const v7Data = await v7Res.json()
+        const q = v7Data?.quoteResponse?.result?.[0]
+        if (q?.sector) base.sector = q.sector
+        if (q?.industry) base.industry = q.industry
+      } catch {}
+    }
+
+    if (quoteRes?.ok) {
+      const quoteData = await quoteRes!.json()
       const summary = quoteData?.quoteSummary?.result?.[0]
       if (summary) {
         const price = summary.price || {}
@@ -144,8 +151,9 @@ async function fetchOneTicker(
         base.aum = sd.totalAssets?.raw ?? ks.totalAssets?.raw ?? null
         base.ter = fp.annualReportExpenseRatio?.raw ?? null
         const ap = summary.assetProfile || {}
-        base.sector = ap.sector ?? null
-        base.industry = ap.industry ?? null
+        // Only overwrite if assetProfile has a value (don't null out v7 result)
+        if (ap.sector) base.sector = ap.sector
+        if (ap.industry) base.industry = ap.industry
       }
     }
   } catch (err: any) {

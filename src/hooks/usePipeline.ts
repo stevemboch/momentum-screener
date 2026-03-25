@@ -118,7 +118,7 @@ function normalizeMnemonicForCache(mnemonic?: string): string | null {
 }
 
 function buildYahooCacheKey(ticker: string): string {
-  return `cache:yahoo:v2:${normalizeTickerForCache(ticker)}`
+  return `cache:yahoo:v3:${normalizeTickerForCache(ticker)}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -241,7 +241,7 @@ function canWriteOpenFigiCache(now = Date.now()): boolean {
   return now >= openFigiCacheWritesBlockedUntilTs
 }
 
-function blockOpenFigiCacheWrites(now = Date.now()) {
+function blockOpenFIGI_CacheWrites(now = Date.now()) {
   openFigiCacheWritesBlockedUntilTs = now + OPENFIGI_CACHE_WRITE_COOLDOWN_MS
 }
 
@@ -494,7 +494,7 @@ export function usePipeline() {
           { allowRecovery: true }
         )
         if (!cacheOk) {
-          blockOpenFigiCacheWrites()
+          blockOpenFIGI_CacheWrites()
           cacheWritesAllowed = false
           console.warn('[openfigi] cache writes paused after quota pressure; proceeding without cache writes')
         }
