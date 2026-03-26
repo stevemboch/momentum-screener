@@ -1,0 +1,2 @@
+export const ANALYST_AUTO_TOP_N = 200
+export const ANALYST_AUTO_EXTENDED_N = 200

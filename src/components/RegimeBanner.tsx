@@ -19,16 +19,23 @@ export function RegimeBanner() {
   const REGIME_TTL = 60 * 60 * 1000
 
   useEffect(() => {
-    if (state.fetchStatus.phase !== 'done') return
+    if (state.fetchStatus.phase !== 'done') {
+      setLoading(false)
+      return
+    }
     if (regime) {
       const age = Date.now() - regime.computedAt
-      if (age < REGIME_TTL) return
+      if (age < REGIME_TTL) {
+        setLoading(false)
+        return
+      }
     }
     let cancelled = false
-    setLoading(true)
     // Safety: clear loading after 20s max regardless of API outcome
     const safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false) }, 20_000)
     const t = setTimeout(() => {
+      if (cancelled) return
+      setLoading(true)
       compute().finally(() => {
         if (!cancelled) setLoading(false)
         clearTimeout(safetyTimer)
@@ -38,6 +45,7 @@ export function RegimeBanner() {
       cancelled = true
       clearTimeout(t)
       clearTimeout(safetyTimer)
+      setLoading(false)
     }
   }, [state.fetchStatus.phase, state.instruments.length, state.referenceR3m, compute])
 

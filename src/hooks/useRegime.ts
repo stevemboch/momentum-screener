@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useAppState } from '../store'
 import { computeRegimeInputs } from '../utils/regimeInputs'
 import { calculateMAs } from '../utils/calculations'
@@ -34,16 +34,22 @@ async function fetchBenchmarks(): Promise<RegimeBenchmark[]> {
 export function useRegime() {
   const { state, dispatch } = useAppState()
   const inFlightRef = useRef(false)
+  const stateRef = useRef(state)
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
 
   const compute = useCallback(async (overrides?: { instruments?: Instrument[]; referenceR3m?: number | null }) => {
+    const currentState = stateRef.current
     if (inFlightRef.current) return
-    if (state.marketRegime) {
-      const age = Date.now() - state.marketRegime.computedAt
+    if (currentState.marketRegime) {
+      const age = Date.now() - currentState.marketRegime.computedAt
       if (age < REGIME_TTL) return
     }
 
-    const instruments = overrides?.instruments ?? state.instruments
-    const referenceR3m = overrides?.referenceR3m ?? state.referenceR3m
+    const instruments = overrides?.instruments ?? currentState.instruments
+    const referenceR3m = overrides?.referenceR3m ?? currentState.referenceR3m
     const withPrices = instruments.filter(i => i.closes && i.closes.length > 0)
     const withSignals = withPrices.filter(i => i.r3m != null && i.aboveMa200 != null)
     if (withSignals.length < 10) return
@@ -76,7 +82,7 @@ export function useRegime() {
     } finally {
       inFlightRef.current = false
     }
-  }, [state.instruments, state.referenceR3m, state.marketRegime, dispatch])
+  }, [dispatch])
 
   return { regime: state.marketRegime, compute }
 }

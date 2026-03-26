@@ -4,6 +4,7 @@ import { useAppState, useDisplayedInstruments } from '../store'
 import type { ColumnGroup, TypeFilter } from '../types'
 import { isAiFilterPlan } from '../utils/aiFilter'
 import { StatusBadge } from './ui/StatusBadge'
+import { ANALYST_AUTO_TOP_N } from '../constants/analyst'
 
 const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
   scores: 'Scores',
@@ -46,6 +47,17 @@ export function FilterBar() {
       i.pullbackScore !== null &&
       i.pullbackScore !== undefined
   ).length
+  const topNAvailable = state.instruments.filter(
+    (i) => i.type === 'Stock' && i.priceFetched && (i.riskAdjustedRank ?? 9999) <= ANALYST_AUTO_TOP_N
+  ).length
+  const topNLoaded = state.instruments.filter(
+    (i) =>
+      i.type === 'Stock' &&
+      i.priceFetched &&
+      (i.riskAdjustedRank ?? 9999) <= ANALYST_AUTO_TOP_N &&
+      i.analystFetched
+  ).length
+  const topNProgressPct = topNAvailable > 0 ? Math.min(100, (topNLoaded / topNAvailable) * 100) : 0
 
   type PrimaryFilter = TypeFilter | 'tfa' | 'pullback'
   const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : typeFilter
@@ -266,6 +278,18 @@ export function FilterBar() {
         )}{' '}
         instruments
       </span>
+
+      {topNAvailable > 0 && (
+        <div className="ml-1 flex items-center gap-2 font-mono text-ui-sm text-muted">
+          <span>Analyst Top {ANALYST_AUTO_TOP_N}: {topNLoaded}/{topNAvailable}</span>
+          <div className="h-1 w-20 overflow-hidden rounded border border-border bg-surface2">
+            <div
+              className="h-full bg-accent transition-all duration-300"
+              style={{ width: `${topNProgressPct}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="relative ml-auto hidden lg:block" ref={colMenuRef}>
         <button

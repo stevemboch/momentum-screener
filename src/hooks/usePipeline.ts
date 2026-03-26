@@ -5,6 +5,7 @@ import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFileDeta
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails, calculateTfaFDetails5Y } from '../utils/calculations'
 import { apiFetchJson, apiFetchText } from '../api/client'
+import { ANALYST_AUTO_EXTENDED_N, ANALYST_AUTO_TOP_N } from '../constants/analyst'
 
 /**
  * Leitet die Financial Currency (Berichtswährung) aus dem ISIN-Prefix ab.
@@ -52,8 +53,8 @@ const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
 const LEEWAY_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const LEEWAY_TOP_N = 200
-const LEEWAY_EXTENDED_N = 200
+const LEEWAY_TOP_N = ANALYST_AUTO_TOP_N
+const LEEWAY_EXTENDED_N = ANALYST_AUTO_EXTENDED_N
 const LEEWAY_EXTEND_AFTER_MS = 36 * 60 * 60 * 1000
 const TFA_AUTO_FUNDAMENTALS_LIMIT = 25
 const TFA_CATALYST_TTL_MS = 24 * 60 * 60 * 1000
