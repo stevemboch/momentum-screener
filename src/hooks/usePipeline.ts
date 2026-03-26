@@ -258,6 +258,62 @@ interface YahooFetchTask {
   resultIndices: number[]
 }
 
+function asFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function asFiniteArray(value: unknown, integer = false): number[] {
+  if (!Array.isArray(value)) return []
+  const out: number[] = []
+  value.forEach((item) => {
+    const parsed = asFiniteNumber(item)
+    if (parsed == null) return
+    out.push(integer ? Math.trunc(parsed) : parsed)
+  })
+  return out
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
+function sanitizeYahooResult(raw: any): any | null {
+  if (!raw || typeof raw !== 'object') return null
+  const closes = asFiniteArray(raw.closes)
+  const highsRaw = asFiniteArray(raw.highs)
+  const lowsRaw = asFiniteArray(raw.lows)
+  const volumesRaw = asFiniteArray(raw.volumes)
+  return {
+    ...raw,
+    ticker: asNonEmptyString(raw.ticker) ?? '',
+    longName: asNonEmptyString(raw.longName),
+    currency: asNonEmptyString(raw.currency),
+    closes,
+    highs: highsRaw.length > 0 ? highsRaw : closes.slice(),
+    lows: lowsRaw.length > 0 ? lowsRaw : closes.slice(),
+    volumes: volumesRaw.length > 0 ? volumesRaw : new Array(closes.length).fill(0),
+    timestamps: asFiniteArray(raw.timestamps, true),
+    closesWeekly: asFiniteArray(raw.closesWeekly),
+    timestampsWeekly: asFiniteArray(raw.timestampsWeekly, true),
+    marketCap: asFiniteNumber(raw.marketCap),
+    pe: asFiniteNumber(raw.pe),
+    pb: asFiniteNumber(raw.pb),
+    ebitda: asFiniteNumber(raw.ebitda),
+    enterpriseValue: asFiniteNumber(raw.enterpriseValue),
+    returnOnAssets: asFiniteNumber(raw.returnOnAssets),
+    aum: asFiniteNumber(raw.aum),
+    ter: asFiniteNumber(raw.ter),
+    sector: asNonEmptyString(raw.sector),
+    industry: asNonEmptyString(raw.industry),
+    error: asNonEmptyString(raw.error),
+  }
+}
+
 async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise<Array<OpenFIGIResult | null>> {
   return apiFetchJson<Array<OpenFIGIResult | null>>('/api/openfigi', {
     method: 'POST',
@@ -538,7 +594,7 @@ export function usePipeline() {
   const ensureReferenceR3m = useCallback(async () => {
     if (state.referenceR3m != null) return state.referenceR3m
     try {
-      const r = await apiYahooSingle('URTH', { includeWeekly: false, profile: 'fund' })
+      const r = sanitizeYahooResult(await apiYahooSingle('URTH', { includeWeekly: false, profile: 'fund' }))
       if (r?.closes?.length) {
         const { r3m } = calculateReturns(r.closes)
         dispatch({ type: 'SET_REFERENCE_R3M', r3m: r3m ?? null })
@@ -558,14 +614,7 @@ export function usePipeline() {
     let cachedCount = 0
     withTickers.forEach((inst, idx) => {
       const key = buildYahooCacheKey(inst.yahooTicker)
-      let cached = cacheGet<any>(key, YAHOO_TTL_MS)
-      if (!cached) {
-        const legacy = cacheGet<any>(buildLegacyYahooCacheKey(inst.yahooTicker), YAHOO_TTL_MS)
-        if (legacy) {
-          cached = legacy
-          cacheSet(key, legacy, YAHOO_TTL_MS)
-        }
-      }
+      const cached = sanitizeYahooResult(cacheGet<any>(key, YAHOO_TTL_MS))
       if (cached) {
         cachedResults[idx] = cached
         cachedCount++
@@ -635,7 +684,7 @@ export function usePipeline() {
               })
               return batch.map((task, idx) => ({
                 task,
-                result: payload[idx] ?? { error: 'Empty Yahoo payload', ticker: task.ticker },
+                result: sanitizeYahooResult(payload[idx]) ?? { error: 'Empty Yahoo payload', ticker: task.ticker },
               }))
             } catch (err: any) {
               return batch.map((task) => ({
@@ -658,7 +707,7 @@ export function usePipeline() {
       for (const resultIdx of task.resultIndices) {
         results[resultIdx] = result
       }
-      if (result) cacheSet(buildYahooCacheKey(task.ticker), result, YAHOO_TTL_MS)
+      if (result) cacheSet(buildYahooCacheKey(task.ticker), sanitizeYahooResult(result) ?? result, YAHOO_TTL_MS)
     })
 
     const errorCount = fetched.filter(({ result }) => !result || result.error).length
@@ -1089,16 +1138,9 @@ export function usePipeline() {
     if (!inst || !inst.yahooTicker) return
     try {
       const cacheKey = buildYahooCacheKey(inst.yahooTicker)
-      let r = cacheGet<any>(cacheKey, YAHOO_TTL_MS)
+      let r = sanitizeYahooResult(cacheGet<any>(cacheKey, YAHOO_TTL_MS))
       if (!r) {
-        const legacy = cacheGet<any>(buildLegacyYahooCacheKey(inst.yahooTicker), YAHOO_TTL_MS)
-        if (legacy) {
-          r = legacy
-          cacheSet(cacheKey, legacy, YAHOO_TTL_MS)
-        }
-      }
-      if (!r) {
-        r = await apiYahooSingle(inst.yahooTicker, getYahooRequestOptions(inst))
+        r = sanitizeYahooResult(await apiYahooSingle(inst.yahooTicker, getYahooRequestOptions(inst)))
         if (r) cacheSet(cacheKey, r, YAHOO_TTL_MS)
       }
       if (!r) return

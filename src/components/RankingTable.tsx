@@ -337,12 +337,13 @@ function BreakoutBadge({
 // ─── MARow for expanded detail ────────────────────────────────────────────────
 
 function MARow({ label, value, above, lastPrice }: { label: string; value: number | null | undefined; above: boolean | null | undefined; lastPrice: number | undefined }) {
-  if (value == null) return null
-  const diff = lastPrice != null ? ((lastPrice - value) / value * 100) : null
+  const numericValue = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numericValue)) return null
+  const diff = lastPrice != null ? ((lastPrice - numericValue) / numericValue * 100) : null
   return (
     <div className="flex items-center gap-2">
       <span className="text-muted w-12">{label}:</span>
-      <span className="text-gray-300">{value.toFixed(2)}</span>
+      <span className="text-gray-300">{numericValue.toFixed(2)}</span>
       {diff != null && (
         <span className={diff >= 0 ? 'text-green-400' : 'text-red-400'}>
           {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
@@ -359,7 +360,11 @@ function Sparkline({ closes }: { closes: number[] | undefined }) {
   if (!closes || closes.length < 5) return null
 
   // Letzten 21 Tage (ca. 1 Monat Handelstage)
-  const slice = closes.slice(-21)
+  const slice = closes
+    .map((v) => (typeof v === 'number' ? v : Number(v)))
+    .filter((v) => Number.isFinite(v))
+    .slice(-21)
+  if (slice.length < 5) return null
   const n = slice.length
   const min = Math.min(...slice)
   const max = Math.max(...slice)
