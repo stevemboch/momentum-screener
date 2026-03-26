@@ -52,8 +52,8 @@ const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
 const LEEWAY_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const LEEWAY_TOP_N = 50
-const LEEWAY_EXTENDED_N = 100
+const LEEWAY_TOP_N = 200
+const LEEWAY_EXTENDED_N = 200
 const LEEWAY_EXTEND_AFTER_MS = 36 * 60 * 60 * 1000
 const TFA_AUTO_FUNDAMENTALS_LIMIT = 25
 const TFA_CATALYST_TTL_MS = 24 * 60 * 60 * 1000
@@ -1523,19 +1523,19 @@ export function usePipeline() {
     )
     if (allStocksWithPrices.length === 0) return
 
-    const top50Fetched = allStocksWithPrices.filter(
+    const topNFetched = allStocksWithPrices.filter(
       (i) => i.leewayFetched && (i.riskAdjustedRank ?? 9999) <= LEEWAY_TOP_N
     )
-    const top50Available = allStocksWithPrices.filter(
+    const topNAvailable = allStocksWithPrices.filter(
       (i) => (i.riskAdjustedRank ?? 9999) <= LEEWAY_TOP_N
     )
 
-    const top50CacheAge = (() => {
+    const topNCacheAge = (() => {
       if (!hasStorage()) return null
-      if (top50Fetched.length < top50Available.length) return null
-      if (top50Fetched.length === 0) return null
+      if (topNFetched.length < topNAvailable.length) return null
+      if (topNFetched.length === 0) return null
       let oldest = Date.now()
-      for (const inst of top50Fetched) {
+      for (const inst of topNFetched) {
         try {
           const raw = JSON.parse(localStorage.getItem(buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic)) ?? 'null')
             ?? JSON.parse(localStorage.getItem(buildLegacyAnalystCacheKey(inst.yahooTicker)) ?? 'null')
@@ -1549,9 +1549,9 @@ export function usePipeline() {
     })()
 
     const maxRank = (
-      top50CacheAge != null &&
-      top50CacheAge > LEEWAY_EXTEND_AFTER_MS &&
-      top50Available.length >= LEEWAY_TOP_N
+      topNCacheAge != null &&
+      topNCacheAge > LEEWAY_EXTEND_AFTER_MS &&
+      topNAvailable.length >= LEEWAY_TOP_N
     )
       ? LEEWAY_EXTENDED_N
       : LEEWAY_TOP_N
