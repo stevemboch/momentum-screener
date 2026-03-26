@@ -249,7 +249,7 @@ export type TfaPhase =
   | 'rejected'
   | 'ko'
 
-export type AiFilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in'
+export type AiFilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains'
 
 export interface AiFilterRule {
   field: string

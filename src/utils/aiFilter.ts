@@ -6,7 +6,8 @@ const MAX_RULES = 20
 const MAX_IN_VALUES = 30
 
 const ALLOWED_FIELDS = new Set<string>([
-  'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'group', 'inPortfolio',
+  'type', 'isin', 'displayName', 'name', 'xetraName', 'longName', 'yahooLongName',
+  'currency', 'xetraGroup', 'group', 'inPortfolio',
   'sector', 'sektor', 'industry',
   'aum', 'ter',
   'upside', 'downside', 'upsidePct', 'downsidePct',
@@ -27,7 +28,7 @@ function isPrimitive(value: unknown): value is Primitive {
 }
 
 function isOperator(value: unknown): value is AiFilterRule['operator'] {
-  return value === 'eq' || value === 'neq' || value === 'gt' || value === 'gte' || value === 'lt' || value === 'lte' || value === 'in'
+  return value === 'eq' || value === 'neq' || value === 'gt' || value === 'gte' || value === 'lt' || value === 'lte' || value === 'in' || value === 'contains'
 }
 
 function isRule(value: unknown): value is AiFilterRule {
@@ -95,7 +96,36 @@ function normalizeString(value: unknown): unknown {
   return value.trim().toLowerCase()
 }
 
+function getNormalizedNameCandidates(inst: Instrument): string[] {
+  return [inst.displayName, inst.xetraName, inst.longName, inst.yahooLongName]
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => v.trim().toLowerCase())
+}
+
+function evaluateNameRule(inst: Instrument, rule: AiFilterRule): boolean {
+  const names = getNormalizedNameCandidates(inst)
+  if (names.length === 0) return true
+
+  if (rule.operator === 'in') {
+    if (!Array.isArray(rule.value)) return true
+    const needles = rule.value
+      .map((v) => normalizeString(v))
+      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    if (needles.length === 0) return true
+    return names.some((name) => needles.some((needle) => name === needle))
+  }
+
+  const needle = normalizeString(rule.value)
+  if (typeof needle !== 'string' || needle.length === 0) return true
+  if (rule.operator === 'contains') return names.some((name) => name.includes(needle))
+  if (rule.operator === 'eq') return names.some((name) => name === needle)
+  if (rule.operator === 'neq') return names.every((name) => name !== needle)
+  return true
+}
+
 function evaluateRule(inst: Instrument, rule: AiFilterRule): boolean {
+  if (rule.field === 'name') return evaluateNameRule(inst, rule)
+
   const raw = getRuleFieldValue(inst, rule.field)
   const left = raw ?? rule.fallback
   if (left === undefined) return true
@@ -108,6 +138,12 @@ function evaluateRule(inst: Instrument, rule: AiFilterRule): boolean {
 
   const leftNorm = normalizeString(left)
   const rightNorm = normalizeString(rule.value)
+  if (rule.operator === 'contains') {
+    if (typeof leftNorm === 'string' && typeof rightNorm === 'string') {
+      return leftNorm.includes(rightNorm)
+    }
+    return true
+  }
   if (rule.operator === 'eq') return Object.is(leftNorm, rightNorm)
   if (rule.operator === 'neq') return !Object.is(leftNorm, rightNorm)
 

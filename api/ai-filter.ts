@@ -3,7 +3,7 @@ import { geminiChat, parseJSON } from '../server/gemini'
 import { requireAuth } from '../server/auth'
 
 type Primitive = string | number | boolean | null
-type Operator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in'
+type Operator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains'
 
 interface AiFilterRule {
   field: string
@@ -22,7 +22,8 @@ const MAX_RULES = 20
 const MAX_IN_VALUES = 30
 
 const ALLOWED_FIELDS = new Set([
-  'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'group', 'inPortfolio',
+  'type', 'isin', 'displayName', 'name', 'xetraName', 'longName', 'yahooLongName',
+  'currency', 'xetraGroup', 'group', 'inPortfolio',
   'sector', 'sektor', 'industry',
   'aum', 'ter',
   'upside', 'downside', 'upsidePct', 'downsidePct',
@@ -46,7 +47,7 @@ Wandle einen Nutzerwunsch in ein strikt valides JSON-Objekt mit diesem Schema:
   "rules": [
     {
       "field": string,
-      "operator": "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in",
+      "operator": "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "contains",
       "value": string | number | boolean | null | Array<string|number|boolean|null>,
       "fallback": string | number | boolean | null (optional)
     }
@@ -57,6 +58,7 @@ WICHTIG:
 - Gib NUR JSON zurueck. Keine Erklaerung, keine Markdown-Backticks.
 - Nur Felder aus dieser Liste: ${Array.from(ALLOWED_FIELDS).join(', ')}.
 - Feld-Mapping: Group -> group (oder xetraGroup), Sector/Sektor -> sector (oder sektor), Industry -> industry.
+- Name/Titel -> name (nutze bei Namen bevorzugt "contains" fuer Teilstring-Matches).
 - Analyst target / Upside -> analystTarget (oder upside), Downside -> downside.
 - Analyst rating -> analystRating (numerisch) oder analystRatingKey (z.B. buy/hold/sell).
 - Fuer analystTarget/upside/downside gelten Prozent-Ratios zum aktuellen Preis als Dezimalzahl (0.2 = +20%, -0.1 = -10%).
@@ -91,7 +93,7 @@ function isPrimitive(value: unknown): value is Primitive {
 }
 
 function isOperator(value: unknown): value is Operator {
-  return value === 'eq' || value === 'neq' || value === 'gt' || value === 'gte' || value === 'lt' || value === 'lte' || value === 'in'
+  return value === 'eq' || value === 'neq' || value === 'gt' || value === 'gte' || value === 'lt' || value === 'lte' || value === 'in' || value === 'contains'
 }
 
 function isRule(value: unknown): value is AiFilterRule {
