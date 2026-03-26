@@ -25,6 +25,7 @@ const ALLOWED_FIELDS = new Set([
   'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'group', 'inPortfolio',
   'sector', 'sektor', 'industry',
   'aum', 'ter',
+  'upside', 'downside', 'upsidePct', 'downsidePct',
   'r1m', 'r3m', 'r6m', 'vola', 'rsi14', 'levyRS',
   'ma50', 'ma100', 'ma200', 'aboveMa10', 'aboveMa50', 'aboveMa100', 'aboveMa200',
   'momentumRank', 'riskAdjustedRank', 'combinedRank',
@@ -55,7 +56,9 @@ Wandle einen Nutzerwunsch in ein strikt valides JSON-Objekt mit diesem Schema:
 WICHTIG:
 - Gib NUR JSON zurueck. Keine Erklaerung, keine Markdown-Backticks.
 - Nur Felder aus dieser Liste: ${Array.from(ALLOWED_FIELDS).join(', ')}.
-- Feld-Mapping: Group -> group (oder xetraGroup), Sector/Sektor -> sector (oder sektor), Industry -> industry, Analyst target -> analystTarget.
+- Feld-Mapping: Group -> group (oder xetraGroup), Sector/Sektor -> sector (oder sektor), Industry -> industry.
+- Analyst target / Upside -> analystTarget (oder upside), Downside -> downside.
+- Fuer analystTarget/upside/downside gelten Prozent-Ratios zum aktuellen Preis als Dezimalzahl (0.2 = +20%, -0.1 = -10%).
 - "in" nutzt ein nicht-leeres Array in "value".
 - max. 12 Regeln.
 - Falls etwas unklar ist: konservativ bleiben (wenige Regeln, keine riskanten Annahmen).

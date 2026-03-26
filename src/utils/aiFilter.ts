@@ -9,6 +9,7 @@ const ALLOWED_FIELDS = new Set<string>([
   'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'group', 'inPortfolio',
   'sector', 'sektor', 'industry',
   'aum', 'ter',
+  'upside', 'downside', 'upsidePct', 'downsidePct',
   'r1m', 'r3m', 'r6m', 'vola', 'rsi14', 'levyRS',
   'ma50', 'ma100', 'ma200', 'aboveMa10', 'aboveMa50', 'aboveMa100', 'aboveMa200',
   'momentumRank', 'riskAdjustedRank', 'combinedRank',
@@ -64,10 +65,28 @@ function toNumberOrNull(value: unknown): number | null {
   return null
 }
 
+function getUpsideRatio(inst: Instrument): number | null {
+  const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
+  if (lastPrice == null || !Number.isFinite(lastPrice) || lastPrice <= 0) return null
+
+  const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
+  const analystCurrency = inst.analystCurrency ?? null
+  const targetForUpside = inst.targetPriceAdj != null
+    ? inst.targetPriceAdj
+    : (analystCurrency && priceCurrency && analystCurrency !== priceCurrency ? null : inst.targetPrice)
+  if (targetForUpside == null || !Number.isFinite(targetForUpside)) return null
+
+  return targetForUpside / lastPrice - 1
+}
+
 function getRuleFieldValue(inst: Instrument, field: string): unknown {
   if (field === 'group') return inst.xetraGroup
   if (field === 'sektor') return inst.sector
-  if (field === 'analystTarget') return inst.targetPriceAdj ?? inst.targetPrice
+  if (field === 'upside' || field === 'upsidePct' || field === 'analystTarget') return getUpsideRatio(inst)
+  if (field === 'downside' || field === 'downsidePct') {
+    const upside = getUpsideRatio(inst)
+    return upside == null ? null : -upside
+  }
   return (inst as unknown as Record<string, unknown>)[field]
 }
 
