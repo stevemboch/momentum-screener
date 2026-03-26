@@ -6,7 +6,8 @@ const MAX_RULES = 20
 const MAX_IN_VALUES = 30
 
 const ALLOWED_FIELDS = new Set<string>([
-  'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'inPortfolio',
+  'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'group', 'inPortfolio',
+  'sector', 'sektor', 'industry',
   'aum', 'ter',
   'r1m', 'r3m', 'r6m', 'vola', 'rsi14', 'levyRS',
   'ma50', 'ma100', 'ma200', 'aboveMa10', 'aboveMa50', 'aboveMa100', 'aboveMa200',
@@ -14,6 +15,7 @@ const ALLOWED_FIELDS = new Set<string>([
   'momentumScore', 'riskAdjustedScore', 'combinedScore', 'pullbackScore', 'breakoutScore',
   'pe', 'pb', 'returnOnAssets', 'ebitda', 'enterpriseValue', 'earningsYield',
   'analystRating', 'analystOpinions', 'marketCap',
+  'targetPrice', 'targetPriceAdj', 'analystCurrentPrice', 'analystTarget',
   'drawFromHigh', 'drawFrom5YHigh', 'drawFrom7YHigh',
   'tfaPhase', 'tfaScore', 'tfaScenario', 'tfaEScore', 'tfaKO',
   'priceFetched', 'analystFetched', 'fundamentalsFetched',
@@ -62,18 +64,33 @@ function toNumberOrNull(value: unknown): number | null {
   return null
 }
 
+function getRuleFieldValue(inst: Instrument, field: string): unknown {
+  if (field === 'group') return inst.xetraGroup
+  if (field === 'sektor') return inst.sector
+  if (field === 'analystTarget') return inst.targetPriceAdj ?? inst.targetPrice
+  return (inst as unknown as Record<string, unknown>)[field]
+}
+
+function normalizeString(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  return value.trim().toLowerCase()
+}
+
 function evaluateRule(inst: Instrument, rule: AiFilterRule): boolean {
-  const raw = (inst as unknown as Record<string, unknown>)[rule.field]
+  const raw = getRuleFieldValue(inst, rule.field)
   const left = raw ?? rule.fallback
   if (left === undefined) return true
 
   if (rule.operator === 'in') {
     if (!Array.isArray(rule.value)) return true
-    return rule.value.some((v) => Object.is(v, left))
+    const leftNorm = normalizeString(left)
+    return rule.value.some((v) => Object.is(normalizeString(v), leftNorm))
   }
 
-  if (rule.operator === 'eq') return Object.is(left, rule.value)
-  if (rule.operator === 'neq') return !Object.is(left, rule.value)
+  const leftNorm = normalizeString(left)
+  const rightNorm = normalizeString(rule.value)
+  if (rule.operator === 'eq') return Object.is(leftNorm, rightNorm)
+  if (rule.operator === 'neq') return !Object.is(leftNorm, rightNorm)
 
   const lNum = toNumberOrNull(left)
   const rNum = toNumberOrNull(rule.value)

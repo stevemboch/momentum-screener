@@ -22,7 +22,8 @@ const MAX_RULES = 20
 const MAX_IN_VALUES = 30
 
 const ALLOWED_FIELDS = new Set([
-  'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'inPortfolio',
+  'type', 'isin', 'displayName', 'currency', 'xetraGroup', 'group', 'inPortfolio',
+  'sector', 'sektor', 'industry',
   'aum', 'ter',
   'r1m', 'r3m', 'r6m', 'vola', 'rsi14', 'levyRS',
   'ma50', 'ma100', 'ma200', 'aboveMa10', 'aboveMa50', 'aboveMa100', 'aboveMa200',
@@ -30,6 +31,7 @@ const ALLOWED_FIELDS = new Set([
   'momentumScore', 'riskAdjustedScore', 'combinedScore', 'pullbackScore', 'breakoutScore',
   'pe', 'pb', 'returnOnAssets', 'ebitda', 'enterpriseValue', 'earningsYield',
   'analystRating', 'analystOpinions', 'marketCap',
+  'targetPrice', 'targetPriceAdj', 'analystCurrentPrice', 'analystTarget',
   'drawFromHigh', 'drawFrom5YHigh', 'drawFrom7YHigh',
   'tfaPhase', 'tfaScore', 'tfaScenario', 'tfaEScore', 'tfaKO',
   'priceFetched', 'analystFetched', 'fundamentalsFetched',
@@ -53,6 +55,7 @@ Wandle einen Nutzerwunsch in ein strikt valides JSON-Objekt mit diesem Schema:
 WICHTIG:
 - Gib NUR JSON zurueck. Keine Erklaerung, keine Markdown-Backticks.
 - Nur Felder aus dieser Liste: ${Array.from(ALLOWED_FIELDS).join(', ')}.
+- Feld-Mapping: Group -> group (oder xetraGroup), Sector/Sektor -> sector (oder sektor), Industry -> industry, Analyst target -> analystTarget.
 - "in" nutzt ein nicht-leeres Array in "value".
 - max. 12 Regeln.
 - Falls etwas unklar ist: konservativ bleiben (wenige Regeln, keine riskanten Annahmen).
