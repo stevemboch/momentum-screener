@@ -27,15 +27,25 @@ interface PriceResult {
 
 type YahooProfile = 'stock' | 'fund'
 
-const YAHOO_HEADERS = {
+const YAHOO_BASE_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (compatible)',
-  'Accept': 'application/json',
   'Accept-Language': 'en-US,en;q=0.9',
+}
+
+const YAHOO_API_HEADERS = {
+  ...YAHOO_BASE_HEADERS,
+  'Accept': 'application/json',
   'Origin': 'https://finance.yahoo.com',
   'Referer': 'https://finance.yahoo.com/',
 }
 
 const YAHOO_SESSION_TTL_MS = 15 * 60 * 1000
+const YAHOO_SESSION_RETRY_COOLDOWN_MS = 60 * 1000
+
+const YAHOO_CRUMB_HEADERS = {
+  ...YAHOO_BASE_HEADERS,
+  'Accept': 'text/plain,*/*;q=0.9',
+}
 
 interface YahooSession {
   cookieHeader: string
@@ -44,6 +54,8 @@ interface YahooSession {
 }
 
 let yahooSessionCache: YahooSession | null = null
+let yahooSessionPromise: Promise<YahooSession | null> | null = null
+let yahooSessionRetryAfterTs = 0
 
 function extractCookieHeader(res: Response): string | null {
   const anyHeaders = res.headers as any
@@ -63,59 +75,81 @@ function extractCookieHeader(res: Response): string | null {
 }
 
 async function getYahooSession(forceRefresh = false): Promise<YahooSession | null> {
-  if (!forceRefresh && yahooSessionCache && yahooSessionCache.expiresAt > Date.now()) {
+  const now = Date.now()
+  if (!forceRefresh && yahooSessionCache && yahooSessionCache.expiresAt > now) {
     return yahooSessionCache
   }
-  try {
-    const sessionRes = await fetch('https://fc.yahoo.com', { headers: YAHOO_HEADERS })
-    const cookieHeader = extractCookieHeader(sessionRes)
-    if (!cookieHeader) return null
+  if (!forceRefresh && now < yahooSessionRetryAfterTs) return null
+  if (yahooSessionPromise) return yahooSessionPromise
 
-    const crumbUrls = [
-      'https://query1.finance.yahoo.com/v1/test/getcrumb',
-      'https://query2.finance.yahoo.com/v1/test/getcrumb',
-    ]
-    for (const url of crumbUrls) {
-      try {
-        const crumbRes = await fetch(url, { headers: { ...YAHOO_HEADERS, Cookie: cookieHeader } })
-        if (!crumbRes.ok) continue
-        const crumb = (await crumbRes.text()).trim()
-        if (!crumb || crumb.startsWith('{') || /unauthorized/i.test(crumb)) continue
-        yahooSessionCache = {
-          cookieHeader,
-          crumb,
-          expiresAt: Date.now() + YAHOO_SESSION_TTL_MS,
-        }
-        return yahooSessionCache
-      } catch {}
-    }
-  } catch {}
-  return null
+  yahooSessionPromise = (async () => {
+    try {
+      const sessionRes = await fetch('https://fc.yahoo.com', { headers: YAHOO_CRUMB_HEADERS })
+      const cookieHeader = extractCookieHeader(sessionRes)
+      if (!cookieHeader) {
+        yahooSessionRetryAfterTs = Date.now() + YAHOO_SESSION_RETRY_COOLDOWN_MS
+        return null
+      }
+
+      const crumbUrls = [
+        'https://query1.finance.yahoo.com/v1/test/getcrumb',
+        'https://query2.finance.yahoo.com/v1/test/getcrumb',
+      ]
+      for (const url of crumbUrls) {
+        try {
+          const crumbRes = await fetch(url, { headers: { ...YAHOO_CRUMB_HEADERS, Cookie: cookieHeader } })
+          if (!crumbRes.ok) continue
+          const crumb = (await crumbRes.text()).trim()
+          if (!crumb || crumb.startsWith('{') || /unauthorized|not acceptable/i.test(crumb)) continue
+          yahooSessionCache = {
+            cookieHeader,
+            crumb,
+            expiresAt: Date.now() + YAHOO_SESSION_TTL_MS,
+          }
+          yahooSessionRetryAfterTs = 0
+          return yahooSessionCache
+        } catch {}
+      }
+    } catch {}
+    yahooSessionRetryAfterTs = Date.now() + YAHOO_SESSION_RETRY_COOLDOWN_MS
+    return null
+  })().finally(() => {
+    yahooSessionPromise = null
+  })
+
+  return yahooSessionPromise
 }
 
-async function fetchQuoteSummaryWithSession(ticker: string, quoteModules: string, session: YahooSession): Promise<Response | null> {
+async function fetchQuoteSummaryWithSession(
+  ticker: string,
+  quoteModules: string,
+  session: YahooSession
+): Promise<{ res: Response | null; authFailed: boolean }> {
   const hosts = ['query1', 'query2']
+  let authFailed = false
   for (const host of hosts) {
     const url = `https://${host}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}&crumb=${encodeURIComponent(session.crumb)}`
     try {
-      const res = await fetch(url, { headers: { ...YAHOO_HEADERS, Cookie: session.cookieHeader } })
-      if (res.ok) return res
+      const res = await fetch(url, { headers: { ...YAHOO_API_HEADERS, Cookie: session.cookieHeader } })
+      if (res.ok) return { res, authFailed: false }
+      if (res.status === 401 || res.status === 403) authFailed = true
     } catch {}
   }
-  return null
+  return { res: null, authFailed }
 }
 
 async function fetchQuoteSummary(ticker: string, quoteModules: string): Promise<Response | null> {
-  const cachedSession = await getYahooSession(false)
-  if (cachedSession) {
-    const viaCachedSession = await fetchQuoteSummaryWithSession(ticker, quoteModules, cachedSession)
-    if (viaCachedSession) return viaCachedSession
-  }
-
-  const freshSession = await getYahooSession(true)
-  if (freshSession) {
-    const viaFreshSession = await fetchQuoteSummaryWithSession(ticker, quoteModules, freshSession)
-    if (viaFreshSession) return viaFreshSession
+  const session = await getYahooSession(false)
+  if (session) {
+    const fromSession = await fetchQuoteSummaryWithSession(ticker, quoteModules, session)
+    if (fromSession.res) return fromSession.res
+    if (fromSession.authFailed) {
+      const refreshed = await getYahooSession(true)
+      if (refreshed) {
+        const fromRefreshed = await fetchQuoteSummaryWithSession(ticker, quoteModules, refreshed)
+        if (fromRefreshed.res) return fromRefreshed.res
+      }
+    }
   }
 
   // Final fallback: legacy no-crumb calls (kept for compatibility with permissive Yahoo edges)
@@ -125,7 +159,7 @@ async function fetchQuoteSummary(ticker: string, quoteModules: string): Promise<
   ]
   for (const url of urls) {
     try {
-      const r = await fetch(url, { headers: YAHOO_HEADERS })
+      const r = await fetch(url, { headers: YAHOO_API_HEADERS })
       if (r.ok) return r
     } catch {}
   }
@@ -154,20 +188,20 @@ async function fetchOneTicker(
     const [chartRes, quoteRes, weeklyRes, v7Res] = await Promise.all([
       fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
-        { headers: YAHOO_HEADERS }
+        { headers: YAHOO_API_HEADERS }
       ),
       fetchQuoteSummary(ticker, quoteModules),
       includeWeekly
         ? fetch(
             `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=7y&interval=1wk&includePrePost=false`,
-            { headers: YAHOO_HEADERS }
+            { headers: YAHOO_API_HEADERS }
           )
         : Promise.resolve(null),
       // v7/finance/quote — works from server IPs, returns sector/industry for stocks
       profile !== 'fund'
         ? fetch(
             `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=sector,industry,longName`,
-            { headers: YAHOO_HEADERS }
+            { headers: YAHOO_API_HEADERS }
           ).catch(() => null)
         : Promise.resolve(null),
     ])
