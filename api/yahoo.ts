@@ -5,6 +5,15 @@ interface PriceResult {
   ticker: string
   longName: string | null
   currency: string | null
+  analystCurrency: string | null
+  analystCurrentPrice: number | null
+  analystRating: number | null
+  analystRatingKey: string | null
+  analystOpinions: number | null
+  targetPrice: number | null
+  targetLow: number | null
+  targetHigh: number | null
+  analystSource: 'yahoo' | null
   closes: number[]
   highs: number[]
   lows: number[]
@@ -190,13 +199,16 @@ async function fetchOneTicker(
   const quoteModules =
     profile === 'fund'
       ? 'price,summaryDetail,fundProfile,assetProfile'
-      : 'price,defaultKeyStatistics,financialData,summaryDetail,fundProfile,assetProfile'
+      : 'price,defaultKeyStatistics,financialData,recommendationTrend,summaryDetail,fundProfile,assetProfile'
 
   const base: PriceResult = {
     ticker, longName: null, currency: null, closes: [], highs: [], lows: [], timestamps: [],
     volumes: [], closesWeekly: [], timestampsWeekly: [], marketCap: null,
     pe: null, pb: null, ebitda: null, enterpriseValue: null,
     returnOnAssets: null, aum: null, ter: null, sector: null, industry: null,
+    analystCurrency: null, analystCurrentPrice: null,
+    analystRating: null, analystRatingKey: null, analystOpinions: null,
+    targetPrice: null, targetLow: null, targetHigh: null, analystSource: null,
   }
 
   try {
@@ -264,6 +276,8 @@ async function fetchOneTicker(
         const price = summary.price || {}
         const ks = summary.defaultKeyStatistics || {}
         const fd = summary.financialData || {}
+        const rt = summary.recommendationTrend || {}
+        const trend0 = Array.isArray(rt.trend) ? rt.trend[0] : null
         const sd = summary.summaryDetail || {}
         const fp = summary.fundProfile || {}
         base.longName = asStringOrNull(price.longName) ?? asStringOrNull(price.shortName) ?? base.longName
@@ -275,6 +289,24 @@ async function fetchOneTicker(
         base.returnOnAssets = fd.returnOnAssets?.raw ?? null
         base.aum = sd.totalAssets?.raw ?? ks.totalAssets?.raw ?? null
         base.ter = fp.annualReportExpenseRatio?.raw ?? null
+        base.analystCurrency = asStringOrNull(fd.financialCurrency) ?? asStringOrNull(price.currency) ?? base.analystCurrency
+        base.analystCurrentPrice = fd.currentPrice?.raw ?? null
+        base.analystRating = fd.recommendationMean?.raw ?? null
+        base.analystRatingKey = asStringOrNull(fd.recommendationKey) ?? asStringOrNull(trend0?.trend) ?? null
+        base.analystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
+        base.targetPrice = fd.targetMeanPrice?.raw ?? null
+        base.targetLow = fd.targetLowPrice?.raw ?? null
+        base.targetHigh = fd.targetHighPrice?.raw ?? null
+        if (
+          base.analystRating != null ||
+          base.analystRatingKey != null ||
+          base.analystOpinions != null ||
+          base.targetPrice != null ||
+          base.targetLow != null ||
+          base.targetHigh != null
+        ) {
+          base.analystSource = 'yahoo'
+        }
         const ap = summary.assetProfile || {}
         // Only overwrite if assetProfile has a value (don't null out v7 result)
         const sector = asStringOrNull(ap.sector) ?? asStringOrNull(ap.sectorDisp)

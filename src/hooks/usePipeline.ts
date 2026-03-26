@@ -5,7 +5,8 @@ import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFileDeta
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails, calculateTfaFDetails5Y } from '../utils/calculations'
 import { apiFetchJson, apiFetchText } from '../api/client'
-import { ANALYST_AUTO_EXTENDED_N, ANALYST_AUTO_TOP_N } from '../constants/analyst'
+import { ANALYST_AUTO_CONCURRENCY, ANALYST_AUTO_EXTENDED_N, ANALYST_AUTO_TOP_N } from '../constants/analyst'
+import { selectTopAnalystStocks } from '../utils/analystTopN'
 
 /**
  * Leitet die Financial Currency (Berichtswährung) aus dem ISIN-Prefix ab.
@@ -309,6 +310,15 @@ function sanitizeYahooResult(raw: any): any | null {
     returnOnAssets: asFiniteNumber(raw.returnOnAssets),
     aum: asFiniteNumber(raw.aum),
     ter: asFiniteNumber(raw.ter),
+    analystCurrency: asNonEmptyString(raw.analystCurrency),
+    analystCurrentPrice: asFiniteNumber(raw.analystCurrentPrice),
+    analystRating: asFiniteNumber(raw.analystRating),
+    analystRatingKey: asNonEmptyString(raw.analystRatingKey),
+    analystOpinions: asFiniteNumber(raw.analystOpinions),
+    targetPrice: asFiniteNumber(raw.targetPrice),
+    targetLow: asFiniteNumber(raw.targetLow),
+    targetHigh: asFiniteNumber(raw.targetHigh),
+    analystSource: asNonEmptyString(raw.analystSource),
     sector: asNonEmptyString(raw.sector),
     industry: asNonEmptyString(raw.industry),
     error: asNonEmptyString(raw.error),
@@ -409,6 +419,7 @@ export function usePipeline() {
   const xetraBuffer = useRef<Instrument[]>([])
   const tfaInFlight = useRef<Set<string>>(new Set())
   const tfaFundInFlight = useRef<Set<string>>(new Set())
+  const analystInFlight = useRef<Set<string>>(new Set())
   const tfaAutoRunning = useRef(false)
   const leewayRunning = useRef(false)
   const leewayStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -820,6 +831,15 @@ export function usePipeline() {
           pe: r.pe ?? null, pb: r.pb ?? null,
           ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
           returnOnAssets: r.returnOnAssets ?? null,
+          analystRating: r.analystRating ?? updated[idx].analystRating ?? null,
+          analystRatingKey: r.analystRatingKey ?? updated[idx].analystRatingKey ?? null,
+          analystOpinions: r.analystOpinions ?? updated[idx].analystOpinions ?? null,
+          targetPrice: r.targetPrice ?? updated[idx].targetPrice ?? null,
+          targetLow: r.targetLow ?? updated[idx].targetLow ?? null,
+          targetHigh: r.targetHigh ?? updated[idx].targetHigh ?? null,
+          analystCurrency: r.analystCurrency ?? updated[idx].analystCurrency ?? null,
+          analystCurrentPrice: r.analystCurrentPrice ?? updated[idx].analystCurrentPrice ?? null,
+          analystSource: r.analystSource === 'yahoo' ? 'yahoo' : updated[idx].analystSource,
           sector: r.sector ?? updated[idx].sector ?? null,
           industry: r.industry ?? updated[idx].industry ?? null,
           yahooLongName: r.longName ?? updated[idx].yahooLongName,
@@ -1178,7 +1198,9 @@ export function usePipeline() {
   ) => {
     const inst = state.instruments.find(i => i.isin === isin)
     if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
-    if (inst.tfaPhase === 'watch') {
+    if (analystInFlight.current.has(isin)) return
+    analystInFlight.current.add(isin)
+    if (!options?.suppressGemini && inst.tfaPhase === 'watch') {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
     }
     try {
@@ -1191,6 +1213,59 @@ export function usePipeline() {
           r = legacy
           cacheSet(cacheKey, legacy, analystTtlMs)
         }
+      }
+      const hasPreloadedYahooAnalyst =
+        inst.analystSource === 'yahoo' && (
+          inst.analystRating != null ||
+          !!inst.analystRatingKey ||
+          inst.analystOpinions != null ||
+          inst.targetPrice != null ||
+          inst.targetLow != null ||
+          inst.targetHigh != null
+        )
+      const preloadedYahooPayload = hasPreloadedYahooAnalyst
+        ? {
+          recommendationMean: inst.analystRating ?? null,
+          recommendationKey: inst.analystRatingKey ?? null,
+          numberOfAnalystOpinions: inst.analystOpinions ?? null,
+          targetMeanPrice: inst.targetPrice ?? null,
+          targetLowPrice: inst.targetLow ?? null,
+          targetHighPrice: inst.targetHigh ?? null,
+          currentPrice: inst.analystCurrentPrice ?? inst.closes?.[inst.closes.length - 1] ?? null,
+          currency: inst.priceCurrency ?? inst.currency ?? null,
+          financialCurrency: inst.analystCurrency ?? null,
+          pe: inst.pe ?? null,
+          pb: inst.pb ?? null,
+          ebitda: inst.ebitda ?? null,
+          enterpriseValue: inst.enterpriseValue ?? null,
+          returnOnAssets: inst.returnOnAssets ?? null,
+          marketCap: inst.marketCap ?? null,
+          source: 'yahoo',
+          leewayUsed: inst.leewayFetched === true,
+          error: null,
+        }
+        : null
+
+      // Short-circuit for auto top-N background runs:
+      // if Yahoo analyst fields are already present from the price fetch,
+      // mark as fetched and skip the heavier analyst pipeline.
+      if (options?.suppressGemini && preloadedYahooPayload) {
+        cacheSet(cacheKey, preloadedYahooPayload, analystTtlMs)
+        dispatch({
+          type: 'UPDATE_INSTRUMENT',
+          isin,
+          updates: {
+            analystFetched: true,
+            analystError: undefined,
+            analystSource: 'yahoo',
+          },
+        })
+        return
+      }
+
+      if (!r && preloadedYahooPayload) {
+        r = preloadedYahooPayload
+        cacheSet(cacheKey, r, analystTtlMs)
       }
       if (!r) {
         r = await apiFetchJson<any>('/api/yahoo-analyst', {
@@ -1471,6 +1546,8 @@ export function usePipeline() {
       }
     } catch (err: any) {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message, tfaPhase: 'watch' } })
+    } finally {
+      analystInFlight.current.delete(isin)
     }
   }, [state.instruments])
 
@@ -1519,21 +1596,14 @@ export function usePipeline() {
     if (!['done', 'idle'].includes(state.fetchStatus.phase)) return
     if (leewayRunning.current) return
 
-    const allStocksWithPrices = state.instruments.filter(
-      (i) => i.type === 'Stock' && i.priceFetched && i.mnemonic
-    )
-    if (allStocksWithPrices.length === 0) return
+    const topNStocks = selectTopAnalystStocks(state.instruments, LEEWAY_TOP_N)
+    if (topNStocks.length === 0) return
 
-    const topNFetched = allStocksWithPrices.filter(
-      (i) => i.leewayFetched && (i.riskAdjustedRank ?? 9999) <= LEEWAY_TOP_N
-    )
-    const topNAvailable = allStocksWithPrices.filter(
-      (i) => (i.riskAdjustedRank ?? 9999) <= LEEWAY_TOP_N
-    )
+    const topNFetched = topNStocks.filter((i) => i.leewayFetched || i.analystFetched)
 
     const topNCacheAge = (() => {
       if (!hasStorage()) return null
-      if (topNFetched.length < topNAvailable.length) return null
+      if (topNFetched.length < topNStocks.length) return null
       if (topNFetched.length === 0) return null
       let oldest = Date.now()
       for (const inst of topNFetched) {
@@ -1552,18 +1622,20 @@ export function usePipeline() {
     const maxRank = (
       topNCacheAge != null &&
       topNCacheAge > LEEWAY_EXTEND_AFTER_MS &&
-      topNAvailable.length >= LEEWAY_TOP_N
+      topNStocks.length >= LEEWAY_TOP_N
     )
       ? LEEWAY_EXTENDED_N
       : LEEWAY_TOP_N
 
-    const candidates = allStocksWithPrices
+    const targetStocks = maxRank > LEEWAY_TOP_N
+      ? selectTopAnalystStocks(state.instruments, maxRank)
+      : topNStocks
+
+    const candidates = targetStocks
       .filter((i) =>
-        !i.leewayFetched &&
         !i.analystFetched &&
-        (i.riskAdjustedRank ?? 9999) <= maxRank
+        !analystInFlight.current.has(i.isin)
       )
-      .sort((a, b) => (a.riskAdjustedRank ?? 9999) - (b.riskAdjustedRank ?? 9999))
 
     if (candidates.length === 0) return
 
@@ -1576,10 +1648,18 @@ export function usePipeline() {
       leewayRunning.current = true
       void (async () => {
         try {
-          for (const inst of candidates) {
-            await fetchSingleInstrumentAnalyst(inst.isin, { suppressGemini: true })
-            await new Promise((r) => setTimeout(r, 200))
-          }
+          let nextIdx = 0
+          const workerCount = Math.min(ANALYST_AUTO_CONCURRENCY, candidates.length)
+          await Promise.all(
+            Array.from({ length: workerCount }, () => (async () => {
+              while (!cancelled) {
+                const idx = nextIdx++
+                if (idx >= candidates.length) return
+                const inst = candidates[idx]
+                await fetchSingleInstrumentAnalyst(inst.isin, { suppressGemini: true })
+              }
+            })())
+          )
         } finally {
           leewayRunning.current = false
         }
@@ -1596,7 +1676,7 @@ export function usePipeline() {
     }
   }, [
     state.fetchStatus.phase,
-    state.instruments.filter((i) => i.type === 'Stock' && i.priceFetched).length,
+    state.instruments.filter((i) => i.type === 'Stock' && i.priceFetched && !!i.yahooTicker).length,
     fetchSingleInstrumentAnalyst,
   ])
 
