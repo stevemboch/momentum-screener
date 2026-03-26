@@ -31,7 +31,7 @@ const ALLOWED_FIELDS = new Set([
   'momentumRank', 'riskAdjustedRank', 'combinedRank',
   'momentumScore', 'riskAdjustedScore', 'combinedScore', 'pullbackScore', 'breakoutScore',
   'pe', 'pb', 'returnOnAssets', 'ebitda', 'enterpriseValue', 'earningsYield',
-  'analystRating', 'analystOpinions', 'marketCap',
+  'analystRating', 'analystRatingKey', 'analystOpinions', 'marketCap',
   'targetPrice', 'targetPriceAdj', 'analystCurrentPrice', 'analystTarget',
   'drawFromHigh', 'drawFrom5YHigh', 'drawFrom7YHigh',
   'tfaPhase', 'tfaScore', 'tfaScenario', 'tfaEScore', 'tfaKO',
@@ -58,6 +58,7 @@ WICHTIG:
 - Nur Felder aus dieser Liste: ${Array.from(ALLOWED_FIELDS).join(', ')}.
 - Feld-Mapping: Group -> group (oder xetraGroup), Sector/Sektor -> sector (oder sektor), Industry -> industry.
 - Analyst target / Upside -> analystTarget (oder upside), Downside -> downside.
+- Analyst rating -> analystRating (numerisch) oder analystRatingKey (z.B. buy/hold/sell).
 - Fuer analystTarget/upside/downside gelten Prozent-Ratios zum aktuellen Preis als Dezimalzahl (0.2 = +20%, -0.1 = -10%).
 - "in" nutzt ein nicht-leeres Array in "value".
 - max. 12 Regeln.

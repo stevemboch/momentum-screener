@@ -15,7 +15,7 @@ const ALLOWED_FIELDS = new Set<string>([
   'momentumRank', 'riskAdjustedRank', 'combinedRank',
   'momentumScore', 'riskAdjustedScore', 'combinedScore', 'pullbackScore', 'breakoutScore',
   'pe', 'pb', 'returnOnAssets', 'ebitda', 'enterpriseValue', 'earningsYield',
-  'analystRating', 'analystOpinions', 'marketCap',
+  'analystRating', 'analystRatingKey', 'analystOpinions', 'marketCap',
   'targetPrice', 'targetPriceAdj', 'analystCurrentPrice', 'analystTarget',
   'drawFromHigh', 'drawFrom5YHigh', 'drawFrom7YHigh',
   'tfaPhase', 'tfaScore', 'tfaScenario', 'tfaEScore', 'tfaKO',
