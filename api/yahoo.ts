@@ -41,6 +41,7 @@ const YAHOO_API_HEADERS = {
 
 const YAHOO_SESSION_TTL_MS = 15 * 60 * 1000
 const YAHOO_SESSION_RETRY_COOLDOWN_MS = 60 * 1000
+const YAHOO_REQUEST_TIMEOUT_MS = 6000
 
 const YAHOO_CRUMB_HEADERS = {
   ...YAHOO_BASE_HEADERS,
@@ -56,6 +57,20 @@ interface YahooSession {
 let yahooSessionCache: YahooSession | null = null
 let yahooSessionPromise: Promise<YahooSession | null> | null = null
 let yahooSessionRetryAfterTs = 0
+
+function asStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = YAHOO_REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 function extractCookieHeader(res: Response): string | null {
   const anyHeaders = res.headers as any
@@ -84,7 +99,7 @@ async function getYahooSession(forceRefresh = false): Promise<YahooSession | nul
 
   yahooSessionPromise = (async () => {
     try {
-      const sessionRes = await fetch('https://fc.yahoo.com', { headers: YAHOO_CRUMB_HEADERS })
+      const sessionRes = await fetchWithTimeout('https://fc.yahoo.com', { headers: YAHOO_CRUMB_HEADERS })
       const cookieHeader = extractCookieHeader(sessionRes)
       if (!cookieHeader) {
         yahooSessionRetryAfterTs = Date.now() + YAHOO_SESSION_RETRY_COOLDOWN_MS
@@ -97,7 +112,7 @@ async function getYahooSession(forceRefresh = false): Promise<YahooSession | nul
       ]
       for (const url of crumbUrls) {
         try {
-          const crumbRes = await fetch(url, { headers: { ...YAHOO_CRUMB_HEADERS, Cookie: cookieHeader } })
+          const crumbRes = await fetchWithTimeout(url, { headers: { ...YAHOO_CRUMB_HEADERS, Cookie: cookieHeader } })
           if (!crumbRes.ok) continue
           const crumb = (await crumbRes.text()).trim()
           if (!crumb || crumb.startsWith('{') || /unauthorized|not acceptable/i.test(crumb)) continue
@@ -130,7 +145,7 @@ async function fetchQuoteSummaryWithSession(
   for (const host of hosts) {
     const url = `https://${host}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}&crumb=${encodeURIComponent(session.crumb)}`
     try {
-      const res = await fetch(url, { headers: { ...YAHOO_API_HEADERS, Cookie: session.cookieHeader } })
+      const res = await fetchWithTimeout(url, { headers: { ...YAHOO_API_HEADERS, Cookie: session.cookieHeader } })
       if (res.ok) return { res, authFailed: false }
       if (res.status === 401 || res.status === 403) authFailed = true
     } catch {}
@@ -159,7 +174,7 @@ async function fetchQuoteSummary(ticker: string, quoteModules: string): Promise<
   ]
   for (const url of urls) {
     try {
-      const r = await fetch(url, { headers: YAHOO_API_HEADERS })
+      const r = await fetchWithTimeout(url, { headers: YAHOO_API_HEADERS })
       if (r.ok) return r
     } catch {}
   }
@@ -185,24 +200,17 @@ async function fetchOneTicker(
   }
 
   try {
-    const [chartRes, quoteRes, weeklyRes, v7Res] = await Promise.all([
-      fetch(
+    const [chartRes, quoteRes, weeklyRes] = await Promise.all([
+      fetchWithTimeout(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
         { headers: YAHOO_API_HEADERS }
       ),
       fetchQuoteSummary(ticker, quoteModules),
       includeWeekly
-        ? fetch(
+        ? fetchWithTimeout(
             `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=7y&interval=1wk&includePrePost=false`,
             { headers: YAHOO_API_HEADERS }
           )
-        : Promise.resolve(null),
-      // v7/finance/quote — works from server IPs, returns sector/industry for stocks
-      profile !== 'fund'
-        ? fetch(
-            `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=sector,industry,longName`,
-            { headers: YAHOO_API_HEADERS }
-          ).catch(() => null)
         : Promise.resolve(null),
     ])
 
@@ -249,16 +257,6 @@ async function fetchOneTicker(
       }
     }
 
-    // v7/finance/quote — sector/industry for stocks (works when v10 is blocked)
-    if (v7Res?.ok) {
-      try {
-        const v7Data = await v7Res.json()
-        const q = v7Data?.quoteResponse?.result?.[0]
-        if (q?.sector) base.sector = q.sector
-        if (q?.industry) base.industry = q.industry
-      } catch {}
-    }
-
     if (quoteRes?.ok) {
       const quoteData = await quoteRes!.json()
       const summary = quoteData?.quoteSummary?.result?.[0]
@@ -268,7 +266,7 @@ async function fetchOneTicker(
         const fd = summary.financialData || {}
         const sd = summary.summaryDetail || {}
         const fp = summary.fundProfile || {}
-        base.longName = price.longName ?? price.shortName ?? base.longName
+        base.longName = asStringOrNull(price.longName) ?? asStringOrNull(price.shortName) ?? base.longName
         base.marketCap = price.marketCap?.raw ?? null
         base.pe = sd.trailingPE?.raw ?? ks.trailingPE?.raw ?? null
         base.pb = ks.priceToBook?.raw ?? null
@@ -279,9 +277,32 @@ async function fetchOneTicker(
         base.ter = fp.annualReportExpenseRatio?.raw ?? null
         const ap = summary.assetProfile || {}
         // Only overwrite if assetProfile has a value (don't null out v7 result)
-        if (ap.sector || ap.sectorDisp) base.sector = ap.sector ?? ap.sectorDisp
-        if (ap.industry || ap.industryDisp) base.industry = ap.industry ?? ap.industryDisp
+        const sector = asStringOrNull(ap.sector) ?? asStringOrNull(ap.sectorDisp)
+        const industry = asStringOrNull(ap.industry) ?? asStringOrNull(ap.industryDisp)
+        if (sector) base.sector = sector
+        if (industry) base.industry = industry
       }
+    }
+
+    // v7/finance/quote fallback only when summary data is missing
+    if (profile !== 'fund' && (!base.sector || !base.industry || !base.longName)) {
+      try {
+        const v7Res = await fetchWithTimeout(
+          `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=sector,industry,longName`,
+          { headers: YAHOO_API_HEADERS },
+          3500
+        )
+        if (v7Res.ok) {
+          const v7Data = await v7Res.json()
+          const q = v7Data?.quoteResponse?.result?.[0]
+          const v7Sector = asStringOrNull(q?.sector)
+          const v7Industry = asStringOrNull(q?.industry)
+          const v7LongName = asStringOrNull(q?.longName)
+          if (v7Sector) base.sector = v7Sector
+          if (v7Industry) base.industry = v7Industry
+          if (v7LongName && !base.longName) base.longName = v7LongName
+        }
+      } catch {}
     }
   } catch (err: any) {
     base.error = err.message
