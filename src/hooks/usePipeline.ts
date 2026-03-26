@@ -118,7 +118,7 @@ function normalizeMnemonicForCache(mnemonic?: string): string | null {
 }
 
 function buildYahooCacheKey(ticker: string): string {
-  return `cache:yahoo:v3:${normalizeTickerForCache(ticker)}`
+  return `cache:yahoo:v4:${normalizeTickerForCache(ticker)}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -1116,6 +1116,8 @@ export function usePipeline() {
           pe: r.pe ?? null, pb: r.pb ?? null,
           ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
           returnOnAssets: r.returnOnAssets ?? null,
+          sector: r.sector ?? inst.sector ?? null,
+          industry: r.industry ?? inst.industry ?? null,
           yahooLongName: r.longName ?? inst.yahooLongName,
           longName: nextLongName,
           displayName: nextLongName ? toDisplayName(nextLongName, inst.displayName) : inst.displayName,

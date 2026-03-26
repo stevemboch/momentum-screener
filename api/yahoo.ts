@@ -27,6 +27,111 @@ interface PriceResult {
 
 type YahooProfile = 'stock' | 'fund'
 
+const YAHOO_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (compatible)',
+  'Accept': 'application/json',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Origin': 'https://finance.yahoo.com',
+  'Referer': 'https://finance.yahoo.com/',
+}
+
+const YAHOO_SESSION_TTL_MS = 15 * 60 * 1000
+
+interface YahooSession {
+  cookieHeader: string
+  crumb: string
+  expiresAt: number
+}
+
+let yahooSessionCache: YahooSession | null = null
+
+function extractCookieHeader(res: Response): string | null {
+  const anyHeaders = res.headers as any
+  let setCookieValues: string[] = []
+  if (typeof anyHeaders.getSetCookie === 'function') {
+    const values = anyHeaders.getSetCookie()
+    if (Array.isArray(values)) setCookieValues = values
+  }
+  if (setCookieValues.length === 0) {
+    const raw = res.headers.get('set-cookie')
+    if (raw) setCookieValues = raw.split(/,(?=[^;,]+=)/)
+  }
+  const cookiePairs = setCookieValues
+    .map((v) => (v || '').split(';')[0]?.trim() || '')
+    .filter(Boolean)
+  return cookiePairs.length > 0 ? cookiePairs.join('; ') : null
+}
+
+async function getYahooSession(forceRefresh = false): Promise<YahooSession | null> {
+  if (!forceRefresh && yahooSessionCache && yahooSessionCache.expiresAt > Date.now()) {
+    return yahooSessionCache
+  }
+  try {
+    const sessionRes = await fetch('https://fc.yahoo.com', { headers: YAHOO_HEADERS })
+    const cookieHeader = extractCookieHeader(sessionRes)
+    if (!cookieHeader) return null
+
+    const crumbUrls = [
+      'https://query1.finance.yahoo.com/v1/test/getcrumb',
+      'https://query2.finance.yahoo.com/v1/test/getcrumb',
+    ]
+    for (const url of crumbUrls) {
+      try {
+        const crumbRes = await fetch(url, { headers: { ...YAHOO_HEADERS, Cookie: cookieHeader } })
+        if (!crumbRes.ok) continue
+        const crumb = (await crumbRes.text()).trim()
+        if (!crumb || crumb.startsWith('{') || /unauthorized/i.test(crumb)) continue
+        yahooSessionCache = {
+          cookieHeader,
+          crumb,
+          expiresAt: Date.now() + YAHOO_SESSION_TTL_MS,
+        }
+        return yahooSessionCache
+      } catch {}
+    }
+  } catch {}
+  return null
+}
+
+async function fetchQuoteSummaryWithSession(ticker: string, quoteModules: string, session: YahooSession): Promise<Response | null> {
+  const hosts = ['query1', 'query2']
+  for (const host of hosts) {
+    const url = `https://${host}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}&crumb=${encodeURIComponent(session.crumb)}`
+    try {
+      const res = await fetch(url, { headers: { ...YAHOO_HEADERS, Cookie: session.cookieHeader } })
+      if (res.ok) return res
+    } catch {}
+  }
+  return null
+}
+
+async function fetchQuoteSummary(ticker: string, quoteModules: string): Promise<Response | null> {
+  const cachedSession = await getYahooSession(false)
+  if (cachedSession) {
+    const viaCachedSession = await fetchQuoteSummaryWithSession(ticker, quoteModules, cachedSession)
+    if (viaCachedSession) return viaCachedSession
+  }
+
+  const freshSession = await getYahooSession(true)
+  if (freshSession) {
+    const viaFreshSession = await fetchQuoteSummaryWithSession(ticker, quoteModules, freshSession)
+    if (viaFreshSession) return viaFreshSession
+  }
+
+  // Final fallback: legacy no-crumb calls (kept for compatibility with permissive Yahoo edges)
+  const urls = [
+    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
+    `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
+  ]
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: YAHOO_HEADERS })
+      if (r.ok) return r
+    } catch {}
+  }
+  return null
+}
+
 async function fetchOneTicker(
   ticker: string,
   options?: { includeWeekly?: boolean; profile?: YahooProfile }
@@ -49,32 +154,20 @@ async function fetchOneTicker(
     const [chartRes, quoteRes, weeklyRes, v7Res] = await Promise.all([
       fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
-        { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
+        { headers: YAHOO_HEADERS }
       ),
-      (async () => {
-        const urls = [
-          `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
-          `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(quoteModules)}`,
-        ]
-        for (const url of urls) {
-          try {
-            const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } })
-            if (r.ok) return r
-          } catch {}
-        }
-        return null
-      })(),
+      fetchQuoteSummary(ticker, quoteModules),
       includeWeekly
         ? fetch(
             `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=7y&interval=1wk&includePrePost=false`,
-            { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
+            { headers: YAHOO_HEADERS }
           )
         : Promise.resolve(null),
       // v7/finance/quote — works from server IPs, returns sector/industry for stocks
       profile !== 'fund'
         ? fetch(
             `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=sector,industry,longName`,
-            { headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept': 'application/json' } }
+            { headers: YAHOO_HEADERS }
           ).catch(() => null)
         : Promise.resolve(null),
     ])
@@ -152,8 +245,8 @@ async function fetchOneTicker(
         base.ter = fp.annualReportExpenseRatio?.raw ?? null
         const ap = summary.assetProfile || {}
         // Only overwrite if assetProfile has a value (don't null out v7 result)
-        if (ap.sector) base.sector = ap.sector
-        if (ap.industry) base.industry = ap.industry
+        if (ap.sector || ap.sectorDisp) base.sector = ap.sector ?? ap.sectorDisp
+        if (ap.industry || ap.industryDisp) base.industry = ap.industry ?? ap.industryDisp
       }
     }
   } catch (err: any) {
