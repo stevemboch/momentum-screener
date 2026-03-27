@@ -179,6 +179,13 @@ export function PortfolioPanel() {
               Market Briefing
             </span>
             <div className="ml-auto flex items-center gap-2">
+              <span className={`text-ui-xs font-mono ${
+                briefingResult.dataQuality === 'high' ? 'text-green-400'
+                  : briefingResult.dataQuality === 'medium' ? 'text-amber-400'
+                    : 'text-red-400'
+              }`}>
+                {briefingResult.dataQuality.toUpperCase()}
+              </span>
               <span className="text-ui-xs text-muted font-mono">
                 {new Date(briefingResult.fetchedAt).toLocaleTimeString('en-GB')}
                 {briefingIsStale && (
@@ -197,13 +204,39 @@ export function PortfolioPanel() {
           </div>
 
           {briefingResult.macroContext && (
-            <div className="px-2 py-1.5 rounded border border-border bg-surface2/40 text-ui-sm font-mono text-muted leading-snug italic">
-              {briefingResult.macroContext}
+            <div className="px-2 py-1.5 rounded border border-border bg-surface2/40 text-ui-sm font-mono text-muted leading-snug italic space-y-1">
+              <div>{briefingResult.macroContext}</div>
+              {briefingResult.macroContextEvidence.length > 0 && (
+                <div className="flex flex-wrap gap-1 not-italic">
+                  {briefingResult.macroContextEvidence.slice(0, 2).map((ev, i) => (
+                    <span
+                      key={`macro-ev-${i}`}
+                      className="rounded border border-border bg-surface2 px-1 py-0.5 text-ui-xs text-gray-400"
+                      title={ev.confidenceReason ?? undefined}
+                    >
+                      {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {briefingResult.macroContextEvidence.length === 0 && briefingResult.macroContextInsufficientEvidenceReason && (
+                <div className="text-ui-xs text-amber-400 not-italic">
+                  {briefingResult.macroContextInsufficientEvidenceReason}
+                </div>
+              )}
+            </div>
+          )}
+          {(briefingResult.searchWindow.from || briefingResult.searchWindow.to || briefingResult.asOf) && (
+            <div className="text-ui-xs text-muted font-mono">
+              As-of: {briefingResult.asOf ? new Date(briefingResult.asOf).toLocaleString('en-GB') : 'n/a'}
+              {(briefingResult.searchWindow.from || briefingResult.searchWindow.to) && (
+                <span> · Window: {briefingResult.searchWindow.from || 'n/a'} → {briefingResult.searchWindow.to || 'n/a'}</span>
+              )}
             </div>
           )}
 
           {briefingResult.findings.map((f, i) => (
-            <BriefingFindingCard key={i} finding={f} />
+            <BriefingFindingCard key={i} finding={f} expanded={false} />
           ))}
         </div>
       )}
@@ -222,13 +255,35 @@ export function PortfolioPanel() {
           widthClass="max-w-4xl"
         >
           {briefingResult.macroContext && (
-            <div className="px-2 py-1.5 rounded border border-border bg-surface2/40 text-ui-sm font-mono text-muted leading-snug italic">
-              {briefingResult.macroContext}
+            <div className="px-2 py-1.5 rounded border border-border bg-surface2/40 text-ui-sm font-mono text-muted leading-snug italic space-y-1">
+              <div>{briefingResult.macroContext}</div>
+              {briefingResult.macroContextEvidence.length > 0 && (
+                <div className="flex flex-wrap gap-1 not-italic">
+                  {briefingResult.macroContextEvidence.map((ev, i) => (
+                    <span
+                      key={`macro-modal-ev-${i}`}
+                      className="rounded border border-border bg-surface2 px-1 py-0.5 text-ui-xs text-gray-400"
+                      title={ev.confidenceReason ?? undefined}
+                    >
+                      {ev.url ? (
+                        <a href={ev.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                          {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                        </a>
+                      ) : (
+                        <span>{(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {briefingResult.macroContextEvidence.length === 0 && briefingResult.macroContextInsufficientEvidenceReason && (
+                <div className="text-ui-xs text-amber-400 not-italic">{briefingResult.macroContextInsufficientEvidenceReason}</div>
+              )}
             </div>
           )}
           <div className="mt-2 flex flex-col gap-2">
             {briefingResult.findings.map((f, i) => (
-              <BriefingFindingCard key={i} finding={f} />
+              <BriefingFindingCard key={i} finding={f} expanded />
             ))}
           </div>
         </ModalShell>
@@ -239,6 +294,7 @@ export function PortfolioPanel() {
 
 function BriefingFindingCard({
   finding,
+  expanded,
 }: {
   finding: {
     headline: string
@@ -246,7 +302,17 @@ function BriefingFindingCard({
     instruments: string[]
     priority: 'high' | 'medium' | 'low'
     sentiment: 'positive' | 'negative' | 'neutral'
+    evidence: {
+      sourceName: string | null
+      sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+      url: string | null
+      publishedAt: string | null
+      confidence: 'high' | 'medium' | 'low'
+      confidenceReason: string | null
+    }[]
+    insufficientEvidenceReason: string | null
   }
+  expanded?: boolean
 }) {
   return (
     <div
@@ -298,6 +364,39 @@ function BriefingFindingCard({
       </div>
 
       <div className="leading-snug text-muted">{finding.detail}</div>
+      {finding.evidence.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {(expanded ? finding.evidence : finding.evidence.slice(0, 2)).map((ev, i) => (
+            <span
+              key={i}
+              className={`rounded border px-1 py-0.5 text-ui-xs ${
+                ev.confidence === 'high'
+                  ? 'border-green-400/30 text-green-300 bg-green-400/5'
+                  : ev.confidence === 'medium'
+                    ? 'border-amber-400/30 text-amber-300 bg-amber-400/5'
+                    : 'border-border text-gray-400 bg-surface2/40'
+              }`}
+              title={ev.confidenceReason ?? undefined}
+            >
+              {ev.url ? (
+                <a
+                  href={ev.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                </a>
+              ) : (
+                <span>{(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {finding.evidence.length === 0 && finding.insufficientEvidenceReason && (
+        <div className="mt-1 text-ui-xs text-amber-400">{finding.insufficientEvidenceReason}</div>
+      )}
     </div>
   )
 }

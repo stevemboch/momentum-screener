@@ -142,13 +142,104 @@ export interface Instrument {
   tfaFScore?: number | null      // 0–1, fundamentale Intaktheit
   tfaEScore?: number | null      // 0–1, Katalysatoren (Gemini)
   tfaCatalyst?: {
-    earningsBeatRecent: { value: number; confidence: string; source: string | null } | null
-    earningsBeatPrior: { value: number; confidence: string; source: string | null } | null
-    guidanceRaised: { value: number; confidence: string; source: string | null } | null
-    analystUpgrade: { value: number; confidence: string; source: string | null } | null
-    insiderBuying: { value: number; confidence: string; source: string | null } | null
-    restructuring: { value: number; confidence: string; source: string | null } | null
-    koRisk: { value: boolean; confidence: string; source: string | null } | null
+    earningsBeatRecent: {
+      value: number
+      confidence: string
+      source: string | null
+      confidenceReason?: string | null
+      evidence?: {
+        sourceName: string | null
+        sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+        url: string | null
+        publishedAt: string | null
+        confidence: 'high' | 'medium' | 'low'
+        confidenceReason: string | null
+      }[]
+    } | null
+    earningsBeatPrior: {
+      value: number
+      confidence: string
+      source: string | null
+      confidenceReason?: string | null
+      evidence?: {
+        sourceName: string | null
+        sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+        url: string | null
+        publishedAt: string | null
+        confidence: 'high' | 'medium' | 'low'
+        confidenceReason: string | null
+      }[]
+    } | null
+    guidanceRaised: {
+      value: number
+      confidence: string
+      source: string | null
+      confidenceReason?: string | null
+      evidence?: {
+        sourceName: string | null
+        sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+        url: string | null
+        publishedAt: string | null
+        confidence: 'high' | 'medium' | 'low'
+        confidenceReason: string | null
+      }[]
+    } | null
+    analystUpgrade: {
+      value: number
+      confidence: string
+      source: string | null
+      confidenceReason?: string | null
+      evidence?: {
+        sourceName: string | null
+        sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+        url: string | null
+        publishedAt: string | null
+        confidence: 'high' | 'medium' | 'low'
+        confidenceReason: string | null
+      }[]
+    } | null
+    insiderBuying: {
+      value: number
+      confidence: string
+      source: string | null
+      confidenceReason?: string | null
+      evidence?: {
+        sourceName: string | null
+        sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+        url: string | null
+        publishedAt: string | null
+        confidence: 'high' | 'medium' | 'low'
+        confidenceReason: string | null
+      }[]
+    } | null
+    restructuring: {
+      value: number
+      confidence: string
+      source: string | null
+      confidenceReason?: string | null
+      evidence?: {
+        sourceName: string | null
+        sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+        url: string | null
+        publishedAt: string | null
+        confidence: 'high' | 'medium' | 'low'
+        confidenceReason: string | null
+      }[]
+    } | null
+    koRisk: {
+      value: boolean
+      confidence: string
+      source: string | null
+      confidenceReason?: string | null
+      evidence?: {
+        sourceName: string | null
+        sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+        url: string | null
+        publishedAt: string | null
+        confidence: 'high' | 'medium' | 'low'
+        confidenceReason: string | null
+      }[]
+    } | null
     eScore: number | null
     summary: string | null
     fetchedAt: number | null

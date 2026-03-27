@@ -17,16 +17,144 @@ export interface BriefingFinding {
   headline: string
   detail: string
   sentiment: 'positive' | 'negative' | 'neutral'
+  evidence: {
+    sourceName: string | null
+    sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+    url: string | null
+    publishedAt: string | null
+    confidence: 'high' | 'medium' | 'low'
+    confidenceReason: string | null
+  }[]
+  insufficientEvidenceReason: string | null
 }
 
 export interface BriefingResult {
   findings: BriefingFinding[]
   macroContext: string
+  macroContextEvidence: {
+    sourceName: string | null
+    sourceType: 'primary' | 'regulatory' | 'major_media' | 'secondary'
+    url: string | null
+    publishedAt: string | null
+    confidence: 'high' | 'medium' | 'low'
+    confidenceReason: string | null
+  }[]
+  macroContextInsufficientEvidenceReason: string | null
+  asOf: string
+  searchWindow: { from: string; to: string }
+  dataQuality: 'high' | 'medium' | 'low'
   generatedAt: string
   fetchedAt: number
+  diagnostics?: {
+    modelId?: string
+    searchMode?: string
+    parseRetry?: boolean
+    evidenceCount?: number
+    jsonResponseMode?: boolean
+  }
 }
 
 type LoadingState = 'idle' | 'loading' | 'done' | 'error'
+
+function asString(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const cleaned = v.trim()
+  return cleaned.length > 0 ? cleaned : null
+}
+
+function asPriority(v: unknown): 'high' | 'medium' | 'low' {
+  if (v === 'high' || v === 'medium' || v === 'low') return v
+  return 'low'
+}
+
+function asSentiment(v: unknown): 'positive' | 'negative' | 'neutral' {
+  if (v === 'positive' || v === 'negative' || v === 'neutral') return v
+  return 'neutral'
+}
+
+function asSourceType(v: unknown): 'primary' | 'regulatory' | 'major_media' | 'secondary' {
+  if (v === 'primary' || v === 'regulatory' || v === 'major_media' || v === 'secondary') return v
+  return 'secondary'
+}
+
+function asConfidence(v: unknown): 'high' | 'medium' | 'low' {
+  if (v === 'high' || v === 'medium' || v === 'low') return v
+  return 'low'
+}
+
+function asDataQuality(v: unknown): 'high' | 'medium' | 'low' {
+  if (v === 'high' || v === 'medium' || v === 'low') return v
+  return 'low'
+}
+
+function normalizeEvidenceList(v: unknown, max = 3): BriefingFinding['evidence'] {
+  if (!Array.isArray(v)) return []
+  return v
+    .map((item: unknown) => {
+      if (!item || typeof item !== 'object') return null
+      const src = item as any
+      return {
+        sourceName: asString(src.sourceName),
+        sourceType: asSourceType(src.sourceType),
+        url: asString(src.url),
+        publishedAt: asString(src.publishedAt),
+        confidence: asConfidence(src.confidence),
+        confidenceReason: asString(src.confidenceReason),
+      }
+    })
+    .filter(Boolean)
+    .slice(0, max) as BriefingFinding['evidence']
+}
+
+function normalizeBriefing(raw: any, fetchedAtFallback: number): BriefingResult {
+  const src = (raw && typeof raw === 'object') ? raw : {}
+  const findings = Array.isArray(src.findings)
+    ? src.findings
+        .map((f: any) => {
+          const headline = asString(f?.headline)
+          const detail = asString(f?.detail)
+          if (!headline || !detail) return null
+          return {
+            priority: asPriority(f.priority),
+            instruments: Array.isArray(f.instruments)
+              ? f.instruments.map((i: unknown) => asString(i)).filter(Boolean).slice(0, 6) as string[]
+              : [],
+            headline,
+            detail,
+            sentiment: asSentiment(f.sentiment),
+            evidence: normalizeEvidenceList(f.evidence, 3),
+            insufficientEvidenceReason: asString(f.insufficientEvidenceReason),
+          }
+        })
+        .filter(Boolean) as BriefingFinding[]
+    : []
+
+  return {
+    findings,
+    macroContext: asString(src.macroContext) ?? '',
+    macroContextEvidence: normalizeEvidenceList(src.macroContextEvidence, 3),
+    macroContextInsufficientEvidenceReason: asString(src.macroContextInsufficientEvidenceReason),
+    asOf: asString(src.asOf) ?? new Date().toISOString(),
+    searchWindow: {
+      from: asString(src.searchWindow?.from) ?? '',
+      to: asString(src.searchWindow?.to) ?? '',
+    },
+    dataQuality: asDataQuality(src.dataQuality),
+    generatedAt: asString(src.generatedAt) ?? new Date().toISOString(),
+    fetchedAt: (typeof src.fetchedAt === 'number' && Number.isFinite(src.fetchedAt))
+      ? src.fetchedAt
+      : fetchedAtFallback,
+    diagnostics: (src.diagnostics && typeof src.diagnostics === 'object')
+      ? {
+          modelId: asString(src.diagnostics.modelId) ?? undefined,
+          searchMode: asString(src.diagnostics.searchMode) ?? undefined,
+          parseRetry: typeof src.diagnostics.parseRetry === 'boolean' ? src.diagnostics.parseRetry : undefined,
+          evidenceCount: typeof src.diagnostics.evidenceCount === 'number' ? src.diagnostics.evidenceCount : undefined,
+          jsonResponseMode: typeof src.diagnostics.jsonResponseMode === 'boolean' ? src.diagnostics.jsonResponseMode : undefined,
+        }
+      : undefined,
+  }
+}
 
 // ── Hook ─────────────────────────────────────────────────────
 
@@ -50,7 +178,8 @@ export function usePortfolioAnalysis() {
       const raw = localStorage.getItem('cache:portfolio-briefing')
       if (!raw) return null
       const parsed = JSON.parse(raw)
-      return Date.now() - parsed.fetchedAt < BRIEFING_TTL ? parsed : null
+      if (Date.now() - parsed.fetchedAt >= BRIEFING_TTL) return null
+      return normalizeBriefing(parsed, parsed.fetchedAt)
     } catch { return null }
   })
   const [briefingError, setBriefingError] = useState<string | null>(null)
@@ -113,7 +242,7 @@ export function usePortfolioAnalysis() {
         body: JSON.stringify({ instruments: payload }),
       })
       if (data.error) throw new Error(data.error)
-      const withTs = { ...data, fetchedAt: Date.now() }
+      const withTs = normalizeBriefing(data, Date.now())
       setBriefingResult(withTs)
       setBriefingStatus('done')
       try {

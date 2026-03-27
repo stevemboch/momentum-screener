@@ -330,6 +330,12 @@ function financialHealthLabel(status: 'healthy' | 'watch' | 'stressed' | null | 
   return status.toUpperCase()
 }
 
+function evidenceConfidenceClass(confidence: 'high' | 'medium' | 'low' | undefined): string {
+  if (confidence === 'high') return 'border-green-400/30 text-green-300 bg-green-400/5'
+  if (confidence === 'medium') return 'border-amber-400/30 text-amber-300 bg-amber-400/5'
+  return 'border-border text-gray-400 bg-surface2/40'
+}
+
 function BreakoutBadge({
   score,
   flags,
@@ -977,6 +983,22 @@ function ExpandedDetail({
                             <span className="text-amber-400 leading-snug">{ctx.macroRisk}</span>
                           </div>
                         )}
+                        {ctx.macroRiskEvidence.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {ctx.macroRiskEvidence.slice(0, 2).map((ev, i) => (
+                              <span
+                                key={`ctx-macro-ev-${i}`}
+                                className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
+                                title={ev.confidenceReason ?? undefined}
+                              >
+                                {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {ctx.macroRiskEvidence.length === 0 && ctx.macroRiskInsufficientEvidenceReason && (
+                          <div className="text-[10px] text-amber-400">{ctx.macroRiskInsufficientEvidenceReason}</div>
+                        )}
                         <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
                           <div>
                             <span className="text-muted">Bankruptcy risk: </span>
@@ -995,6 +1017,22 @@ function ExpandedDetail({
                               <span className="text-gray-300 leading-snug">{signal}</span>
                             </div>
                           ))}
+                          {(ctx.bankruptcyRisk?.evidence?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {(ctx.bankruptcyRisk?.evidence ?? []).slice(0, 2).map((ev, i) => (
+                                <span
+                                  key={`ctx-bank-ev-${i}`}
+                                  className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
+                                  title={ev.confidenceReason ?? undefined}
+                                >
+                                  {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(ctx.bankruptcyRisk?.evidence?.length ?? 0) === 0 && ctx.bankruptcyRisk?.insufficientEvidenceReason && (
+                            <div className="text-[10px] text-amber-400">{ctx.bankruptcyRisk.insufficientEvidenceReason}</div>
+                          )}
                           <div className="mt-1">
                             <span className="text-muted">Financial health: </span>
                             <span className={financialHealthClass(ctx.financialHealth?.status)}>
@@ -1004,6 +1042,36 @@ function ExpandedDetail({
                           {ctx.financialHealth?.detail && (
                             <div className="text-muted leading-snug">
                               {ctx.financialHealth.detail}
+                            </div>
+                          )}
+                          {(ctx.financialHealth?.evidence?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {(ctx.financialHealth?.evidence ?? []).slice(0, 2).map((ev, i) => (
+                                <span
+                                  key={`ctx-health-ev-${i}`}
+                                  className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
+                                  title={ev.confidenceReason ?? undefined}
+                                >
+                                  {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(ctx.financialHealth?.evidence?.length ?? 0) === 0 && ctx.financialHealth?.insufficientEvidenceReason && (
+                            <div className="text-[10px] text-amber-400">{ctx.financialHealth.insufficientEvidenceReason}</div>
+                          )}
+                          {(ctx.asOf || ctx.dataQuality) && (
+                            <div className="text-[10px] text-muted mt-1">
+                              {ctx.asOf && <>As-of: {new Date(ctx.asOf).toLocaleString('en-GB')}</>}
+                              {ctx.dataQuality && (
+                                <span className={`ml-1 ${
+                                  ctx.dataQuality === 'high' ? 'text-green-400'
+                                    : ctx.dataQuality === 'medium' ? 'text-amber-400'
+                                      : 'text-red-400'
+                                }`}>
+                                  {ctx.dataQuality.toUpperCase()}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1190,6 +1258,13 @@ function ExpandedDetail({
                           {!sig ? '—' : sig.confidence === 'not_found' ? 'n/a'
                             : `${sig.value} (${sig.confidence})`}
                         </span>
+                        {!!sig && (sig.source || sig.evidence?.[0]?.sourceName) && (
+                          <div className="text-[10px] text-muted ml-2">
+                            {(sig.evidence?.[0]?.sourceName ?? sig.source ?? 'source')}
+                            {sig.evidence?.[0]?.publishedAt ? ` · ${sig.evidence[0].publishedAt}` : ''}
+                            {sig.evidence?.[0]?.confidence ? ` · ${sig.evidence[0].confidence}` : ''}
+                          </div>
+                        )}
                       </div>
                     )
                   })}

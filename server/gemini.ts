@@ -12,6 +12,17 @@ function getGenAI(): GoogleGenerativeAI {
 
 type SearchToolMode = 'googleSearch' | 'googleSearchRetrieval'
 
+export interface SearchChatMeta {
+  modelId: string
+  searchMode: SearchToolMode
+  jsonResponseMode: boolean
+}
+
+export interface SearchChatResult {
+  text: string
+  meta: SearchChatMeta
+}
+
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
   return String(err)
@@ -33,11 +44,32 @@ function shouldSwitchToGoogleSearchRetrieval(message: string): boolean {
   )
 }
 
-function createSearchModel(modelId: string, systemPrompt: string, mode: SearchToolMode) {
+function shouldDisableJsonResponseMode(message: string): boolean {
+  const m = message.toLowerCase()
+  return (
+    m.includes('responsemimetype')
+    || m.includes('response_mime_type')
+    || m.includes('json schema')
+    || m.includes('unsupported')
+  )
+}
+
+function createSearchModel(
+  modelId: string,
+  systemPrompt: string,
+  mode: SearchToolMode,
+  jsonResponseMode: boolean,
+) {
   // SDK 0.21.0 typings do not include googleSearch, but API supports it.
   const modelParams: any = {
     model: modelId,
     systemInstruction: systemPrompt,
+    generationConfig: {
+      temperature: 0.1,
+    },
+  }
+  if (jsonResponseMode) {
+    modelParams.generationConfig.responseMimeType = 'application/json'
   }
   modelParams.tools = mode === 'googleSearch'
     ? [{ googleSearch: {} }]
@@ -80,6 +112,14 @@ export async function geminiSearchChat(
   systemPrompt: string,
   userMessage: string
 ): Promise<string> {
+  const result = await geminiSearchChatWithMeta(systemPrompt, userMessage)
+  return result.text
+}
+
+export async function geminiSearchChatWithMeta(
+  systemPrompt: string,
+  userMessage: string
+): Promise<SearchChatResult> {
   const modelFallbacks = [
     'gemini-2.5-flash',
     'gemini-3.1-flash-lite',
@@ -96,15 +136,47 @@ export async function geminiSearchChat(
 
     while (!attemptedModes.has(mode)) {
       attemptedModes.add(mode)
+      let jsonResponseMode = true
+      let attemptedWithoutJsonMode = false
       try {
-        const model = createSearchModel(modelId, systemPrompt, mode)
-        const result = await model.generateContent(userMessage)
-        const text = result.response.text()
-        if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
-        return text
+        while (true) {
+          const model = createSearchModel(modelId, systemPrompt, mode, jsonResponseMode)
+          const result = await model.generateContent(userMessage)
+          const text = result.response.text()
+          if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
+          return {
+            text,
+            meta: {
+              modelId,
+              searchMode: mode,
+              jsonResponseMode,
+            },
+          }
+        }
       } catch (err) {
         lastError = err
         const msg = toErrorMessage(err)
+
+        if (jsonResponseMode && !attemptedWithoutJsonMode && shouldDisableJsonResponseMode(msg)) {
+          attemptedWithoutJsonMode = true
+          jsonResponseMode = false
+          try {
+            const model = createSearchModel(modelId, systemPrompt, mode, jsonResponseMode)
+            const result = await model.generateContent(userMessage)
+            const text = result.response.text()
+            if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
+            return {
+              text,
+              meta: {
+                modelId,
+                searchMode: mode,
+                jsonResponseMode,
+              },
+            }
+          } catch (retryErr) {
+            lastError = retryErr
+          }
+        }
 
         if (mode === 'googleSearch' && shouldSwitchToGoogleSearchRetrieval(msg) && !attemptedModes.has('googleSearchRetrieval')) {
           mode = 'googleSearchRetrieval'
@@ -123,6 +195,28 @@ export async function geminiSearchChat(
 
   if (lastError instanceof Error) throw lastError
   throw new Error('Gemini failed: no models available')
+}
+
+export async function parseJSONWithRepair<T>(
+  raw: string,
+  schemaHint: string,
+): Promise<{ value: T; repaired: boolean }> {
+  try {
+    return { value: parseJSON<T>(raw), repaired: false }
+  } catch {
+    const repairSystemPrompt = `You are a JSON repair utility.
+Return ONLY valid JSON. No commentary, no markdown, no code fences.`
+    const repairMessage = `Fix the following malformed JSON so it matches this schema contract.
+Do not invent fields that are not in the contract. If a value is unknown, use null.
+
+Schema contract:
+${schemaHint}
+
+Malformed JSON:
+${raw}`
+    const repairedRaw = await geminiChat(repairSystemPrompt, repairMessage)
+    return { value: parseJSON<T>(repairedRaw), repaired: true }
+  }
 }
 
 export function parseJSON<T>(raw: string): T {

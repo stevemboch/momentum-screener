@@ -7,16 +7,32 @@ type EarningsResult = 'beat' | 'miss' | 'inline'
 type NewsSentiment = 'positive' | 'negative' | 'neutral'
 type BankruptcyRiskLevel = 'low' | 'medium' | 'high'
 type FinancialHealthStatus = 'healthy' | 'watch' | 'stressed'
+type SourceType = 'primary' | 'regulatory' | 'major_media' | 'secondary'
+type Confidence = 'high' | 'medium' | 'low'
+type DataQuality = 'high' | 'medium' | 'low'
+
+interface EvidenceItem {
+  sourceName: string | null
+  sourceType: SourceType
+  url: string | null
+  publishedAt: string | null
+  confidence: Confidence
+  confidenceReason: string | null
+}
 
 interface BankruptcyRisk {
   level: BankruptcyRiskLevel | null
   signals: string[]
   detail: string | null
+  evidence: EvidenceItem[]
+  insufficientEvidenceReason: string | null
 }
 
 interface FinancialHealth {
   status: FinancialHealthStatus | null
   detail: string | null
+  evidence: EvidenceItem[]
+  insufficientEvidenceReason: string | null
 }
 
 export interface ContextResult {
@@ -28,8 +44,20 @@ export interface ContextResult {
   nextEarnings: string | null
   news: { headline: string; sentiment: NewsSentiment }[]
   macroRisk: string | null
+  macroRiskEvidence: EvidenceItem[]
+  macroRiskInsufficientEvidenceReason: string | null
   bankruptcyRisk: BankruptcyRisk | null
   financialHealth: FinancialHealth | null
+  asOf: string | null
+  searchWindow: { from: string | null; to: string | null }
+  dataQuality: DataQuality | null
+  diagnostics?: {
+    modelId?: string
+    searchMode?: string
+    parseRetry?: boolean
+    evidenceCount?: number
+    jsonResponseMode?: boolean
+  }
   fetchedAt: number
   error?: string
 }
@@ -54,6 +82,39 @@ function asBankruptcyRiskLevel(value: unknown): BankruptcyRiskLevel | null {
 
 function asFinancialHealthStatus(value: unknown): FinancialHealthStatus | null {
   return value === 'healthy' || value === 'watch' || value === 'stressed' ? value : null
+}
+
+function asSourceType(value: unknown): SourceType {
+  if (value === 'primary' || value === 'regulatory' || value === 'major_media' || value === 'secondary') return value
+  return 'secondary'
+}
+
+function asConfidence(value: unknown): Confidence {
+  if (value === 'high' || value === 'medium' || value === 'low') return value
+  return 'low'
+}
+
+function asDataQuality(value: unknown): DataQuality | null {
+  if (value === 'high' || value === 'medium' || value === 'low') return value
+  return null
+}
+
+function normalizeEvidence(value: unknown): EvidenceItem | null {
+  if (!value || typeof value !== 'object') return null
+  const src = value as any
+  return {
+    sourceName: asNonEmptyString(src.sourceName),
+    sourceType: asSourceType(src.sourceType),
+    url: asNonEmptyString(src.url),
+    publishedAt: asNonEmptyString(src.publishedAt),
+    confidence: asConfidence(src.confidence),
+    confidenceReason: asNonEmptyString(src.confidenceReason),
+  }
+}
+
+function normalizeEvidenceList(value: unknown, max = 3): EvidenceItem[] {
+  if (!Array.isArray(value)) return []
+  return value.map(normalizeEvidence).filter(Boolean).slice(0, max) as EvidenceItem[]
 }
 
 function normalizeContext(raw: any, fetchedAtFallback: number): ContextResult {
@@ -93,6 +154,8 @@ function normalizeContext(raw: any, fetchedAtFallback: number): ContextResult {
               .slice(0, 3) as string[]
           : [],
         detail: asNonEmptyString(bankruptcyRaw.detail),
+        evidence: normalizeEvidenceList(bankruptcyRaw.evidence, 3),
+        insufficientEvidenceReason: asNonEmptyString(bankruptcyRaw.insufficientEvidenceReason),
       }
     : null
 
@@ -101,6 +164,8 @@ function normalizeContext(raw: any, fetchedAtFallback: number): ContextResult {
     ? {
         status: asFinancialHealthStatus(healthRaw.status),
         detail: asNonEmptyString(healthRaw.detail),
+        evidence: normalizeEvidenceList(healthRaw.evidence, 3),
+        insufficientEvidenceReason: asNonEmptyString(healthRaw.insufficientEvidenceReason),
       }
     : null
 
@@ -115,8 +180,25 @@ function normalizeContext(raw: any, fetchedAtFallback: number): ContextResult {
     nextEarnings: asNonEmptyString(src.nextEarnings),
     news,
     macroRisk: asNonEmptyString(src.macroRisk),
+    macroRiskEvidence: normalizeEvidenceList(src.macroRiskEvidence, 3),
+    macroRiskInsufficientEvidenceReason: asNonEmptyString(src.macroRiskInsufficientEvidenceReason),
     bankruptcyRisk,
     financialHealth,
+    asOf: asNonEmptyString(src.asOf),
+    searchWindow: {
+      from: asNonEmptyString(src.searchWindow?.from),
+      to: asNonEmptyString(src.searchWindow?.to),
+    },
+    dataQuality: asDataQuality(src.dataQuality),
+    diagnostics: (src.diagnostics && typeof src.diagnostics === 'object')
+      ? {
+          modelId: asNonEmptyString(src.diagnostics.modelId) ?? undefined,
+          searchMode: asNonEmptyString(src.diagnostics.searchMode) ?? undefined,
+          parseRetry: typeof src.diagnostics.parseRetry === 'boolean' ? src.diagnostics.parseRetry : undefined,
+          evidenceCount: typeof src.diagnostics.evidenceCount === 'number' ? src.diagnostics.evidenceCount : undefined,
+          jsonResponseMode: typeof src.diagnostics.jsonResponseMode === 'boolean' ? src.diagnostics.jsonResponseMode : undefined,
+        }
+      : undefined,
     fetchedAt,
     error,
   }
