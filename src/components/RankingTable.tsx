@@ -336,6 +336,46 @@ function evidenceConfidenceClass(confidence: 'high' | 'medium' | 'low' | undefin
   return 'border-border text-gray-400 bg-surface2/40'
 }
 
+function ContextAccordionSection({
+  title,
+  isOpen,
+  onToggle,
+  badges,
+  children,
+}: {
+  title: string
+  isOpen: boolean
+  onToggle: () => void
+  badges?: React.ReactNode[]
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded border border-border/70 bg-surface2/20 min-w-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="focus-ring w-full px-2.5 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-surface2/40"
+        aria-expanded={isOpen}
+      >
+        <span className="inline-flex items-center gap-1.5 min-w-0">
+          <span className="text-muted shrink-0">{isOpen ? '▾' : '▸'}</span>
+          <span className="text-gray-300 font-semibold truncate">{title}</span>
+        </span>
+        {!!badges?.length && (
+          <span className="flex items-center gap-1 flex-wrap justify-end">
+            {badges}
+          </span>
+        )}
+      </button>
+      {isOpen && (
+        <div className="px-2.5 pb-2 space-y-1 min-w-0">
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function BreakoutBadge({
   score,
   flags,
@@ -694,6 +734,17 @@ function ExpandedDetail({
     useInstrumentContext(inst.isin)
   const [combinedLoading, setCombinedLoading] = useState(false)
   const hasContext = !!ctx && !ctx.error
+  type ContextSection = 'analyst' | 'earnings' | 'news' | 'risk'
+  const [contextOpen, setContextOpen] = useState<Record<ContextSection, boolean>>(() => {
+    const openAll = typeof window !== 'undefined' && window.matchMedia('(min-width: 1536px)').matches
+    return openAll
+      ? { analyst: true, earnings: true, news: true, risk: true }
+      : { analyst: true, earnings: false, news: false, risk: true }
+  })
+
+  const toggleContextSection = (section: ContextSection) => {
+    setContextOpen((prev) => ({ ...prev, [section]: !prev[section] }))
+  }
 
   // Resolve dedup candidates from full instrument list
   const candidates = (inst.dedupCandidates ?? [])
@@ -705,7 +756,7 @@ function ExpandedDetail({
       {/* Detail panel */}
       <tr className="border-b border-border bg-surface/70">
         <td colSpan={colSpan} className="px-4 py-3">
-          <div className="text-[11px] text-muted grid grid-cols-3 gap-4">
+          <div className="text-[11px] text-muted grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
             {/* Instrument details */}
             <div>
               <div className="text-gray-400 font-semibold mb-1">Instrument</div>
@@ -862,10 +913,20 @@ function ExpandedDetail({
               </div>
 
               {(inst.analystFetched || hasContext) && (
-                <div className="grid grid-cols-2 gap-4 text-[11px] font-mono">
-                  {/* Left column: Analyst + Earnings */}
-                  <div className="space-y-1">
-                    <div className="text-gray-400 font-semibold">Analyst</div>
+                <div className="space-y-2 text-[11px] font-mono min-w-0">
+                  <ContextAccordionSection
+                    title="Analyst Snapshot"
+                    isOpen={contextOpen.analyst}
+                    onToggle={() => toggleContextSection('analyst')}
+                    badges={[
+                      <span key="rating" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                        {inst.analystRatingKey ? String(inst.analystRatingKey).toUpperCase() : 'n/a'}
+                      </span>,
+                      <span key="opinions" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                        {inst.analystOpinions != null ? `${inst.analystOpinions} an.` : '—'}
+                      </span>,
+                    ]}
+                  >
                     {inst.type === 'Stock' ? (
                       inst.analystFetched ? (
                         <>
@@ -888,7 +949,7 @@ function ExpandedDetail({
                             )}
                           </div>
                           {(inst.targetLowAdj != null || inst.targetHighAdj != null || inst.targetLow != null || inst.targetHigh != null) && (
-                            <div className="text-muted">
+                            <div className="text-muted break-words">
                               Range: {inst.targetLowAdj != null ? inst.targetLowAdj.toFixed(2) : (inst.targetLow != null ? inst.targetLow.toFixed(2) : '—')}
                               {' – '}
                               {inst.targetHighAdj != null ? inst.targetHighAdj.toFixed(2) : (inst.targetHigh != null ? inst.targetHigh.toFixed(2) : '—')}
@@ -896,7 +957,7 @@ function ExpandedDetail({
                             </div>
                           )}
                           {inst.targetFxApplied && inst.targetFxRate != null && (
-                            <div className="text-muted text-[10px]">
+                            <div className="text-muted text-[10px] break-words">
                               FX adjusted ×{inst.targetFxRate.toFixed(3)}
                               {analystCurrency && priceCurrency && analystCurrency !== priceCurrency
                                 ? ` (${analystCurrency} → ${priceCurrency})`
@@ -914,7 +975,7 @@ function ExpandedDetail({
                             </div>
                           )}
                           {currencyMismatch && !inst.targetFxApplied && (
-                            <div className="text-amber-300 text-[10px]">
+                            <div className="text-amber-300 text-[10px] break-words">
                               Currency mismatch: {analystCurrency} target vs {priceCurrency} price
                             </div>
                           )}
@@ -926,7 +987,18 @@ function ExpandedDetail({
                     ) : (
                       <div className="text-muted">Not available for this instrument type</div>
                     )}
-                    <div className="text-gray-400 font-semibold mt-2">Earnings</div>
+                  </ContextAccordionSection>
+
+                  <ContextAccordionSection
+                    title="Earnings"
+                    isOpen={contextOpen.earnings}
+                    onToggle={() => toggleContextSection('earnings')}
+                    badges={[
+                      <span key="next" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                        {ctx?.nextEarnings ? `Next: ${ctx.nextEarnings}` : 'Next: n/a'}
+                      </span>,
+                    ]}
+                  >
                     {hasContext ? (
                       <>
                         {ctx.lastEarnings && (
@@ -945,7 +1017,7 @@ function ExpandedDetail({
                               )}
                             </div>
                             {ctx.lastEarnings.detail && (
-                              <div className="text-muted leading-snug">
+                              <div className="text-muted leading-snug break-words">
                                 {ctx.lastEarnings.detail}
                               </div>
                             )}
@@ -961,10 +1033,23 @@ function ExpandedDetail({
                     ) : (
                       <div className="text-muted">Not loaded</div>
                     )}
-                  </div>
+                  </ContextAccordionSection>
 
-                  {/* Right column: News + Macro */}
-                  <div className="space-y-1">
+                  <ContextAccordionSection
+                    title="News & Macro"
+                    isOpen={contextOpen.news}
+                    onToggle={() => toggleContextSection('news')}
+                    badges={[
+                      <span key="news" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                        {ctx?.news?.length ?? 0} news
+                      </span>,
+                      <span key="macro" className={`rounded border px-1 py-0.5 text-[10px] ${
+                        ctx?.macroRisk ? 'border-amber-400/30 text-amber-300 bg-amber-400/10' : 'border-border text-gray-400 bg-surface2'
+                      }`}>
+                        {ctx?.macroRisk ? 'macro risk' : 'no macro risk'}
+                      </span>,
+                    ]}
+                  >
                     {hasContext ? (
                       <>
                         {ctx.news.map((n, i) => (
@@ -974,13 +1059,13 @@ function ExpandedDetail({
                               n.sentiment === 'negative' ? 'text-red-400'   :
                                                            'text-gray-400'
                             }`}>●</span>
-                            <span className="text-gray-300 leading-snug">{n.headline}</span>
+                            <span className="text-gray-300 leading-snug break-words">{n.headline}</span>
                           </div>
                         ))}
                         {ctx.macroRisk && (
                           <div className="flex items-start gap-1.5 mt-1">
                             <span className="text-amber-400 shrink-0">⚠</span>
-                            <span className="text-amber-400 leading-snug">{ctx.macroRisk}</span>
+                            <span className="text-amber-400 leading-snug break-words">{ctx.macroRisk}</span>
                           </div>
                         )}
                         {ctx.macroRiskEvidence.length > 0 && (
@@ -997,89 +1082,118 @@ function ExpandedDetail({
                           </div>
                         )}
                         {ctx.macroRiskEvidence.length === 0 && ctx.macroRiskInsufficientEvidenceReason && (
-                          <div className="text-[10px] text-amber-400">{ctx.macroRiskInsufficientEvidenceReason}</div>
+                          <div className="text-[10px] text-amber-400 break-words">{ctx.macroRiskInsufficientEvidenceReason}</div>
                         )}
-                        <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
-                          <div>
-                            <span className="text-muted">Bankruptcy risk: </span>
-                            <span className={bankruptcyRiskClass(ctx.bankruptcyRisk?.level)}>
-                              {bankruptcyRiskLabel(ctx.bankruptcyRisk?.level)}
-                            </span>
-                          </div>
-                          {ctx.bankruptcyRisk?.detail && (
-                            <div className="text-muted leading-snug">
-                              {ctx.bankruptcyRisk.detail}
-                            </div>
-                          )}
-                          {ctx.bankruptcyRisk?.signals?.map((signal, i) => (
-                            <div key={`risk-${i}`} className="flex items-start gap-1.5">
-                              <span className="text-gray-500 shrink-0">•</span>
-                              <span className="text-gray-300 leading-snug">{signal}</span>
-                            </div>
-                          ))}
-                          {(ctx.bankruptcyRisk?.evidence?.length ?? 0) > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {(ctx.bankruptcyRisk?.evidence ?? []).slice(0, 2).map((ev, i) => (
-                                <span
-                                  key={`ctx-bank-ev-${i}`}
-                                  className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
-                                  title={ev.confidenceReason ?? undefined}
-                                >
-                                  {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {(ctx.bankruptcyRisk?.evidence?.length ?? 0) === 0 && ctx.bankruptcyRisk?.insufficientEvidenceReason && (
-                            <div className="text-[10px] text-amber-400">{ctx.bankruptcyRisk.insufficientEvidenceReason}</div>
-                          )}
-                          <div className="mt-1">
-                            <span className="text-muted">Financial health: </span>
-                            <span className={financialHealthClass(ctx.financialHealth?.status)}>
-                              {financialHealthLabel(ctx.financialHealth?.status)}
-                            </span>
-                          </div>
-                          {ctx.financialHealth?.detail && (
-                            <div className="text-muted leading-snug">
-                              {ctx.financialHealth.detail}
-                            </div>
-                          )}
-                          {(ctx.financialHealth?.evidence?.length ?? 0) > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {(ctx.financialHealth?.evidence ?? []).slice(0, 2).map((ev, i) => (
-                                <span
-                                  key={`ctx-health-ev-${i}`}
-                                  className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
-                                  title={ev.confidenceReason ?? undefined}
-                                >
-                                  {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {(ctx.financialHealth?.evidence?.length ?? 0) === 0 && ctx.financialHealth?.insufficientEvidenceReason && (
-                            <div className="text-[10px] text-amber-400">{ctx.financialHealth.insufficientEvidenceReason}</div>
-                          )}
-                          {(ctx.asOf || ctx.dataQuality) && (
-                            <div className="text-[10px] text-muted mt-1">
-                              {ctx.asOf && <>As-of: {new Date(ctx.asOf).toLocaleString('en-GB')}</>}
-                              {ctx.dataQuality && (
-                                <span className={`ml-1 ${
-                                  ctx.dataQuality === 'high' ? 'text-green-400'
-                                    : ctx.dataQuality === 'medium' ? 'text-amber-400'
-                                      : 'text-red-400'
-                                }`}>
-                                  {ctx.dataQuality.toUpperCase()}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
                       </>
                     ) : (
                       <div className="text-muted">Not loaded</div>
                     )}
-                  </div>
+                  </ContextAccordionSection>
+
+                  <ContextAccordionSection
+                    title="Risk & Evidence"
+                    isOpen={contextOpen.risk}
+                    onToggle={() => toggleContextSection('risk')}
+                    badges={[
+                      <span key="bank" className={`rounded border px-1 py-0.5 text-[10px] ${
+                        ctx?.bankruptcyRisk?.level === 'high' ? 'border-red-400/30 text-red-300 bg-red-400/10'
+                          : ctx?.bankruptcyRisk?.level === 'medium' ? 'border-amber-400/30 text-amber-300 bg-amber-400/10'
+                            : ctx?.bankruptcyRisk?.level === 'low' ? 'border-green-400/30 text-green-300 bg-green-400/10'
+                              : 'border-border text-gray-400 bg-surface2'
+                      }`}>
+                        BK: {bankruptcyRiskLabel(ctx?.bankruptcyRisk?.level)}
+                      </span>,
+                      <span key="quality" className={`rounded border px-1 py-0.5 text-[10px] ${
+                        ctx?.dataQuality === 'high' ? 'border-green-400/30 text-green-300 bg-green-400/10'
+                          : ctx?.dataQuality === 'medium' ? 'border-amber-400/30 text-amber-300 bg-amber-400/10'
+                            : ctx?.dataQuality === 'low' ? 'border-red-400/30 text-red-300 bg-red-400/10'
+                              : 'border-border text-gray-400 bg-surface2'
+                      }`}>
+                        Q: {ctx?.dataQuality?.toUpperCase() ?? 'N/A'}
+                      </span>,
+                    ]}
+                  >
+                    {hasContext ? (
+                      <div className="space-y-1">
+                        <div>
+                          <span className="text-muted">Bankruptcy risk: </span>
+                          <span className={bankruptcyRiskClass(ctx.bankruptcyRisk?.level)}>
+                            {bankruptcyRiskLabel(ctx.bankruptcyRisk?.level)}
+                          </span>
+                        </div>
+                        {ctx.bankruptcyRisk?.detail && (
+                          <div className="text-muted leading-snug break-words">
+                            {ctx.bankruptcyRisk.detail}
+                          </div>
+                        )}
+                        {ctx.bankruptcyRisk?.signals?.map((signal, i) => (
+                          <div key={`risk-${i}`} className="flex items-start gap-1.5">
+                            <span className="text-gray-500 shrink-0">•</span>
+                            <span className="text-gray-300 leading-snug break-words">{signal}</span>
+                          </div>
+                        ))}
+                        {(ctx.bankruptcyRisk?.evidence?.length ?? 0) > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {(ctx.bankruptcyRisk?.evidence ?? []).slice(0, 2).map((ev, i) => (
+                              <span
+                                key={`ctx-bank-ev-${i}`}
+                                className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
+                                title={ev.confidenceReason ?? undefined}
+                              >
+                                {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {(ctx.bankruptcyRisk?.evidence?.length ?? 0) === 0 && ctx.bankruptcyRisk?.insufficientEvidenceReason && (
+                          <div className="text-[10px] text-amber-400 break-words">{ctx.bankruptcyRisk.insufficientEvidenceReason}</div>
+                        )}
+                        <div className="mt-1">
+                          <span className="text-muted">Financial health: </span>
+                          <span className={financialHealthClass(ctx.financialHealth?.status)}>
+                            {financialHealthLabel(ctx.financialHealth?.status)}
+                          </span>
+                        </div>
+                        {ctx.financialHealth?.detail && (
+                          <div className="text-muted leading-snug break-words">
+                            {ctx.financialHealth.detail}
+                          </div>
+                        )}
+                        {(ctx.financialHealth?.evidence?.length ?? 0) > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {(ctx.financialHealth?.evidence ?? []).slice(0, 2).map((ev, i) => (
+                              <span
+                                key={`ctx-health-ev-${i}`}
+                                className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
+                                title={ev.confidenceReason ?? undefined}
+                              >
+                                {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {(ctx.financialHealth?.evidence?.length ?? 0) === 0 && ctx.financialHealth?.insufficientEvidenceReason && (
+                          <div className="text-[10px] text-amber-400 break-words">{ctx.financialHealth.insufficientEvidenceReason}</div>
+                        )}
+                        {(ctx.asOf || ctx.dataQuality) && (
+                          <div className="text-[10px] text-muted mt-1">
+                            {ctx.asOf && <>As-of: {new Date(ctx.asOf).toLocaleString('en-GB')}</>}
+                            {ctx.dataQuality && (
+                              <span className={`ml-1 ${
+                                ctx.dataQuality === 'high' ? 'text-green-400'
+                                  : ctx.dataQuality === 'medium' ? 'text-amber-400'
+                                    : 'text-red-400'
+                              }`}>
+                                {ctx.dataQuality.toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-muted">Not loaded</div>
+                    )}
+                  </ContextAccordionSection>
                 </div>
               )}
 
@@ -1631,7 +1745,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
       </div>
 
       <div className="hidden lg:block">
-      <table className="w-full text-xs font-mono border-collapse min-w-[2420px]">
+      <table className="w-full text-xs font-mono border-collapse lg:min-w-[1760px] xl:min-w-[2100px] 2xl:min-w-[2420px]">
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {visibleColumns.map((col) => (
