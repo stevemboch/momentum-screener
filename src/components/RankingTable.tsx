@@ -306,6 +306,30 @@ function fmtAge(days: number | null | undefined): string {
   return `${days}d`
 }
 
+function bankruptcyRiskClass(level: 'low' | 'medium' | 'high' | null | undefined): string {
+  if (level === 'low') return 'text-green-400'
+  if (level === 'medium') return 'text-amber-400'
+  if (level === 'high') return 'text-red-400'
+  return 'text-gray-400'
+}
+
+function bankruptcyRiskLabel(level: 'low' | 'medium' | 'high' | null | undefined): string {
+  if (!level) return 'N/A'
+  return level.toUpperCase()
+}
+
+function financialHealthClass(status: 'healthy' | 'watch' | 'stressed' | null | undefined): string {
+  if (status === 'healthy') return 'text-green-400'
+  if (status === 'watch') return 'text-amber-400'
+  if (status === 'stressed') return 'text-red-400'
+  return 'text-gray-400'
+}
+
+function financialHealthLabel(status: 'healthy' | 'watch' | 'stressed' | null | undefined): string {
+  if (!status) return 'N/A'
+  return status.toUpperCase()
+}
+
 function BreakoutBadge({
   score,
   flags,
@@ -953,6 +977,36 @@ function ExpandedDetail({
                             <span className="text-amber-400 leading-snug">{ctx.macroRisk}</span>
                           </div>
                         )}
+                        <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+                          <div>
+                            <span className="text-muted">Bankruptcy risk: </span>
+                            <span className={bankruptcyRiskClass(ctx.bankruptcyRisk?.level)}>
+                              {bankruptcyRiskLabel(ctx.bankruptcyRisk?.level)}
+                            </span>
+                          </div>
+                          {ctx.bankruptcyRisk?.detail && (
+                            <div className="text-muted leading-snug">
+                              {ctx.bankruptcyRisk.detail}
+                            </div>
+                          )}
+                          {ctx.bankruptcyRisk?.signals?.map((signal, i) => (
+                            <div key={`risk-${i}`} className="flex items-start gap-1.5">
+                              <span className="text-gray-500 shrink-0">•</span>
+                              <span className="text-gray-300 leading-snug">{signal}</span>
+                            </div>
+                          ))}
+                          <div className="mt-1">
+                            <span className="text-muted">Financial health: </span>
+                            <span className={financialHealthClass(ctx.financialHealth?.status)}>
+                              {financialHealthLabel(ctx.financialHealth?.status)}
+                            </span>
+                          </div>
+                          {ctx.financialHealth?.detail && (
+                            <div className="text-muted leading-snug">
+                              {ctx.financialHealth.detail}
+                            </div>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <div className="text-muted">Not loaded</div>

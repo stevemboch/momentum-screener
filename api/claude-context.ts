@@ -23,6 +23,19 @@ Search for:
 2. The next earnings date if known
 3. Up to 2 relevant recent news headlines (last 4 weeks)
 4. One currently relevant macro or sector risk
+5. Bankruptcy risk assessment (last 12 months):
+   Check for insolvency filing/proceedings, going-concern warnings, debt restructuring,
+   covenant breaches, or acute liquidity stress.
+   Return risk level: low | medium | high.
+   Include up to 3 concrete signals with date.
+6. Financial health assessment (based on latest reported data):
+   Assess leverage, liquidity, interest coverage, free cash flow trend, and profitability trend.
+   Return status: healthy | watch | stressed.
+   Provide a short factual rationale.
+
+Important:
+- If reliable data is unavailable, return null fields and state "insufficient data".
+- Do not infer insolvency risk from price action alone.
 
 Answer as JSON:
 {
@@ -33,7 +46,16 @@ Answer as JSON:
   },
   "nextEarnings": string | null,
   "news": [{ "headline": string, "sentiment": "positive" | "negative" | "neutral" }],
-  "macroRisk": string | null
+  "macroRisk": string | null,
+  "bankruptcyRisk": {
+    "level": "low" | "medium" | "high" | null,
+    "signals": string[],
+    "detail": string | null
+  },
+  "financialHealth": {
+    "status": "healthy" | "watch" | "stressed" | null,
+    "detail": string | null
+  }
 }`
 
   try {
