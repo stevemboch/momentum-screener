@@ -3,6 +3,7 @@ import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { useInstrumentContext } from '../hooks/useInstrumentContext'
 import type { ColumnGroup, SortColumn, Instrument } from '../types'
+import { StatusBadge } from './ui/StatusBadge'
 import {
   fmtAUM, fmtTER, fmtPct, fmtRatio, fmtVola, fmtPE, returnColor, scoreColor, rsiColor
 } from '../utils/formatters'
@@ -46,7 +47,6 @@ const COLUMNS: Col[] = [
   { key: 'pullbackScore',  label: '↩ Score',  title: 'Pullback score 0–1 (stocks above MA200 with positive 3M return)' },
   { key: 'pullbackStop',   label: 'PB Stop',  title: 'Stop-loss: previous low − 0.5×ATR' },
   { key: 'pullbackTarget', label: 'PB Target',  title: 'Target: entry + 1.5× risk' },
-  { key: 'pullbackRR',     label: 'R/R',      title: 'Risk-Reward-Ratio' },
 ]
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
@@ -60,7 +60,7 @@ const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
     'drawFrom5YHigh', 'drawFrom7YHigh', 'weeklyRsi14', 'weeklyVolaRatio', 'tfaTScore5Y', 'tfaFScore5Y',
   ],
   breakout:     ['breakoutScore', 'breakoutAgeDays'],
-  pullback:     ['pullbackScore', 'pullbackStop', 'pullbackTarget', 'pullbackRR'],
+  pullback:     ['pullbackScore', 'pullbackStop', 'pullbackTarget'],
 }
 
 const NON_SORTABLE = new Set(['displayName', 'ma', 'breakoutAgeDays', 'tfaPhase'])
@@ -306,28 +306,45 @@ function fmtAge(days: number | null | undefined): string {
   return `${days}d`
 }
 
-function bankruptcyRiskClass(level: 'low' | 'medium' | 'high' | null | undefined): string {
-  if (level === 'low') return 'text-green-400'
-  if (level === 'medium') return 'text-amber-400'
-  if (level === 'high') return 'text-red-400'
-  return 'text-gray-400'
-}
-
 function bankruptcyRiskLabel(level: 'low' | 'medium' | 'high' | null | undefined): string {
   if (!level) return 'N/A'
   return level.toUpperCase()
 }
 
-function financialHealthClass(status: 'healthy' | 'watch' | 'stressed' | null | undefined): string {
-  if (status === 'healthy') return 'text-green-400'
-  if (status === 'watch') return 'text-amber-400'
-  if (status === 'stressed') return 'text-red-400'
-  return 'text-gray-400'
-}
-
 function financialHealthLabel(status: 'healthy' | 'watch' | 'stressed' | null | undefined): string {
   if (!status) return 'N/A'
   return status.toUpperCase()
+}
+
+type BadgeTone = 'success' | 'warning' | 'danger' | 'info' | 'muted'
+
+function bankruptcyRiskTone(level: 'low' | 'medium' | 'high' | null | undefined): BadgeTone {
+  if (level === 'low') return 'success'
+  if (level === 'medium') return 'warning'
+  if (level === 'high') return 'danger'
+  return 'muted'
+}
+
+function financialHealthTone(status: 'healthy' | 'watch' | 'stressed' | null | undefined): BadgeTone {
+  if (status === 'healthy') return 'success'
+  if (status === 'watch') return 'warning'
+  if (status === 'stressed') return 'danger'
+  return 'muted'
+}
+
+function dataQualityTone(quality: 'high' | 'medium' | 'low' | null | undefined): BadgeTone {
+  if (quality === 'high') return 'success'
+  if (quality === 'medium') return 'warning'
+  if (quality === 'low') return 'danger'
+  return 'muted'
+}
+
+function pullbackScoreTone(score: number | null | undefined): BadgeTone {
+  if (score == null) return 'muted'
+  if (score >= 0.7) return 'success'
+  if (score >= 0.5) return 'warning'
+  if (score >= 0.3) return 'info'
+  return 'muted'
 }
 
 function evidenceConfidenceClass(confidence: 'high' | 'medium' | 'low' | undefined): string {
@@ -350,16 +367,16 @@ function ContextAccordionSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded border border-border/70 bg-surface2/20 min-w-0">
+    <section className="panel-shell min-w-0">
       <button
         type="button"
         onClick={onToggle}
-        className="focus-ring w-full px-2.5 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-surface2/40"
+        className="focus-ring panel-header w-full text-left hover:bg-surface2/40 transition-colors"
         aria-expanded={isOpen}
       >
         <span className="inline-flex items-center gap-1.5 min-w-0">
-          <span className="text-muted shrink-0">{isOpen ? '▾' : '▸'}</span>
-          <span className="text-gray-300 font-semibold truncate">{title}</span>
+          <span className="text-muted shrink-0 text-[11px]">{isOpen ? '▾' : '▸'}</span>
+          <span className="panel-title normal-case tracking-normal text-gray-200 truncate">{title}</span>
         </span>
         {!!badges?.length && (
           <span className="flex items-center gap-1 flex-wrap justify-end">
@@ -368,7 +385,7 @@ function ContextAccordionSection({
         )}
       </button>
       {isOpen && (
-        <div className="px-2.5 pb-2 space-y-1 min-w-0">
+        <div className="p-2.5 space-y-1 min-w-0">
           {children}
         </div>
       )}
@@ -685,9 +702,6 @@ function CandidateRow({
       {!hiddenKeys.has('pullbackTarget') && (
         <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
-      {!hiddenKeys.has('pullbackRR') && (
-        <td className="px-2 py-1.5 text-right text-muted">—</td>
-      )}
     </tr>
   )
 }
@@ -735,15 +749,23 @@ function ExpandedDetail({
   const [combinedLoading, setCombinedLoading] = useState(false)
   const hasContext = !!ctx && !ctx.error
   type ContextSection = 'analyst' | 'earnings' | 'news' | 'risk'
+  type DetailSection = 'tfa' | 'pullback'
   const [contextOpen, setContextOpen] = useState<Record<ContextSection, boolean>>(() => {
     const openAll = typeof window !== 'undefined' && window.matchMedia('(min-width: 1536px)').matches
     return openAll
       ? { analyst: true, earnings: true, news: true, risk: true }
       : { analyst: true, earnings: false, news: false, risk: true }
   })
+  const [detailOpen, setDetailOpen] = useState<Record<DetailSection, boolean>>({
+    tfa: false,
+    pullback: false,
+  })
 
   const toggleContextSection = (section: ContextSection) => {
     setContextOpen((prev) => ({ ...prev, [section]: !prev[section] }))
+  }
+  const toggleDetailSection = (section: DetailSection) => {
+    setDetailOpen((prev) => ({ ...prev, [section]: !prev[section] }))
   }
 
   // Resolve dedup candidates from full instrument list
@@ -919,12 +941,12 @@ function ExpandedDetail({
                     isOpen={contextOpen.analyst}
                     onToggle={() => toggleContextSection('analyst')}
                     badges={[
-                      <span key="rating" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                      <StatusBadge key="rating" tone="muted">
                         {inst.analystRatingKey ? String(inst.analystRatingKey).toUpperCase() : 'n/a'}
-                      </span>,
-                      <span key="opinions" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                      </StatusBadge>,
+                      <StatusBadge key="opinions" tone="muted">
                         {inst.analystOpinions != null ? `${inst.analystOpinions} an.` : '—'}
-                      </span>,
+                      </StatusBadge>,
                     ]}
                   >
                     {inst.type === 'Stock' ? (
@@ -994,9 +1016,9 @@ function ExpandedDetail({
                     isOpen={contextOpen.earnings}
                     onToggle={() => toggleContextSection('earnings')}
                     badges={[
-                      <span key="next" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                      <StatusBadge key="next" tone="info">
                         {ctx?.nextEarnings ? `Next: ${ctx.nextEarnings}` : 'Next: n/a'}
-                      </span>,
+                      </StatusBadge>,
                     ]}
                   >
                     {hasContext ? (
@@ -1040,14 +1062,12 @@ function ExpandedDetail({
                     isOpen={contextOpen.news}
                     onToggle={() => toggleContextSection('news')}
                     badges={[
-                      <span key="news" className="rounded border border-border bg-surface2 px-1 py-0.5 text-[10px] text-gray-400">
+                      <StatusBadge key="news" tone="muted">
                         {ctx?.news?.length ?? 0} news
-                      </span>,
-                      <span key="macro" className={`rounded border px-1 py-0.5 text-[10px] ${
-                        ctx?.macroRisk ? 'border-amber-400/30 text-amber-300 bg-amber-400/10' : 'border-border text-gray-400 bg-surface2'
-                      }`}>
+                      </StatusBadge>,
+                      <StatusBadge key="macro" tone={ctx?.macroRisk ? 'warning' : 'muted'}>
                         {ctx?.macroRisk ? 'macro risk' : 'no macro risk'}
-                      </span>,
+                      </StatusBadge>,
                     ]}
                   >
                     {hasContext ? (
@@ -1095,94 +1115,93 @@ function ExpandedDetail({
                     isOpen={contextOpen.risk}
                     onToggle={() => toggleContextSection('risk')}
                     badges={[
-                      <span key="bank" className={`rounded border px-1 py-0.5 text-[10px] ${
-                        ctx?.bankruptcyRisk?.level === 'high' ? 'border-red-400/30 text-red-300 bg-red-400/10'
-                          : ctx?.bankruptcyRisk?.level === 'medium' ? 'border-amber-400/30 text-amber-300 bg-amber-400/10'
-                            : ctx?.bankruptcyRisk?.level === 'low' ? 'border-green-400/30 text-green-300 bg-green-400/10'
-                              : 'border-border text-gray-400 bg-surface2'
-                      }`}>
+                      <StatusBadge key="health" tone={financialHealthTone(ctx?.financialHealth?.status)}>
+                        FH: {financialHealthLabel(ctx?.financialHealth?.status)}
+                      </StatusBadge>,
+                      <StatusBadge key="bank" tone={bankruptcyRiskTone(ctx?.bankruptcyRisk?.level)}>
                         BK: {bankruptcyRiskLabel(ctx?.bankruptcyRisk?.level)}
-                      </span>,
-                      <span key="quality" className={`rounded border px-1 py-0.5 text-[10px] ${
-                        ctx?.dataQuality === 'high' ? 'border-green-400/30 text-green-300 bg-green-400/10'
-                          : ctx?.dataQuality === 'medium' ? 'border-amber-400/30 text-amber-300 bg-amber-400/10'
-                            : ctx?.dataQuality === 'low' ? 'border-red-400/30 text-red-300 bg-red-400/10'
-                              : 'border-border text-gray-400 bg-surface2'
-                      }`}>
+                      </StatusBadge>,
+                      <StatusBadge key="quality" tone={dataQualityTone(ctx?.dataQuality)}>
                         Q: {ctx?.dataQuality?.toUpperCase() ?? 'N/A'}
-                      </span>,
+                      </StatusBadge>,
                     ]}
                   >
                     {hasContext ? (
-                      <div className="space-y-1">
-                        <div>
-                          <span className="text-muted">Bankruptcy risk: </span>
-                          <span className={bankruptcyRiskClass(ctx.bankruptcyRisk?.level)}>
-                            {bankruptcyRiskLabel(ctx.bankruptcyRisk?.level)}
-                          </span>
+                      <div className="space-y-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-gray-300">Financial health:</span>
+                            <StatusBadge tone={financialHealthTone(ctx.financialHealth?.status)} className="font-semibold">
+                              {financialHealthLabel(ctx.financialHealth?.status)}
+                            </StatusBadge>
+                          </div>
+                          {ctx.financialHealth?.detail && (
+                            <div className="text-gray-300 leading-snug break-words">
+                              {ctx.financialHealth.detail}
+                            </div>
+                          )}
+                          {(ctx.financialHealth?.evidence?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {(ctx.financialHealth?.evidence ?? []).slice(0, 2).map((ev, i) => (
+                                <span
+                                  key={`ctx-health-ev-${i}`}
+                                  className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
+                                  title={ev.confidenceReason ?? undefined}
+                                >
+                                  {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(ctx.financialHealth?.evidence?.length ?? 0) === 0 && ctx.financialHealth?.insufficientEvidenceReason && (
+                            <div className="text-[10px] text-amber-400 break-words">{ctx.financialHealth.insufficientEvidenceReason}</div>
+                          )}
                         </div>
-                        {ctx.bankruptcyRisk?.detail && (
-                          <div className="text-muted leading-snug break-words">
-                            {ctx.bankruptcyRisk.detail}
+
+                        <div className="space-y-1 border-t border-border/50 pt-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-gray-300">Bankruptcy risk:</span>
+                            <StatusBadge tone={bankruptcyRiskTone(ctx.bankruptcyRisk?.level)}>
+                              {bankruptcyRiskLabel(ctx.bankruptcyRisk?.level)}
+                            </StatusBadge>
                           </div>
-                        )}
-                        {ctx.bankruptcyRisk?.signals?.map((signal, i) => (
-                          <div key={`risk-${i}`} className="flex items-start gap-1.5">
-                            <span className="text-gray-500 shrink-0">•</span>
-                            <span className="text-gray-300 leading-snug break-words">{signal}</span>
-                          </div>
-                        ))}
-                        {(ctx.bankruptcyRisk?.evidence?.length ?? 0) > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {(ctx.bankruptcyRisk?.evidence ?? []).slice(0, 2).map((ev, i) => (
-                              <span
-                                key={`ctx-bank-ev-${i}`}
-                                className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
-                                title={ev.confidenceReason ?? undefined}
-                              >
-                                {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {(ctx.bankruptcyRisk?.evidence?.length ?? 0) === 0 && ctx.bankruptcyRisk?.insufficientEvidenceReason && (
-                          <div className="text-[10px] text-amber-400 break-words">{ctx.bankruptcyRisk.insufficientEvidenceReason}</div>
-                        )}
-                        <div className="mt-1">
-                          <span className="text-muted">Financial health: </span>
-                          <span className={financialHealthClass(ctx.financialHealth?.status)}>
-                            {financialHealthLabel(ctx.financialHealth?.status)}
-                          </span>
+                          {ctx.bankruptcyRisk?.detail && (
+                            <div className="text-gray-300 leading-snug break-words">
+                              {ctx.bankruptcyRisk.detail}
+                            </div>
+                          )}
+                          {ctx.bankruptcyRisk?.signals?.map((signal, i) => (
+                            <div key={`risk-${i}`} className="flex items-start gap-1.5">
+                              <span className="text-gray-500 shrink-0">•</span>
+                              <span className="text-gray-300 leading-snug break-words">{signal}</span>
+                            </div>
+                          ))}
+                          {(ctx.bankruptcyRisk?.evidence?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {(ctx.bankruptcyRisk?.evidence ?? []).slice(0, 2).map((ev, i) => (
+                                <span
+                                  key={`ctx-bank-ev-${i}`}
+                                  className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
+                                  title={ev.confidenceReason ?? undefined}
+                                >
+                                  {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(ctx.bankruptcyRisk?.evidence?.length ?? 0) === 0 && ctx.bankruptcyRisk?.insufficientEvidenceReason && (
+                            <div className="text-[10px] text-amber-400 break-words">{ctx.bankruptcyRisk.insufficientEvidenceReason}</div>
+                          )}
                         </div>
-                        {ctx.financialHealth?.detail && (
-                          <div className="text-muted leading-snug break-words">
-                            {ctx.financialHealth.detail}
-                          </div>
-                        )}
-                        {(ctx.financialHealth?.evidence?.length ?? 0) > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {(ctx.financialHealth?.evidence ?? []).slice(0, 2).map((ev, i) => (
-                              <span
-                                key={`ctx-health-ev-${i}`}
-                                className={`rounded border px-1 py-0.5 text-[10px] ${evidenceConfidenceClass(ev.confidence)}`}
-                                title={ev.confidenceReason ?? undefined}
-                              >
-                                {(ev.sourceName ?? 'source')} · {ev.publishedAt ?? 'n/a'} · {ev.confidence}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {(ctx.financialHealth?.evidence?.length ?? 0) === 0 && ctx.financialHealth?.insufficientEvidenceReason && (
-                          <div className="text-[10px] text-amber-400 break-words">{ctx.financialHealth.insufficientEvidenceReason}</div>
-                        )}
+
                         {(ctx.asOf || ctx.dataQuality) && (
-                          <div className="text-[10px] text-muted mt-1">
+                          <div className="text-[10px] text-gray-400 mt-1 border-t border-border/50 pt-2">
                             {ctx.asOf && <>As-of: {new Date(ctx.asOf).toLocaleString('en-GB')}</>}
                             {ctx.dataQuality && (
                               <span className={`ml-1 ${
-                                ctx.dataQuality === 'high' ? 'text-green-400'
-                                  : ctx.dataQuality === 'medium' ? 'text-amber-400'
-                                    : 'text-red-400'
+                                ctx.dataQuality === 'high' ? 'text-green-300'
+                                  : ctx.dataQuality === 'medium' ? 'text-amber-300'
+                                    : 'text-red-300'
                               }`}>
                                 {ctx.dataQuality.toUpperCase()}
                               </span>
@@ -1207,269 +1226,271 @@ function ExpandedDetail({
 
           {inst.type === 'Stock' && (
             <div className="mt-3 pt-3 border-t border-border">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-gray-400 font-mono">🧭 TFA Breakdown</span>
-                <div className="flex items-center gap-2">
-                  {inst.tfaScenario && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold border ${
-                      inst.tfaScenario === '7y'
-                        ? 'bg-indigo-400/10 text-indigo-400 border-indigo-400/20'
-                        : inst.tfaScenario === '5y'
-                          ? 'bg-purple-400/10 text-purple-400 border-purple-400/20'
-                          : 'bg-orange-400/10 text-orange-400 border-orange-400/20'
-                    }`}>
-                      {inst.tfaScenario === '7y' ? '7Y Deep Value'
-                        : inst.tfaScenario === '5y' ? '5Y Consolidation'
-                          : '52W Crash'}
-                    </span>
-                  )}
-                  <TfaPhaseBadge
-                    phase={inst.tfaPhase}
-                    reason={inst.tfaRejectReason}
-                    summary={generateTfaSummary(inst)}
-                    inst={inst}
-                  />
-                  {inst.tfaPhase === 'above_all_mas' && !inst.analystFetched && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onLoadAnalyst(inst.isin)
-                      }}
-                      className="btn btn-sm btn-secondary focus-ring"
-                      title="Load fundamentals and Gemini catalyst check"
-                    >
-                      Load analysis
-                    </button>
-                  )}
-                  {inst.tfaPhase === 'above_all_mas' && inst.analystFetched && !inst.tfaFetched && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onLoadAnalyst(inst.isin)
-                      }}
-                      className="btn btn-sm btn-secondary focus-ring"
-                      title="Load Gemini catalyst check"
-                    >
-                      Load Gemini
-                    </button>
-                  )}
-                  {inst.tfaPhase === 'above_all_mas' && inst.tfaFetched && (
-                    <span className="text-[10px] font-mono text-muted">
-                      {inst.tfaKO ? '⛔ KO' : inst.tfaEScore != null
-                        ? `E: ${inst.tfaEScore.toFixed(2)}`
-                        : 'Analyzed'}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {inst.type === 'Stock' && inst.tfaPhase !== 'none' && (
-                <div className="text-[11px] text-gray-300 mb-3 leading-snug italic border-l-2 border-yellow-400/30 pl-2">
-                  {generateTfaSummary(inst)}
-                </div>
-              )}
-              {inst.tfaRejectReason && (
-                <div className={`text-[10px] mb-2 ${inst.tfaPhase === 'rejected' || inst.tfaPhase === 'none' ? 'text-red-400' : 'text-muted'}`}>
-                  {inst.tfaRejectReason}
-                </div>
-              )}
-              <div className="text-[10px] text-muted mb-2">
-                Stabilization: {
-                  [
-                    (inst.tfaTSignals?.t1 ?? 0) >= 1 ? 'RSI' : null,
-                    inst.aboveMa50 === true ? 'MA50' : null,
-                    inst.higherLow === true ? 'HigherLow' : null,
-                  ].filter(Boolean).join(', ') || '—'
-                }
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-[11px] font-mono">
-                <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">T-Score (Technical)</div>
-                  <div>Score: <span className="text-gray-300">{inst.tfaTScore != null ? inst.tfaTScore.toFixed(2) : '—'}</span></div>
-                  {inst.maCrossover?.stillValid && inst.maCrossover.risingMa && (
-                    <div className="text-yellow-400 font-semibold">
-                      ⚡ {inst.maCrossover.risingMa.toUpperCase()} Cross
-                      {inst.tfaCrossoverDaysAgo != null ? ` ${inst.tfaCrossoverDaysAgo}d ago` : ''}
+              <ContextAccordionSection
+                title="TFA Breakdown"
+                isOpen={detailOpen.tfa}
+                onToggle={() => toggleDetailSection('tfa')}
+                badges={[
+                  inst.tfaScenario ? (
+                    <StatusBadge key="scenario" tone="info">
+                      {inst.tfaScenario === '7y' ? '7Y Deep Value' : inst.tfaScenario === '5y' ? '5Y Consolidation' : '52W Crash'}
+                    </StatusBadge>
+                  ) : (
+                    <StatusBadge key="scenario-empty" tone="muted">Scenario n/a</StatusBadge>
+                  ),
+                  <span key="phase"><TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} summary={generateTfaSummary(inst)} inst={inst} /></span>,
+                  inst.tfaPhase === 'above_all_mas' && inst.tfaFetched ? (
+                    <StatusBadge key="estate" tone={inst.tfaKO ? 'danger' : 'muted'}>
+                      {inst.tfaKO ? 'KO' : inst.tfaEScore != null ? `E: ${inst.tfaEScore.toFixed(2)}` : 'Analyzed'}
+                    </StatusBadge>
+                  ) : null,
+                ].filter(Boolean) as React.ReactNode[]}
+              >
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {inst.tfaPhase === 'above_all_mas' && !inst.analystFetched && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onLoadAnalyst(inst.isin)
+                        }}
+                        className="btn btn-sm btn-secondary focus-ring"
+                        title="Load fundamentals and Gemini catalyst check"
+                      >
+                        Load analysis
+                      </button>
+                    )}
+                    {inst.tfaPhase === 'above_all_mas' && inst.analystFetched && !inst.tfaFetched && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onLoadAnalyst(inst.isin)
+                        }}
+                        className="btn btn-sm btn-secondary focus-ring"
+                        title="Load Gemini catalyst check"
+                      >
+                        Load Gemini
+                      </button>
+                    )}
+                  </div>
+
+                  {inst.tfaPhase !== 'none' && (
+                    <div className="text-[11px] text-gray-300 leading-snug italic border-l-2 border-yellow-400/30 pl-2">
+                      {generateTfaSummary(inst)}
                     </div>
                   )}
-                  {inst.maCrossover && !inst.maCrossover.stillValid &&
-                    (inst.maCrossover.ma50 || inst.maCrossover.ma100 || inst.maCrossover.ma200) && (
-                    <div className="text-orange-400 text-[10px]">
-                      ⚠ Cross no longer valid (price below MA)
+                  {inst.tfaRejectReason && (
+                    <div className={`text-[10px] ${inst.tfaPhase === 'rejected' || inst.tfaPhase === 'none' ? 'text-red-400' : 'text-muted'}`}>
+                      {inst.tfaRejectReason}
                     </div>
                   )}
-                  <div>T1 RSI turns: <SignalValue value={inst.tfaTSignals?.t1} /></div>
-                  <div>T2 MA-Cross/MA50: <SignalValue value={inst.tfaTSignals?.t2} /></div>
-                  <div>T3 Higher Low: <SignalValue value={inst.tfaTSignals?.t3} /></div>
-                  <div>T4 Volume: <SignalValue value={inst.tfaTSignals?.t4} /></div>
-                  <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals?.t5} /></div>
-                  {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
-                    <>
-                      <div className="text-gray-400 font-semibold mt-2">
-                        T-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} Weekly)
-                      </div>
-                      <div>Score: <span className="text-gray-300">{inst.tfaTScore5Y != null ? inst.tfaTScore5Y.toFixed(2) : '—'}</span></div>
-                      <div>T1 RSI turns (W): <SignalValue value={inst.tfaTSignals5Y?.t1} /></div>
-                      <div>T2 LevyRS (W): <SignalValue value={inst.tfaTSignals5Y?.t2} /></div>
-                      <div>T3 Higher Low (W): <SignalValue value={inst.tfaTSignals5Y?.t3} /></div>
-                      <div>T4 Vola compression (W): <SignalValue value={inst.tfaTSignals5Y?.t4} /></div>
-                      <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals5Y?.t5} /></div>
-                    </>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">F-Score (Fundamental)</div>
-                  <div>Score: <span className="text-gray-300">{inst.tfaFScore != null ? inst.tfaFScore.toFixed(2) : '—'}</span></div>
-                  <div>F1 PB: <SignalValue value={inst.tfaFSignals?.f1} /></div>
-                  <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals?.f2} /></div>
-                  <div>F3 Upside: <SignalValue value={inst.tfaFSignals?.f3} /></div>
-                  {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
-                    <>
-                      <div className="text-gray-400 font-semibold mt-2">
-                        F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxed)
-                      </div>
-                      <div>Score: <span className="text-gray-300">{inst.tfaFScore5Y != null ? inst.tfaFScore5Y.toFixed(2) : '—'}</span></div>
-                      <div>F1 PB: <SignalValue value={inst.tfaFSignals5Y?.f1} /></div>
-                      <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals5Y?.f2} /></div>
-                      <div>F3 ROA: <SignalValue value={inst.tfaFSignals5Y?.f3} /></div>
-                      <div>F4 Analyst: <SignalValue value={inst.tfaFSignals5Y?.f4} /></div>
-                      <div>F5 Upside: <SignalValue value={inst.tfaFSignals5Y?.f5} /></div>
-                    </>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">E-Score (Gemini)</div>
-                  <div>E-Score: <span className={
-                    inst.tfaEScore == null ? 'text-muted'
-                      : inst.tfaEScore > 0.6 ? 'text-green-400'
-                      : inst.tfaEScore > 0.3 ? 'text-yellow-400' : 'text-orange-400'
-                  }>
-                    {inst.tfaEScore == null ? 'no data' : inst.tfaEScore.toFixed(2)}
-                  </span></div>
-                  <div>Final TFA: <span className="text-gray-300">{inst.tfaScore != null ? inst.tfaScore.toFixed(2) : '—'}</span></div>
-                  {(['earningsBeatRecent','earningsBeatPrior','guidanceRaised','analystUpgrade','insiderBuying','restructuring'] as const).map((key) => {
-                    const sig = inst.tfaCatalyst?.[key]
-                    const label: Record<string, string> = {
-                      earningsBeatRecent: 'Earnings Beat (recent)',
-                      earningsBeatPrior: 'Earnings Beat (prior)',
-                      guidanceRaised: 'Guidance raised',
-                      analystUpgrade: 'Analyst upgrade',
-                      insiderBuying: 'Insider buying',
-                      restructuring: 'Restructuring',
+                  <div className="text-[10px] text-muted">
+                    Stabilization: {
+                      [
+                        (inst.tfaTSignals?.t1 ?? 0) >= 1 ? 'RSI' : null,
+                        inst.aboveMa50 === true ? 'MA50' : null,
+                        inst.higherLow === true ? 'HigherLow' : null,
+                      ].filter(Boolean).join(', ') || '—'
                     }
-                    const confColor = !sig ? 'text-muted'
-                      : sig.confidence === 'high' ? 'text-green-400'
-                      : sig.confidence === 'medium' ? 'text-yellow-400'
-                      : sig.confidence === 'low' ? 'text-orange-400'
-                      : 'text-muted'
-                    return (
-                      <div key={key} className="text-[10px]">
-                        <span className="text-gray-500">{label[key]}: </span>
-                        <span className={confColor}>
-                          {!sig ? '—' : sig.confidence === 'not_found' ? 'n/a'
-                            : `${sig.value} (${sig.confidence})`}
-                        </span>
-                        {!!sig && (sig.source || sig.evidence?.[0]?.sourceName) && (
-                          <div className="text-[10px] text-muted ml-2">
-                            {(sig.evidence?.[0]?.sourceName ?? sig.source ?? 'source')}
-                            {sig.evidence?.[0]?.publishedAt ? ` · ${sig.evidence[0].publishedAt}` : ''}
-                            {sig.evidence?.[0]?.confidence ? ` · ${sig.evidence[0].confidence}` : ''}
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4 text-[11px] font-mono">
+                    <div className="space-y-1">
+                      <div className="text-gray-300 font-semibold">T-Score (Technical)</div>
+                      <div>Score: <span className="text-gray-200">{inst.tfaTScore != null ? inst.tfaTScore.toFixed(2) : '—'}</span></div>
+                      {inst.maCrossover?.stillValid && inst.maCrossover.risingMa && (
+                        <div className="text-yellow-400 font-semibold">
+                          ⚡ {inst.maCrossover.risingMa.toUpperCase()} Cross
+                          {inst.tfaCrossoverDaysAgo != null ? ` ${inst.tfaCrossoverDaysAgo}d ago` : ''}
+                        </div>
+                      )}
+                      {inst.maCrossover && !inst.maCrossover.stillValid &&
+                        (inst.maCrossover.ma50 || inst.maCrossover.ma100 || inst.maCrossover.ma200) && (
+                        <div className="text-orange-400 text-[10px]">
+                          ⚠ Cross no longer valid (price below MA)
+                        </div>
+                      )}
+                      <div>T1 RSI turns: <SignalValue value={inst.tfaTSignals?.t1} /></div>
+                      <div>T2 MA-Cross/MA50: <SignalValue value={inst.tfaTSignals?.t2} /></div>
+                      <div>T3 Higher Low: <SignalValue value={inst.tfaTSignals?.t3} /></div>
+                      <div>T4 Volume: <SignalValue value={inst.tfaTSignals?.t4} /></div>
+                      <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals?.t5} /></div>
+                      {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
+                        <>
+                          <div className="text-gray-300 font-semibold mt-2">
+                            T-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} Weekly)
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {inst.tfaCatalyst?.koRisk?.value && (
-                    <div className="text-red-400 font-semibold">
-                      ⛔ KO risk ({inst.tfaCatalyst.koRisk.confidence})
+                          <div>Score: <span className="text-gray-200">{inst.tfaTScore5Y != null ? inst.tfaTScore5Y.toFixed(2) : '—'}</span></div>
+                          <div>T1 RSI turns (W): <SignalValue value={inst.tfaTSignals5Y?.t1} /></div>
+                          <div>T2 LevyRS (W): <SignalValue value={inst.tfaTSignals5Y?.t2} /></div>
+                          <div>T3 Higher Low (W): <SignalValue value={inst.tfaTSignals5Y?.t3} /></div>
+                          <div>T4 Vola compression (W): <SignalValue value={inst.tfaTSignals5Y?.t4} /></div>
+                          <div>T5 Drawdown: <SignalValue value={inst.tfaTSignals5Y?.t5} /></div>
+                        </>
+                      )}
                     </div>
-                  )}
-                  {inst.tfaCatalyst?.summary && (
-                    <div className="text-muted text-[10px] leading-snug mt-1">{inst.tfaCatalyst.summary}</div>
-                  )}
-                  {inst.tfaPhase === 'watch' && !inst.tfaFetched && (
-                    <div className="text-yellow-400 text-[10px]">Gemini not loaded yet</div>
-                  )}
-                  {inst.tfaPhase === 'monitoring' && (
-                    <div className="text-gray-500 text-[10px]">Waiting for MA crossover</div>
-                  )}
+
+                    <div className="space-y-1">
+                      <div className="text-gray-300 font-semibold">F-Score (Fundamental)</div>
+                      <div>Score: <span className="text-gray-200">{inst.tfaFScore != null ? inst.tfaFScore.toFixed(2) : '—'}</span></div>
+                      <div>F1 PB: <SignalValue value={inst.tfaFSignals?.f1} /></div>
+                      <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals?.f2} /></div>
+                      <div>F3 Upside: <SignalValue value={inst.tfaFSignals?.f3} /></div>
+                      {(inst.tfaScenario === '5y' || inst.tfaScenario === '7y') && (
+                        <>
+                          <div className="text-gray-300 font-semibold mt-2">
+                            F-Score ({inst.tfaScenario === '7y' ? '7Y' : '5Y'} relaxed)
+                          </div>
+                          <div>Score: <span className="text-gray-200">{inst.tfaFScore5Y != null ? inst.tfaFScore5Y.toFixed(2) : '—'}</span></div>
+                          <div>F1 PB: <SignalValue value={inst.tfaFSignals5Y?.f1} /></div>
+                          <div>F2 EV/EBITDA: <SignalValue value={inst.tfaFSignals5Y?.f2} /></div>
+                          <div>F3 ROA: <SignalValue value={inst.tfaFSignals5Y?.f3} /></div>
+                          <div>F4 Analyst: <SignalValue value={inst.tfaFSignals5Y?.f4} /></div>
+                          <div>F5 Upside: <SignalValue value={inst.tfaFSignals5Y?.f5} /></div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-gray-300 font-semibold">E-Score (Gemini)</div>
+                      <div>E-Score: <span className={
+                        inst.tfaEScore == null ? 'text-muted'
+                          : inst.tfaEScore > 0.6 ? 'text-green-300'
+                          : inst.tfaEScore > 0.3 ? 'text-yellow-300' : 'text-orange-300'
+                      }>
+                        {inst.tfaEScore == null ? 'no data' : inst.tfaEScore.toFixed(2)}
+                      </span></div>
+                      <div>Final TFA: <span className="text-gray-200">{inst.tfaScore != null ? inst.tfaScore.toFixed(2) : '—'}</span></div>
+                      {(['earningsBeatRecent','earningsBeatPrior','guidanceRaised','analystUpgrade','insiderBuying','restructuring'] as const).map((key) => {
+                        const sig = inst.tfaCatalyst?.[key]
+                        const label: Record<string, string> = {
+                          earningsBeatRecent: 'Earnings Beat (recent)',
+                          earningsBeatPrior: 'Earnings Beat (prior)',
+                          guidanceRaised: 'Guidance raised',
+                          analystUpgrade: 'Analyst upgrade',
+                          insiderBuying: 'Insider buying',
+                          restructuring: 'Restructuring',
+                        }
+                        const confColor = !sig ? 'text-muted'
+                          : sig.confidence === 'high' ? 'text-green-300'
+                          : sig.confidence === 'medium' ? 'text-yellow-300'
+                          : sig.confidence === 'low' ? 'text-orange-300'
+                          : 'text-muted'
+                        return (
+                          <div key={key} className="text-[10px]">
+                            <span className="text-gray-400">{label[key]}: </span>
+                            <span className={confColor}>
+                              {!sig ? '—' : sig.confidence === 'not_found' ? 'n/a'
+                                : `${sig.value} (${sig.confidence})`}
+                            </span>
+                            {!!sig && (sig.source || sig.evidence?.[0]?.sourceName) && (
+                              <div className="text-[10px] text-muted ml-2">
+                                {(sig.evidence?.[0]?.sourceName ?? sig.source ?? 'source')}
+                                {sig.evidence?.[0]?.publishedAt ? ` · ${sig.evidence[0].publishedAt}` : ''}
+                                {sig.evidence?.[0]?.confidence ? ` · ${sig.evidence[0].confidence}` : ''}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {inst.tfaCatalyst?.koRisk?.value && (
+                        <div className="text-red-300 font-semibold">
+                          ⛔ KO risk ({inst.tfaCatalyst.koRisk.confidence})
+                        </div>
+                      )}
+                      {inst.tfaCatalyst?.summary && (
+                        <div className="text-gray-300 text-[10px] leading-snug mt-1">{inst.tfaCatalyst.summary}</div>
+                      )}
+                      {inst.tfaPhase === 'watch' && !inst.tfaFetched && (
+                        <div className="text-yellow-300 text-[10px]">Gemini not loaded yet</div>
+                      )}
+                      {inst.tfaPhase === 'monitoring' && (
+                        <div className="text-gray-400 text-[10px]">Waiting for MA crossover</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </ContextAccordionSection>
             </div>
           )}
 
           {inst.type === 'Stock' && inst.pullbackScore !== null && inst.pullbackScore !== undefined && (
             <div className="mt-3 pt-3 border-t border-border">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-gray-400 font-mono">↩ Pullback Setup</span>
-                <PullbackScoreCell score={inst.pullbackScore} />
-              </div>
+              <ContextAccordionSection
+                title="Pullback Setup"
+                isOpen={detailOpen.pullback}
+                onToggle={() => toggleDetailSection('pullback')}
+                badges={[
+                  <StatusBadge key="pullback-score" tone={pullbackScoreTone(inst.pullbackScore)}>
+                    Score: {inst.pullbackScore != null ? inst.pullbackScore.toFixed(2) : '—'}
+                  </StatusBadge>,
+                ]}
+              >
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 text-[11px] font-mono mb-2">
+                  <div className="space-y-1">
+                    <div className="text-gray-300 font-semibold">Signals</div>
+                    <div>S1 RSI + MA50: <SignalValue value={inst.pullbackSignals?.s1} /></div>
+                    <div>S2 RSI turns: <SignalValue value={inst.pullbackSignals?.s2} /></div>
+                    <div>S3 Volume fades: <SignalValue value={inst.pullbackSignals?.s3} /></div>
+                    <div>S4 Near MA50: <SignalValue value={inst.pullbackSignals?.s4} /></div>
+                    <div>S5 Stabilization: <SignalValue value={inst.pullbackSignals?.s5} /></div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-4 text-[11px] font-mono mb-2">
-                <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">Signals</div>
-                  <div>S1 RSI + MA50: <SignalValue value={inst.pullbackSignals?.s1} /></div>
-                  <div>S2 RSI turns: <SignalValue value={inst.pullbackSignals?.s2} /></div>
-                  <div>S3 Volume fades: <SignalValue value={inst.pullbackSignals?.s3} /></div>
-                  <div>S4 Near MA50: <SignalValue value={inst.pullbackSignals?.s4} /></div>
-                  <div>S5 Stabilization: <SignalValue value={inst.pullbackSignals?.s5} /></div>
+                  <div className="space-y-1">
+                    <div className="text-gray-300 font-semibold">Trade Setup</div>
+                    <div>
+                      Entry (current):
+                      <span className="text-gray-200 ml-1">
+                        {inst.closes && inst.closes.length > 0
+                          ? inst.closes[inst.closes.length - 1].toFixed(2)
+                          : '—'}
+                      </span>
+                    </div>
+                    <div>
+                      Stop: <span className="text-red-300 ml-1">
+                        {inst.pullbackStop != null ? inst.pullbackStop.toFixed(2) : '—'}
+                      </span>
+                    </div>
+                    <div>
+                      Target: <span className="text-green-300 ml-1">
+                        {inst.pullbackTarget != null ? inst.pullbackTarget.toFixed(2) : '—'}
+                      </span>
+                    </div>
+                    <div>
+                      R/R: <span className="text-gray-200 ml-1">
+                        {inst.pullbackRR != null ? `1:${inst.pullbackRR.toFixed(1)}` : '—'}
+                      </span>
+                    </div>
+                    <div className="text-muted text-[10px] mt-1">
+                      Momentum Rank: #{inst.momentumRank ?? '—'}
+                      {' · '}RSI: {inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <div className="text-gray-400 font-semibold">Trade Setup</div>
-                  <div>
-                    Entry (current):
-                    <span className="text-gray-300 ml-1">
-                      {inst.closes && inst.closes.length > 0
-                        ? inst.closes[inst.closes.length - 1].toFixed(2)
-                        : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    Stop: <span className="text-red-400 ml-1">
-                      {inst.pullbackStop != null ? inst.pullbackStop.toFixed(2) : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    Target: <span className="text-green-400 ml-1">
-                      {inst.pullbackTarget != null ? inst.pullbackTarget.toFixed(2) : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    R/R: <span className="text-gray-300 ml-1">
-                      {inst.pullbackRR != null ? `1:${inst.pullbackRR.toFixed(1)}` : '—'}
-                    </span>
-                  </div>
-                  <div className="text-muted text-[10px] mt-1">
-                    Momentum Rank: #{inst.momentumRank ?? '—'}
-                    {' · '}RSI: {inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}
-                  </div>
-                </div>
-              </div>
-
-              {(() => {
-                const group = inst.xetraGroup ?? ''
-                const isDaxMdax = ['DAX', 'MDAX'].includes(group)
-                const isSdax = group === 'SDAX'
-                return (
-                  <div className={`text-[10px] border-t border-border/40 pt-1 mt-1 ${
-                    isDaxMdax ? 'text-muted' : 'text-orange-400/80'
-                  }`}>
-                    {isDaxMdax && (
-                      <>⚠ Not investment advice. Respect your stop-loss. Gettex execution preferred.</>
-                    )}
-                    {isSdax && (
-                      <>⚠ SDAX: spread can be 0.3–0.8% — use limit orders, avoid market orders, respect stop-loss.</>
-                    )}
-                    {!isDaxMdax && !isSdax && (
-                      <>⚠ International/smaller names: check spread before entry. Spread can exceed 0.5%. Use limit orders and respect stop-loss.</>
-                    )}
-                  </div>
-                )
-              })()}
+                {(() => {
+                  const group = inst.xetraGroup ?? ''
+                  const isDaxMdax = ['DAX', 'MDAX'].includes(group)
+                  const isSdax = group === 'SDAX'
+                  return (
+                    <div className={`text-[10px] border-t border-border/40 pt-1 mt-1 ${
+                      isDaxMdax ? 'text-muted' : 'text-orange-300'
+                    }`}>
+                      {isDaxMdax && (
+                        <>⚠ Not investment advice. Respect your stop-loss. Gettex execution preferred.</>
+                      )}
+                      {isSdax && (
+                        <>⚠ SDAX: spread can be 0.3–0.8% — use limit orders, avoid market orders, respect stop-loss.</>
+                      )}
+                      {!isDaxMdax && !isSdax && (
+                        <>⚠ International/smaller names: check spread before entry. Spread can exceed 0.5%. Use limit orders and respect stop-loss.</>
+                      )}
+                    </div>
+                  )
+                })()}
+              </ContextAccordionSection>
             </div>
           )}
         </td>
@@ -2051,13 +2072,6 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     <td className="px-2 py-1.5 text-right font-mono text-[12px] text-green-400">
                       {inst.pullbackTarget != null
                         ? inst.pullbackTarget.toFixed(2)
-                        : <span className="text-muted">—</span>}
-                    </td>
-                  )}
-                  {!hiddenKeys.has('pullbackRR') && (
-                    <td className="px-2 py-1.5 text-right font-mono text-[12px] text-gray-300">
-                      {inst.pullbackRR != null
-                        ? `1:${inst.pullbackRR.toFixed(1)}`
                         : <span className="text-muted">—</span>}
                     </td>
                   )}
