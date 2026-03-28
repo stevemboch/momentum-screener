@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { useInstrumentContext } from '../hooks/useInstrumentContext'
@@ -10,6 +10,42 @@ import {
 import { generateTfaSummary } from '../utils/tfaSummary'
 
 type Col = { key: string; label: string; title?: string; align?: 'right' | 'left' }
+type ViewPreset = 'scan' | 'detail' | 'risk'
+type StickyColumnKey = 'displayName' | 'combinedScore' | 'tfaPhase'
+
+const CORE_STICKY_COLUMNS: StickyColumnKey[] = ['displayName', 'combinedScore', 'tfaPhase']
+const STICKY_COLUMN_LEFT: Record<StickyColumnKey, number> = {
+  displayName: 0,
+  combinedScore: 320,
+  tfaPhase: 430,
+}
+const STICKY_COLUMN_WIDTH_CLASS: Record<StickyColumnKey, string> = {
+  displayName: 'min-w-[320px] max-w-[320px]',
+  combinedScore: 'min-w-[110px]',
+  tfaPhase: 'min-w-[140px]',
+}
+const ROW_CONTEXT_TTL = 6 * 60 * 60 * 1000
+
+const VIEW_PRESET_CONFIG: Record<ViewPreset, { label: string; sortColumn: SortColumn; sortDirection: 'asc' | 'desc'; hiddenGroups: ColumnGroup[] }> = {
+  scan: {
+    label: 'Scan',
+    sortColumn: 'combinedScore',
+    sortDirection: 'desc',
+    hiddenGroups: ['fundamentals', 'breakout', 'pullback', 'tfa'],
+  },
+  detail: {
+    label: 'Detail',
+    sortColumn: 'riskAdjustedScore',
+    sortDirection: 'desc',
+    hiddenGroups: [],
+  },
+  risk: {
+    label: 'Risk',
+    sortColumn: 'vola',
+    sortDirection: 'asc',
+    hiddenGroups: ['breakout', 'pullback'],
+  },
+}
 
 const COLUMNS: Col[] = [
   { key: 'displayName',   label: 'Name',     align: 'left' },
@@ -347,6 +383,70 @@ function pullbackScoreTone(score: number | null | undefined): BadgeTone {
   return 'muted'
 }
 
+function isStickyColumnKey(key: string): key is StickyColumnKey {
+  return CORE_STICKY_COLUMNS.includes(key as StickyColumnKey)
+}
+
+function stickyColumnStyle(key: string): React.CSSProperties | undefined {
+  if (!isStickyColumnKey(key)) return undefined
+  return { left: STICKY_COLUMN_LEFT[key] }
+}
+
+function stickyWidthClass(key: string): string {
+  if (!isStickyColumnKey(key)) return ''
+  return STICKY_COLUMN_WIDTH_CLASS[key]
+}
+
+type RowContextPreview = {
+  financialHealthStatus: 'healthy' | 'watch' | 'stressed' | null
+  bankruptcyRiskLevel: 'low' | 'medium' | 'high' | null
+  newsCount: number
+  asOf: string | null
+  fetchedAt: number | null
+}
+
+function parseDateSafe(value: string | null | undefined): number | null {
+  if (!value) return null
+  const ts = Date.parse(value)
+  return Number.isFinite(ts) ? ts : null
+}
+
+function asOfTone(asOf: string | null, fetchedAt: number | null): BadgeTone {
+  const ts = parseDateSafe(asOf) ?? fetchedAt
+  if (ts == null) return 'muted'
+  if (Date.now() - ts > ROW_CONTEXT_TTL) return 'warning'
+  return 'info'
+}
+
+function formatAsOfLabel(asOf: string | null, fetchedAt: number | null): string {
+  const ts = parseDateSafe(asOf) ?? fetchedAt
+  if (ts == null) return 'n/a'
+  return new Date(ts).toLocaleDateString('en-GB')
+}
+
+function readRowContextPreview(isin: string): RowContextPreview | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(`cache:context:${isin}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const healthRaw = parsed?.financialHealth?.status
+    const bankruptcyRaw = parsed?.bankruptcyRisk?.level
+    const asOfRaw = typeof parsed?.asOf === 'string' && parsed.asOf.trim().length > 0 ? parsed.asOf.trim() : null
+    const fetchedAtRaw = typeof parsed?.fetchedAt === 'number' && Number.isFinite(parsed.fetchedAt) ? parsed.fetchedAt : null
+    const newsCount = Array.isArray(parsed?.news) ? parsed.news.length : 0
+    return {
+      financialHealthStatus: healthRaw === 'healthy' || healthRaw === 'watch' || healthRaw === 'stressed' ? healthRaw : null,
+      bankruptcyRiskLevel: bankruptcyRaw === 'low' || bankruptcyRaw === 'medium' || bankruptcyRaw === 'high' ? bankruptcyRaw : null,
+      newsCount,
+      asOf: asOfRaw,
+      fetchedAt: fetchedAtRaw,
+    }
+  } catch {
+    return null
+  }
+}
+
 function evidenceConfidenceClass(confidence: 'high' | 'medium' | 'low' | undefined): string {
   if (confidence === 'high') return 'border-green-400/30 text-green-300 bg-green-400/5'
   if (confidence === 'medium') return 'border-amber-400/30 text-amber-300 bg-amber-400/5'
@@ -390,6 +490,25 @@ function ContextAccordionSection({
         </div>
       )}
     </section>
+  )
+}
+
+function RowSummaryChips({ preview }: { preview: RowContextPreview | null }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      <StatusBadge tone={financialHealthTone(preview?.financialHealthStatus)}>
+        FH: {financialHealthLabel(preview?.financialHealthStatus)}
+      </StatusBadge>
+      <StatusBadge tone={bankruptcyRiskTone(preview?.bankruptcyRiskLevel)}>
+        BK: {bankruptcyRiskLabel(preview?.bankruptcyRiskLevel)}
+      </StatusBadge>
+      <StatusBadge tone={(preview?.newsCount ?? 0) > 0 ? 'info' : 'muted'}>
+        News: {preview?.newsCount ?? 0}
+      </StatusBadge>
+      <StatusBadge tone={asOfTone(preview?.asOf ?? null, preview?.fetchedAt ?? null)}>
+        As-of: {formatAsOfLabel(preview?.asOf ?? null, preview?.fetchedAt ?? null)}
+      </StatusBadge>
+    </div>
   )
 }
 
@@ -537,7 +656,11 @@ function CandidateRow({
   return (
     <tr className="border-t border-border/20 bg-surface2/40 text-[11px] font-mono">
       {/* Name */}
-      <td className="px-2 py-1.5 text-left" colSpan={nameColSpan}>
+      <td
+        className={`px-2 py-1.5 text-left sticky z-[3] left-0 bg-surface2/40 border-r border-border/40 ${stickyWidthClass('displayName')}`}
+        style={stickyColumnStyle('displayName')}
+        colSpan={nameColSpan}
+      >
         <div className="truncate text-gray-400 max-w-[240px]" title={candidate.displayName}>
           {candidate.displayName}
         </div>
@@ -568,7 +691,10 @@ function CandidateRow({
         </td>
       )}
       {!hiddenKeys.has('combinedScore') && (
-        <td className="px-2 py-1.5 text-right">
+        <td
+          className={`px-2 py-1.5 text-right sticky z-[2] bg-surface2/40 border-r border-border/40 ${stickyWidthClass('combinedScore')}`}
+          style={stickyColumnStyle('combinedScore')}
+        >
           <ScoreCell score={candidate.combinedScore} rank={candidate.combinedRank} />
         </td>
       )}
@@ -675,7 +801,10 @@ function CandidateRow({
         </td>
       )}
       {!hiddenKeys.has('tfaPhase') && (
-        <td className="px-2 py-1.5 text-right">
+        <td
+          className={`px-2 py-1.5 text-right sticky z-[2] bg-surface2/40 border-r border-border/40 ${stickyWidthClass('tfaPhase')}`}
+          style={stickyColumnStyle('tfaPhase')}
+        >
           <TfaPhaseBadge
             phase={candidate.tfaPhase}
             reason={candidate.tfaRejectReason}
@@ -714,6 +843,8 @@ function ExpandedDetail({
   allInstruments,
   onLoadPrices,
   onLoadAnalyst,
+  viewPreset,
+  onContextUpdated,
   onTogglePortfolio,
   onRemove,
   colSpan,
@@ -724,6 +855,8 @@ function ExpandedDetail({
   allInstruments: any[]
   onLoadPrices: (isin: string) => void
   onLoadAnalyst: (isin: string) => void
+  viewPreset: ViewPreset
+  onContextUpdated: (isin: string) => void
   onTogglePortfolio: (isin: string) => void
   onRemove: (isin: string) => void
   colSpan: number
@@ -750,16 +883,23 @@ function ExpandedDetail({
   const hasContext = !!ctx && !ctx.error
   type ContextSection = 'analyst' | 'earnings' | 'news' | 'risk'
   type DetailSection = 'tfa' | 'pullback'
-  const [contextOpen, setContextOpen] = useState<Record<ContextSection, boolean>>(() => {
-    const openAll = typeof window !== 'undefined' && window.matchMedia('(min-width: 1536px)').matches
-    return openAll
-      ? { analyst: true, earnings: true, news: true, risk: true }
-      : { analyst: true, earnings: false, news: false, risk: true }
-  })
+
+  const contextOpenByPreset = (preset: ViewPreset): Record<ContextSection, boolean> => {
+    if (preset === 'detail') return { analyst: true, earnings: true, news: true, risk: true }
+    if (preset === 'risk') return { analyst: false, earnings: false, news: true, risk: true }
+    return { analyst: true, earnings: false, news: false, risk: true }
+  }
+
+  const [contextOpen, setContextOpen] = useState<Record<ContextSection, boolean>>(() => contextOpenByPreset(viewPreset))
   const [detailOpen, setDetailOpen] = useState<Record<DetailSection, boolean>>({
     tfa: false,
     pullback: false,
   })
+
+  useEffect(() => {
+    setContextOpen(contextOpenByPreset(viewPreset))
+    setDetailOpen({ tfa: false, pullback: false })
+  }, [viewPreset])
 
   const toggleContextSection = (section: ContextSection) => {
     setContextOpen((prev) => ({ ...prev, [section]: !prev[section] }))
@@ -911,6 +1051,7 @@ function ExpandedDetail({
                         ])
                       } finally {
                         setCombinedLoading(false)
+                        onContextUpdated(inst.isin)
                       }
                     }}
                     disabled={ctxLoading || combinedLoading}
@@ -1522,6 +1663,8 @@ function TableToolbar({
   sortColumn,
   sortDirection,
   isUpdating,
+  activePreset,
+  onPresetChange,
 }: {
   total: number
   shown: number
@@ -1529,17 +1672,37 @@ function TableToolbar({
   sortColumn: string
   sortDirection: 'asc' | 'desc'
   isUpdating: boolean
+  activePreset: ViewPreset
+  onPresetChange: (preset: ViewPreset) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-3 py-2">
-      <div className="text-ui-sm font-mono text-muted">
-        Showing {shown.toLocaleString()} / {total.toLocaleString()} instruments
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-3 py-2">
+      <div className="flex items-center gap-2 text-ui-sm font-mono text-muted">
+        <span>Showing {shown.toLocaleString()} / {total.toLocaleString()} instruments</span>
+        <span className="hidden xl:inline">|</span>
+        <span className="hidden xl:inline">Sort: {sortColumn} {sortDirection === 'desc' ? '↓' : '↑'}</span>
       </div>
-      <div className="flex items-center gap-2 text-ui-xs font-mono text-muted">
-        {isUpdating ? <span className="text-gray-400">Updating data...</span> : null}
-        <span>Sort: {sortColumn}</span>
-        <span>{sortDirection === 'desc' ? '↓' : '↑'}</span>
-        {hiddenGroupCount > 0 ? <span>{hiddenGroupCount} column groups hidden</span> : null}
+      <div className="flex flex-wrap items-center gap-1.5 text-ui-xs font-mono">
+        {(['scan', 'detail', 'risk'] as const).map((preset) => {
+          const active = activePreset === preset
+          return (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => onPresetChange(preset)}
+              className={`focus-ring rounded border px-2 py-1 transition-colors ${
+                active
+                  ? 'border-accent/40 bg-accent/15 text-accent'
+                  : 'border-border text-muted hover:text-gray-300'
+              }`}
+              aria-label={`Switch to ${VIEW_PRESET_CONFIG[preset].label} preset`}
+            >
+              {VIEW_PRESET_CONFIG[preset].label}
+            </button>
+          )
+        })}
+        {isUpdating ? <span className="text-gray-400 ml-1">Updating data...</span> : null}
+        {hiddenGroupCount > 0 ? <span className="text-muted ml-1">{hiddenGroupCount} groups hidden</span> : null}
       </div>
     </div>
   )
@@ -1646,8 +1809,10 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const allInstruments = state.instruments   // full list incl. non-winners
   const { sortColumn, sortDirection } = state.tableState
   const isMomentumMode = !state.tableState.tfaMode && !state.tableState.pullbackMode
+  const [viewPreset, setViewPreset] = useState<ViewPreset>('detail')
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
   const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
+  const [contextPreviewTick, setContextPreviewTick] = useState(0)
   const interactionKey = [
     sortColumn,
     sortDirection,
@@ -1674,10 +1839,42 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   const visibleInstruments = isPriceUpdating ? renderSnapshot : instruments
 
+  const refreshContextPreview = () => {
+    setContextPreviewTick((prev) => prev + 1)
+  }
+
+  const contextPreviewByIsin = useMemo(() => {
+    const map = new Map<string, RowContextPreview | null>()
+    visibleInstruments.forEach((inst) => {
+      map.set(inst.isin, readRowContextPreview(inst.isin))
+    })
+    return map
+  }, [visibleInstruments, contextPreviewTick])
+
+  const handlePresetChange = (preset: ViewPreset) => {
+    setViewPreset(preset)
+    const cfg = VIEW_PRESET_CONFIG[preset]
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: {
+        hiddenColumnGroups: cfg.hiddenGroups,
+        sortColumn: cfg.sortColumn,
+        sortDirection: cfg.sortDirection,
+      },
+    })
+  }
+
+  const forcedVisible = new Set<string>(CORE_STICKY_COLUMNS)
   const hiddenKeys = new Set(
     state.tableState.hiddenColumnGroups.flatMap((g) => COLUMN_GROUPS[g])
+      .filter((key) => !forcedVisible.has(key))
   )
   const visibleColumns = COLUMNS.filter((col) => !hiddenKeys.has(col.key))
+  const tableMinWidthClass = viewPreset === 'scan'
+    ? 'lg:min-w-[1280px] xl:min-w-[1440px] 2xl:min-w-[1720px]'
+    : viewPreset === 'risk'
+      ? 'lg:min-w-[1500px] xl:min-w-[1820px] 2xl:min-w-[2140px]'
+      : 'lg:min-w-[1760px] xl:min-w-[2100px] 2xl:min-w-[2420px]'
 
   const handleSort = (col: string) => {
     if (NON_SORTABLE.has(col)) return
@@ -1722,6 +1919,8 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         sortColumn={sortColumn}
         sortDirection={sortDirection}
         isUpdating={isPriceUpdating}
+        activePreset={viewPreset}
+        onPresetChange={handlePresetChange}
       />
 
       <div className="lg:hidden space-y-2 p-3">
@@ -1766,7 +1965,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
       </div>
 
       <div className="hidden lg:block">
-      <table className="w-full text-xs font-mono border-collapse lg:min-w-[1760px] xl:min-w-[2100px] 2xl:min-w-[2420px]">
+      <table className={`w-full text-xs font-mono border-collapse ${tableMinWidthClass}`}>
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {visibleColumns.map((col) => (
@@ -1775,7 +1974,9 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                 title={col.title}
                 className={`px-2 py-1.5 font-semibold text-muted whitespace-nowrap
                   ${col.align === 'left' ? 'text-left' : 'text-right'}
+                  ${isStickyColumnKey(col.key) ? `sticky z-20 bg-surface border-r border-border/50 ${stickyWidthClass(col.key)}` : ''}
                   select-none`}
+                style={stickyColumnStyle(col.key)}
               >
                 {NON_SORTABLE.has(col.key) ? (
                   col.label
@@ -1799,7 +2000,9 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             const isExpanded = expandedISIN === inst.isin
             const rowBg = idx % 2 === 0 ? 'bg-bg' : 'bg-surface'
             const portfolioClass = inst.inPortfolio ? 'bg-accent/5' : ''
+            const stickyBgClass = inst.inPortfolio ? 'bg-accent/5' : rowBg
             const hasGroup = inst.dedupCandidates && inst.dedupCandidates.length > 0
+            const contextPreview = contextPreviewByIsin.get(inst.isin) ?? null
 
             return (
               <React.Fragment key={inst.isin}>
@@ -1819,7 +2022,10 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   aria-expanded={isExpanded}
                 >
                   {/* Name */}
-                  <td className="px-2 py-1.5 text-left max-w-[280px]">
+                  <td
+                    className={`px-2 py-1.5 text-left sticky z-[5] left-0 border-r border-border/50 ${stickyBgClass} ${stickyWidthClass('displayName')}`}
+                    style={stickyColumnStyle('displayName')}
+                  >
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
@@ -1872,6 +2078,9 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                         )}
                       </div>
                     )}
+                    {(inst.type === 'Stock' || inst.type === 'Unknown') && (
+                      <RowSummaryChips preview={contextPreview} />
+                    )}
                   </td>
 
                   {!hiddenKeys.has('riskAdjustedScore') && (
@@ -1887,7 +2096,10 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   )}
 
                   {!hiddenKeys.has('combinedScore') && (
-                    <td className="px-2 py-1.5 text-right">
+                    <td
+                      className={`px-2 py-1.5 text-right sticky z-[4] border-r border-border/50 ${stickyBgClass} ${stickyWidthClass('combinedScore')}`}
+                      style={stickyColumnStyle('combinedScore')}
+                    >
                       <ScoreCell score={inst.combinedScore} rank={inst.combinedRank} colorFn={scoreColor} />
                     </td>
                   )}
@@ -2028,7 +2240,10 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   )}
 
                   {!hiddenKeys.has('tfaPhase') && (
-                    <td className="px-2 py-1.5 text-right">
+                    <td
+                      className={`px-2 py-1.5 text-right sticky z-[4] border-r border-border/50 ${stickyBgClass} ${stickyWidthClass('tfaPhase')}`}
+                      style={stickyColumnStyle('tfaPhase')}
+                    >
                       <TfaPhaseBadge
                         phase={inst.tfaPhase}
                         reason={inst.tfaRejectReason}
@@ -2084,6 +2299,8 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     allInstruments={allInstruments}
                     onLoadPrices={fetchSingleInstrumentPrices}
                     onLoadAnalyst={fetchSingleInstrumentAnalyst}
+                    viewPreset={viewPreset}
+                    onContextUpdated={refreshContextPreview}
                     onTogglePortfolio={(isin) => dispatch({ type: 'TOGGLE_PORTFOLIO', isin })}
                     onRemove={(isin) => dispatch({ type: 'REMOVE_INSTRUMENT', isin })}
                     colSpan={visibleColumns.length}
