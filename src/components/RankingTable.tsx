@@ -886,7 +886,7 @@ function ExpandedDetail({
 
   const contextOpenByPreset = (preset: ViewPreset): Record<ContextSection, boolean> => {
     if (preset === 'detail') return { analyst: true, earnings: true, news: true, risk: true }
-    if (preset === 'risk') return { analyst: false, earnings: false, news: true, risk: true }
+    if (preset === 'risk') return { analyst: true, earnings: false, news: true, risk: true }
     return { analyst: true, earnings: false, news: false, risk: true }
   }
 
@@ -1051,6 +1051,7 @@ function ExpandedDetail({
                         ])
                       } finally {
                         setCombinedLoading(false)
+                        setContextOpen((prev) => ({ ...prev, analyst: true }))
                         onContextUpdated(inst.isin)
                       }
                     }}
