@@ -126,6 +126,11 @@ export function PortfolioPanel() {
             icon="🌐"
             status={briefingStatus}
           />
+          {briefingStatus === 'loading' && (
+            <div className="text-ui-xs text-muted font-mono pl-6">
+              Searching... This may take up to 30 seconds.
+            </div>
+          )}
         </div>
       )}
 

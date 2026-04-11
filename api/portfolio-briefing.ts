@@ -168,6 +168,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!Array.isArray(instruments) || instruments.length === 0)
     return res.status(400).json({ error: 'instruments array required' })
 
+  const compactInstruments = instruments.slice(0, 40).map((inst: any) => ({
+    name: asString(inst?.name),
+    type: asString(inst?.type),
+    currency: asString(inst?.currency),
+    momentumRank: typeof inst?.momentumRank === 'number' ? inst.momentumRank : null,
+    r3m: typeof inst?.r3m === 'number' ? inst.r3m : null,
+    r6m: typeof inst?.r6m === 'number' ? inst.r6m : null,
+  }))
+  const instrumentsJson = JSON.stringify(compactInstruments)
+
   const nowIso = new Date().toISOString()
   const today = nowIso.split('T')[0]
   const from = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -189,7 +199,7 @@ Respond exclusively as valid JSON without Markdown backticks.`
 
   const userMessage =
 `Portfolio positions:
-${JSON.stringify(instruments, null, 2)}
+${instrumentsJson}
 
 Analysis date: ${today}
 Search window: ${from} to ${today}

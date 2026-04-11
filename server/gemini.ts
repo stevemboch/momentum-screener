@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import pRetry from 'p-retry'
 
 function getGeminiApiKey(): string {
   return process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || ''
@@ -26,6 +27,46 @@ export interface SearchChatResult {
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
   return String(err)
+}
+
+function extractStatusCode(err: unknown): number | null {
+  const candidate = err as any
+  const code = candidate?.status ?? candidate?.code ?? candidate?.statusCode ?? candidate?.response?.status
+  return typeof code === 'number' && Number.isFinite(code) ? code : null
+}
+
+function isRetryableSearchError(err: unknown): boolean {
+  const statusCode = extractStatusCode(err)
+  if (statusCode && [408, 429, 500, 502, 503, 504].includes(statusCode)) return true
+
+  const msg = toErrorMessage(err).toLowerCase()
+  return (
+    msg.includes('timeout')
+    || msg.includes('timed out')
+    || msg.includes('deadline exceeded')
+    || msg.includes('econnreset')
+    || msg.includes('etimedout')
+    || msg.includes('429')
+    || msg.includes('503')
+    || msg.includes('504')
+    || msg.includes('service unavailable')
+    || msg.includes('temporarily unavailable')
+  )
+}
+
+async function generateSearchContentWithTimeout(model: any, userMessage: string, timeoutMs = 45_000) {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    const result = await Promise.race([
+      model.generateContent(userMessage),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Gemini search timeout after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+    return result
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function shouldSwitchToGoogleSearch(message: string): boolean {
@@ -120,49 +161,29 @@ export async function geminiSearchChatWithMeta(
   systemPrompt: string,
   userMessage: string
 ): Promise<SearchChatResult> {
-  const modelFallbacks = [
-    'gemini-2.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-2.5-flash-lite',
-  ]
+  return pRetry(async () => {
+    const modelFallbacks = [
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-flash-lite',
+      'gemini-2.5-flash',
+    ]
 
-  let lastError: unknown = null
-  for (const modelId of modelFallbacks) {
-    const isGemma = modelId.startsWith('gemma')
-    if (isGemma) continue
+    let lastError: unknown = null
+    for (const modelId of modelFallbacks) {
+      const isGemma = modelId.startsWith('gemma')
+      if (isGemma) continue
 
-    let mode: SearchToolMode = 'googleSearch'
-    const attemptedModes = new Set<SearchToolMode>()
+      let mode: SearchToolMode = 'googleSearch'
+      const attemptedModes = new Set<SearchToolMode>()
 
-    while (!attemptedModes.has(mode)) {
-      attemptedModes.add(mode)
-      let jsonResponseMode = true
-      let attemptedWithoutJsonMode = false
-      try {
-        while (true) {
-          const model = createSearchModel(modelId, systemPrompt, mode, jsonResponseMode)
-          const result = await model.generateContent(userMessage)
-          const text = result.response.text()
-          if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
-          return {
-            text,
-            meta: {
-              modelId,
-              searchMode: mode,
-              jsonResponseMode,
-            },
-          }
-        }
-      } catch (err) {
-        lastError = err
-        const msg = toErrorMessage(err)
-
-        if (jsonResponseMode && !attemptedWithoutJsonMode && shouldDisableJsonResponseMode(msg)) {
-          attemptedWithoutJsonMode = true
-          jsonResponseMode = false
-          try {
+      while (!attemptedModes.has(mode)) {
+        attemptedModes.add(mode)
+        let jsonResponseMode = true
+        let attemptedWithoutJsonMode = false
+        try {
+          while (true) {
             const model = createSearchModel(modelId, systemPrompt, mode, jsonResponseMode)
-            const result = await model.generateContent(userMessage)
+            const result = await generateSearchContentWithTimeout(model, userMessage)
             const text = result.response.text()
             if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
             return {
@@ -173,28 +194,56 @@ export async function geminiSearchChatWithMeta(
                 jsonResponseMode,
               },
             }
-          } catch (retryErr) {
-            lastError = retryErr
           }
-        }
+        } catch (err) {
+          lastError = err
+          const msg = toErrorMessage(err)
 
-        if (mode === 'googleSearch' && shouldSwitchToGoogleSearchRetrieval(msg) && !attemptedModes.has('googleSearchRetrieval')) {
-          mode = 'googleSearchRetrieval'
-          continue
-        }
+          if (jsonResponseMode && !attemptedWithoutJsonMode && shouldDisableJsonResponseMode(msg)) {
+            attemptedWithoutJsonMode = true
+            jsonResponseMode = false
+            try {
+              const model = createSearchModel(modelId, systemPrompt, mode, jsonResponseMode)
+              const result = await generateSearchContentWithTimeout(model, userMessage)
+              const text = result.response.text()
+              if (!text) throw new Error(`Leere Antwort von Gemini (${modelId})`)
+              return {
+                text,
+                meta: {
+                  modelId,
+                  searchMode: mode,
+                  jsonResponseMode,
+                },
+              }
+            } catch (retryErr) {
+              lastError = retryErr
+            }
+          }
 
-        if (mode === 'googleSearchRetrieval' && shouldSwitchToGoogleSearch(msg) && !attemptedModes.has('googleSearch')) {
-          mode = 'googleSearch'
-          continue
-        }
+          if (mode === 'googleSearch' && shouldSwitchToGoogleSearchRetrieval(msg) && !attemptedModes.has('googleSearchRetrieval')) {
+            mode = 'googleSearchRetrieval'
+            continue
+          }
 
-        break
+          if (mode === 'googleSearchRetrieval' && shouldSwitchToGoogleSearch(msg) && !attemptedModes.has('googleSearch')) {
+            mode = 'googleSearch'
+            continue
+          }
+
+          break
+        }
       }
     }
-  }
 
-  if (lastError instanceof Error) throw lastError
-  throw new Error('Gemini failed: no models available')
+    if (lastError instanceof Error) throw lastError
+    throw new Error('Gemini failed: no models available')
+  }, {
+    retries: 3,
+    minTimeout: 1000,
+    factor: 2,
+    randomize: false,
+    shouldRetry: ({ error }) => isRetryableSearchError(error),
+  })
 }
 
 export async function parseJSONWithRepair<T>(

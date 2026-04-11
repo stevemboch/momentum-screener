@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react'
 import { useAppState } from '../store'
-import { apiFetchJson } from '../api/client'
+import { ApiError, apiFetchJson } from '../api/client'
 
 const BRIEFING_TTL = 2 * 60 * 60 * 1000  // 2h Cache
+const SEARCH_REQUEST_TIMEOUT_MS = 60_000
 
 // ── Typen ────────────────────────────────────────────────────
 
@@ -240,6 +241,7 @@ export function usePortfolioAnalysis() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instruments: payload }),
+        timeoutMs: SEARCH_REQUEST_TIMEOUT_MS,
       })
       if (data.error) throw new Error(data.error)
       const withTs = normalizeBriefing(data, Date.now())
@@ -249,7 +251,11 @@ export function usePortfolioAnalysis() {
         localStorage.setItem('cache:portfolio-briefing', JSON.stringify(withTs))
       } catch { /* quota */ }
     } catch (e: any) {
-      setBriefingError(e.message)
+      if (e instanceof ApiError && e.status === 408) {
+        setBriefingError('Search timeout after 60s. Please retry.')
+      } else {
+        setBriefingError(e.message)
+      }
       setBriefingStatus('error')
     }
   }, [])

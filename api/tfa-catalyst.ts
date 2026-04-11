@@ -22,12 +22,31 @@ interface EvidenceItem {
   confidenceReason: string | null
 }
 
-interface SignalValue {
-  value: number | boolean
+interface SignalBase {
   confidence: Confidence
   source: string | null
   confidenceReason: string | null
   evidence: EvidenceItem[]
+}
+
+interface NumericSignalValue extends SignalBase {
+  value: number
+}
+
+interface BooleanSignalValue extends SignalBase {
+  value: boolean
+}
+
+type SignalValue = NumericSignalValue | BooleanSignalValue
+
+interface CatalystSignals {
+  earnings_beat_recent: NumericSignalValue | null
+  earnings_beat_prior: NumericSignalValue | null
+  guidance_raised: NumericSignalValue | null
+  analyst_upgrade: NumericSignalValue | null
+  insider_buying: NumericSignalValue | null
+  restructuring: NumericSignalValue | null
+  ko_risk: BooleanSignalValue | null
 }
 
 const CATALYST_SCHEMA_HINT = `{
@@ -86,7 +105,7 @@ function normalizeEvidenceList(v: unknown, fallbackConfidence: Confidence): Evid
     .slice(0, 3) as EvidenceItem[]
 }
 
-function normalizeNumericSignal(v: unknown): SignalValue | null {
+function normalizeNumericSignal(v: unknown): NumericSignalValue | null {
   if (!v || typeof v !== 'object') return null
   const src = v as any
   const confidence = asConfidence(src.confidence)
@@ -103,7 +122,7 @@ function normalizeNumericSignal(v: unknown): SignalValue | null {
   }
 }
 
-function normalizeBooleanSignal(v: unknown): SignalValue | null {
+function normalizeBooleanSignal(v: unknown): BooleanSignalValue | null {
   if (!v || typeof v !== 'object') return null
   const src = v as any
   const confidence = asConfidence(src.confidence)
@@ -119,7 +138,7 @@ function normalizeBooleanSignal(v: unknown): SignalValue | null {
   }
 }
 
-function countEvidence(signals: Record<string, SignalValue | null>): number {
+function countEvidence(signals: CatalystSignals): number {
   return Object.values(signals).reduce((acc, s) => acc + (s?.evidence.length ?? 0), 0)
 }
 
@@ -232,7 +251,7 @@ Return ONLY this JSON:
     const parsed = await parseJSONWithRepair<any>(search.text, CATALYST_SCHEMA_HINT)
     const result = parsed.value && typeof parsed.value === 'object' ? parsed.value : {}
     const rawSignals = (result.signals && typeof result.signals === 'object') ? result.signals : {}
-    const s: Record<string, SignalValue | null> = {
+    const s: CatalystSignals = {
       earnings_beat_recent: normalizeNumericSignal(rawSignals.earnings_beat_recent),
       earnings_beat_prior: normalizeNumericSignal(rawSignals.earnings_beat_prior),
       guidance_raised: normalizeNumericSignal(rawSignals.guidance_raised),
