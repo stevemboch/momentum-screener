@@ -1,5 +1,4 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import pRetry from 'p-retry'
 import { openrouterChat, openrouterSearchChatWithMeta } from './openrouter'
 
 function getGeminiApiKey(): string {
@@ -61,6 +60,33 @@ function isRetryableSearchError(err: unknown): boolean {
     || msg.includes('service unavailable')
     || msg.includes('temporarily unavailable')
   )
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  options: {
+    retries: number
+    minTimeout: number
+    factor: number
+    shouldRetry: (error: unknown) => boolean
+  },
+): Promise<T> {
+  let attempt = 0
+  while (true) {
+    try {
+      return await fn()
+    } catch (error) {
+      const canRetry = attempt < options.retries && options.shouldRetry(error)
+      if (!canRetry) throw error
+      const waitMs = options.minTimeout * Math.pow(options.factor, attempt)
+      attempt += 1
+      await sleep(waitMs)
+    }
+  }
 }
 
 async function generateSearchContentWithTimeout(model: any, userMessage: string, timeoutMs = 45_000) {
@@ -212,7 +238,7 @@ export async function geminiSearchChatWithMeta(
   }
 
   try {
-    return await pRetry(async () => {
+    return await retryWithBackoff(async () => {
     const modelFallbacks = [
       'gemini-3.1-flash-lite',
       'gemini-2.5-flash-lite',
@@ -292,8 +318,7 @@ export async function geminiSearchChatWithMeta(
     retries: 3,
     minTimeout: 1000,
     factor: 2,
-    randomize: false,
-    shouldRetry: ({ error }) => isRetryableSearchError(error),
+    shouldRetry: isRetryableSearchError,
   })
   } catch (err: unknown) {
     if (!hasOpenRouterApiKey()) throw err
