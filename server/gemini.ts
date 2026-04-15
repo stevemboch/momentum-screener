@@ -1,8 +1,17 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import pRetry from 'p-retry'
+import { openrouterChat } from './openrouter'
 
 function getGeminiApiKey(): string {
   return process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || ''
+}
+
+function hasGeminiApiKey(): boolean {
+  return getGeminiApiKey().length > 0
+}
+
+function hasOpenRouterApiKey(): boolean {
+  return typeof process.env.OPENROUTER_API_KEY === 'string' && process.env.OPENROUTER_API_KEY.trim().length > 0
 }
 
 function getGenAI(): GoogleGenerativeAI {
@@ -11,7 +20,7 @@ function getGenAI(): GoogleGenerativeAI {
   return new GoogleGenerativeAI(apiKey)
 }
 
-type SearchToolMode = 'googleSearch' | 'googleSearchRetrieval'
+type SearchToolMode = 'googleSearch' | 'googleSearchRetrieval' | 'openrouterFallback'
 
 export interface SearchChatMeta {
   modelId: string
@@ -118,12 +127,29 @@ function createSearchModel(
   return getGenAI().getGenerativeModel(modelParams)
 }
 
+function ensureAnyAiProviderConfigured() {
+  if (hasGeminiApiKey() || hasOpenRouterApiKey()) return
+  throw new Error('No AI provider configured: set GOOGLE_AI_API_KEY (or GEMINI_API_KEY) or OPENROUTER_API_KEY')
+}
+
+async function openRouterFallbackChat(systemPrompt: string, userMessage: string): Promise<string> {
+  if (!hasOpenRouterApiKey()) {
+    throw new Error('OpenRouter fallback unavailable: missing OPENROUTER_API_KEY')
+  }
+  return openrouterChat(systemPrompt, userMessage)
+}
+
 export async function geminiChat(
   systemPrompt: string,
   userMessage: string
 ): Promise<string> {
+  ensureAnyAiProviderConfigured()
+
+  if (!hasGeminiApiKey()) {
+    return openRouterFallbackChat(systemPrompt, userMessage)
+  }
+
   const modelFallbacks = [
-    'gemini-3.1-flash-lite-preview',
     'gemini-2.5-flash',
     'gemini-3.1-flash-lite',
     'gemini-2.5-flash-lite',
@@ -145,6 +171,16 @@ export async function geminiChat(
     }
   }
 
+  if (hasOpenRouterApiKey()) {
+    try {
+      return await openRouterFallbackChat(systemPrompt, userMessage)
+    } catch (fallbackErr: unknown) {
+      const primaryMsg = toErrorMessage(lastError)
+      const fallbackMsg = toErrorMessage(fallbackErr)
+      throw new Error(`Gemini failed: ${primaryMsg}. OpenRouter fallback failed: ${fallbackMsg}`)
+    }
+  }
+
   if (lastError instanceof Error) throw lastError
   throw new Error('Gemini failed: no models available')
 }
@@ -161,7 +197,22 @@ export async function geminiSearchChatWithMeta(
   systemPrompt: string,
   userMessage: string
 ): Promise<SearchChatResult> {
-  return pRetry(async () => {
+  ensureAnyAiProviderConfigured()
+
+  if (!hasGeminiApiKey()) {
+    const text = await openRouterFallbackChat(systemPrompt, userMessage)
+    return {
+      text,
+      meta: {
+        modelId: 'openrouter-fallback',
+        searchMode: 'openrouterFallback',
+        jsonResponseMode: false,
+      },
+    }
+  }
+
+  try {
+    return await pRetry(async () => {
     const modelFallbacks = [
       'gemini-3.1-flash-lite',
       'gemini-2.5-flash-lite',
@@ -244,6 +295,18 @@ export async function geminiSearchChatWithMeta(
     randomize: false,
     shouldRetry: ({ error }) => isRetryableSearchError(error),
   })
+  } catch (err: unknown) {
+    if (!hasOpenRouterApiKey()) throw err
+    const text = await openRouterFallbackChat(systemPrompt, userMessage)
+    return {
+      text,
+      meta: {
+        modelId: 'openrouter-fallback',
+        searchMode: 'openrouterFallback',
+        jsonResponseMode: false,
+      },
+    }
+  }
 }
 
 export async function parseJSONWithRepair<T>(

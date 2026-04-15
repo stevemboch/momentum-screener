@@ -143,6 +143,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     return res.status(200).json({ plan, query: query.trim() })
   } catch (err: any) {
-    return res.status(500).json({ error: err.message })
+    const message = err?.message || 'AI request failed'
+    const isConfigError =
+      message.includes('No AI provider configured')
+      || message.includes('Missing GOOGLE_AI_API_KEY')
+      || message.includes('OpenRouter fallback unavailable')
+    return res.status(isConfigError ? 503 : 500).json({ error: message })
   }
 }
