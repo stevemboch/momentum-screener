@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import pRetry from 'p-retry'
-import { openrouterChat } from './openrouter'
+import { openrouterChat, openrouterSearchChatWithMeta } from './openrouter'
 
 function getGeminiApiKey(): string {
   return process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || ''
@@ -20,7 +20,7 @@ function getGenAI(): GoogleGenerativeAI {
   return new GoogleGenerativeAI(apiKey)
 }
 
-type SearchToolMode = 'googleSearch' | 'googleSearchRetrieval' | 'openrouterFallback'
+type SearchToolMode = 'googleSearch' | 'googleSearchRetrieval' | 'openrouterFallback' | 'openrouterSearch'
 
 export interface SearchChatMeta {
   modelId: string
@@ -200,12 +200,12 @@ export async function geminiSearchChatWithMeta(
   ensureAnyAiProviderConfigured()
 
   if (!hasGeminiApiKey()) {
-    const text = await openRouterFallbackChat(systemPrompt, userMessage)
+    const fallback = await openrouterSearchChatWithMeta(systemPrompt, userMessage)
     return {
-      text,
+      text: fallback.text,
       meta: {
-        modelId: 'openrouter-fallback',
-        searchMode: 'openrouterFallback',
+        modelId: fallback.modelId,
+        searchMode: 'openrouterSearch',
         jsonResponseMode: false,
       },
     }
@@ -297,12 +297,12 @@ export async function geminiSearchChatWithMeta(
   })
   } catch (err: unknown) {
     if (!hasOpenRouterApiKey()) throw err
-    const text = await openRouterFallbackChat(systemPrompt, userMessage)
+    const fallback = await openrouterSearchChatWithMeta(systemPrompt, userMessage)
     return {
-      text,
+      text: fallback.text,
       meta: {
-        modelId: 'openrouter-fallback',
-        searchMode: 'openrouterFallback',
+        modelId: fallback.modelId,
+        searchMode: 'openrouterSearch',
         jsonResponseMode: false,
       },
     }

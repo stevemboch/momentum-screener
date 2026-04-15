@@ -27,6 +27,45 @@ export async function openrouterChat(
   return text
 }
 
+export interface OpenRouterSearchResult {
+  text: string
+  modelId: string
+}
+
+export async function openrouterSearchChatWithMeta(
+  systemPrompt: string,
+  userMessage: string
+): Promise<OpenRouterSearchResult> {
+  const configured = process.env.OPENROUTER_SEARCH_MODEL?.trim()
+  const modelFallbacks = configured
+    ? [configured]
+    : [
+        'perplexity/sonar',
+        'perplexity/sonar-pro',
+      ]
+
+  const groundedSystemPrompt = `${systemPrompt}
+
+STRICT SEARCH GROUNDING:
+- Use live web search-capable behavior of the model.
+- Base factual claims on current web sources.
+- Prefer trustworthy primary/regulatory/major media sources.
+- Use absolute dates and avoid unstated assumptions.`
+
+  let lastError: unknown = null
+  for (const model of modelFallbacks) {
+    try {
+      const text = await openrouterChat(groundedSystemPrompt, userMessage, model)
+      return { text, modelId: model }
+    } catch (err) {
+      lastError = err
+    }
+  }
+
+  if (lastError instanceof Error) throw lastError
+  throw new Error('OpenRouter search fallback failed')
+}
+
 // JSON sicher parsen — entfernt Markdown-Backticks falls vorhanden
 export function parseJSON<T>(raw: string): T {
   const cleaned = raw
