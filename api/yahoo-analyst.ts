@@ -245,11 +245,13 @@ type NormalizedCurrencyUnit = {
 
 function normalizeCurrencyUnit(raw: string | null | undefined): NormalizedCurrencyUnit | null {
   if (!raw) return null
-  const code = raw.trim().toUpperCase()
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  // Keep common subunit notations case-sensitive before upper-casing.
+  if (trimmed === 'GBp' || trimmed.toUpperCase() === 'GBX') return { code: 'GBP', unitFactorToMajor: 0.01 }
+  if (trimmed === 'ZAc' || trimmed.toUpperCase() === 'ZAC') return { code: 'ZAR', unitFactorToMajor: 0.01 }
+  const code = trimmed.toUpperCase()
   if (!code) return null
-  // Subunit handling (e.g. London quotes in pence)
-  if (code === 'GBX') return { code: 'GBP', unitFactorToMajor: 0.01 }
-  if (code === 'ZAC') return { code: 'ZAR', unitFactorToMajor: 0.01 }
   return { code, unitFactorToMajor: 1 }
 }
 
@@ -348,6 +350,15 @@ function hasAnalystSignal(result: Partial<AnalystResult> | null | undefined): bo
     result.numberOfAnalystOpinions != null ||
     result.recommendationMean != null ||
     result.recommendationKey != null
+  )
+}
+
+function hasTargetSignal(result: Partial<AnalystResult> | null | undefined): boolean {
+  if (!result) return false
+  return (
+    result.targetMeanPrice != null ||
+    result.targetLowPrice != null ||
+    result.targetHighPrice != null
   )
 }
 
@@ -809,11 +820,10 @@ async function fetchAnalyst(
       }
     }
 
-    // Wichtiger Availability-Fix:
-    // Yahoo liefert oft "ok", aber financialData ohne Analyst-Target.
-    // In diesem Fall trotzdem auf HTML-Fallbacks wechseln statt still bei null zu bleiben.
-    if (!hasAnalystSignal(base)) {
-      throw new Error('Yahoo analyst payload empty')
+    // Yahoo liefert oft Rating/Opinions, aber kein Target.
+    // Für die Target-Ermittlung explizit auf Fallbacks wechseln, wenn kein Zielkurs vorhanden ist.
+    if (!hasTargetSignal(base)) {
+      throw new Error('Yahoo analyst target empty')
     }
   } catch (err: any) {
     // Fallback 1: MarketScreener (search by ticker)
@@ -879,7 +889,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!ticker) return res.status(400).json({ error: 'ticker required' })
   const cacheKey = buildAnalystCacheKey(ticker, mnemonic)
   const cached = analystCache.get(cacheKey)
-  const cachedTtl = hasAnalystSignal(cached?.data) ? CACHE_TTL_MS : EMPTY_RESULT_CACHE_TTL_MS
+  // Long TTL only when we actually have a target signal.
+  // Rating-only payloads should refresh sooner so fallbacks can enrich targets.
+  const cachedTtl = hasTargetSignal(cached?.data) ? CACHE_TTL_MS : EMPTY_RESULT_CACHE_TTL_MS
   if (cached && Date.now() - cached.ts < cachedTtl) {
     return res.status(200).json(cached.data)
   }

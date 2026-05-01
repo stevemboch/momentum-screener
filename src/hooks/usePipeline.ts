@@ -1246,10 +1246,17 @@ export function usePipeline() {
         }
         : null
 
+      const hasPreloadedYahooTarget =
+        preloadedYahooPayload != null && (
+          preloadedYahooPayload.targetMeanPrice != null ||
+          preloadedYahooPayload.targetLowPrice != null ||
+          preloadedYahooPayload.targetHighPrice != null
+        )
+
       // Short-circuit for auto top-N background runs:
       // if Yahoo analyst fields are already present from the price fetch,
       // mark as fetched and skip the heavier analyst pipeline.
-      if (options?.suppressGemini && preloadedYahooPayload) {
+      if (options?.suppressGemini && preloadedYahooPayload && hasPreloadedYahooTarget) {
         cacheSet(cacheKey, preloadedYahooPayload, analystTtlMs)
         dispatch({
           type: 'UPDATE_INSTRUMENT',
@@ -1258,12 +1265,19 @@ export function usePipeline() {
             analystFetched: true,
             analystError: undefined,
             analystSource: 'yahoo',
+            // Reset stale FX/visibility flags when we short-circuit with preloaded Yahoo data.
+            targetFxRate: null,
+            targetFxApplied: false,
+            targetPriceAdj: null,
+            targetLowAdj: null,
+            targetHighAdj: null,
+            targetCurrencyUnknown: false,
           },
         })
         return
       }
 
-      if (!r && preloadedYahooPayload) {
+      if (!r && preloadedYahooPayload && hasPreloadedYahooTarget) {
         r = preloadedYahooPayload
         cacheSet(cacheKey, r, analystTtlMs)
       }
