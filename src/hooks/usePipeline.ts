@@ -127,10 +127,11 @@ function buildLegacyYahooCacheKey(ticker: string): string {
   return `cache:yahoo:${ticker}`
 }
 
-function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string): string {
+function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string, targetCurrency?: string | null): string {
   const m = normalizeMnemonicForCache(mnemonic) ?? '__NO_MNEMONIC__'
   const i = (isin ?? '').trim().toUpperCase() || '__NO_ISIN__'
-  return `cache:analyst:v5:${normalizeTickerForCache(ticker)}:${m}:${i}`
+  const c = (targetCurrency ?? '').trim().toUpperCase() || '__NO_TARGET_CCY__'
+  return `cache:analyst:v6:${normalizeTickerForCache(ticker)}:${m}:${i}:${c}`
 }
 
 function buildLegacyAnalystCacheKey(ticker: string): string {
@@ -1205,7 +1206,8 @@ export function usePipeline() {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
     }
     try {
-      const cacheKey = buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic, inst.isin)
+      const targetCurrency = inst.priceCurrency ?? inst.currency ?? null
+      const cacheKey = buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic, inst.isin, targetCurrency)
       const analystTtlMs = inst.mnemonic ? LEEWAY_TTL_MS : ANALYST_TTL_MS
       let r = cacheGet<any>(cacheKey, analystTtlMs)
       if (!r) {
@@ -1291,6 +1293,7 @@ export function usePipeline() {
             isin: inst.isin,
             mnemonic: inst.mnemonic ?? undefined,
             expectedName: inst.xetraName ?? inst.displayName ?? inst.longName ?? undefined,
+            targetCurrency: inst.priceCurrency ?? inst.currency ?? undefined,
           }),
         })
         if (r) cacheSet(cacheKey, r, analystTtlMs)
@@ -1333,8 +1336,14 @@ export function usePipeline() {
       // FX-Rate-Bestimmung (nur belastbare Quellen, kein Preisverhältnis-Proxy):
       let fxRate: number | null = null
       if (priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency) {
-        // Yahoo hat die Rate bereits geliefert (wenn financialCurrency ≠ currency erkannt)
-        if (r.fxRate != null) {
+        // Reuse only when rate is aligned to analystCurrency -> priceCurrency.
+        const fxAligned =
+          r.fxRate != null &&
+          r.financialCurrency != null &&
+          r.currency != null &&
+          r.financialCurrency === analystCurrency &&
+          r.currency === priceCurrency
+        if (fxAligned) {
           fxRate = r.fxRate
         }
         // Letzter Fallback: falls kein Rate verfügbar, Target nicht anzeigen
@@ -1533,7 +1542,12 @@ export function usePipeline() {
       let oldest = Date.now()
       for (const inst of topNFetched) {
         try {
-          const raw = JSON.parse(localStorage.getItem(buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic, inst.isin)) ?? 'null')
+          const raw = JSON.parse(localStorage.getItem(buildAnalystCacheKey(
+            inst.yahooTicker,
+            inst.mnemonic,
+            inst.isin,
+            inst.priceCurrency ?? inst.currency ?? null,
+          )) ?? 'null')
             ?? JSON.parse(localStorage.getItem(buildLegacyAnalystCacheKey(inst.yahooTicker)) ?? 'null')
           if (!raw?.ts) return null
           if (raw.ts < oldest) oldest = raw.ts

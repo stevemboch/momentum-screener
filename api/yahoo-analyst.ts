@@ -195,12 +195,13 @@ function normalizeMnemonic(raw?: string): string | null {
   return normalized.length > 0 ? normalized : null
 }
 
-function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string): string {
+function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string, targetCurrency?: string): string {
   const normalizedTicker = ticker.trim().toUpperCase()
   const normalizedMnemonic = normalizeMnemonic(mnemonic)
   const mnemonicPart = normalizedMnemonic ?? '__NO_MNEMONIC__'
   const isinPart = (isin ?? '').trim().toUpperCase() || '__NO_ISIN__'
-  return `${normalizedTicker}::${mnemonicPart}::${isinPart}`
+  const targetCurrencyPart = (targetCurrency ?? '').trim().toUpperCase() || '__NO_TARGET_CCY__'
+  return `${normalizedTicker}::${mnemonicPart}::${isinPart}::${targetCurrencyPart}`
 }
 
 function normalizeNameForMatch(raw: string | null | undefined): string {
@@ -283,7 +284,51 @@ async function buildTickerCandidates(ticker: string, isin?: string, mnemonic?: s
 
 function parseMoney(text: string | null): number | null {
   if (!text) return null
-  const cleaned = text.replace(/[,$]/g, '').replace(/[A-Za-z]+/g, '').trim()
+  const raw = text.trim()
+  if (!raw) return null
+
+  // Keep digits + separators only (drop currency words/symbols around the value).
+  let cleaned = raw.replace(/[^0-9.,+\-]/g, '')
+  if (!cleaned) return null
+
+  const hasDot = cleaned.includes('.')
+  const hasComma = cleaned.includes(',')
+
+  if (hasDot && hasComma) {
+    // Mixed separators: last separator is assumed decimal mark.
+    const lastDot = cleaned.lastIndexOf('.')
+    const lastComma = cleaned.lastIndexOf(',')
+    if (lastComma > lastDot) {
+      // EU style: 1.234,56 -> 1234.56
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.')
+    } else {
+      // US style: 1,234.56 -> 1234.56
+      cleaned = cleaned.replace(/,/g, '')
+    }
+  } else if (hasComma && !hasDot) {
+    const parts = cleaned.split(',')
+    const trailing = parts[parts.length - 1] ?? ''
+    const integerPart = parts[0]?.replace(/[+\-]/g, '') ?? ''
+
+    if (parts.length > 2) {
+      // Repeated commas are most likely thousands grouping.
+      cleaned = cleaned.replace(/,/g, '')
+    } else if (trailing.length === 0) {
+      cleaned = cleaned.replace(/,/g, '')
+    } else if (trailing.length <= 2) {
+      // Decimal comma (e.g. 111,00)
+      cleaned = cleaned.replace(',', '.')
+    } else if (trailing.length === 3 && integerPart.length <= 2) {
+      // Common analyst quote style for sub-unit stocks (e.g. 1,110)
+      cleaned = cleaned.replace(',', '.')
+    } else {
+      // Fallback: treat as thousands separator.
+      cleaned = cleaned.replace(/,/g, '')
+    }
+  } else if (hasDot && !hasComma) {
+    // Dot-only values are kept as-is (decimal or plain integer).
+  }
+
   const val = Number(cleaned)
   return Number.isFinite(val) ? val : null
 }
@@ -836,11 +881,29 @@ async function fetchFromLeeway(mnemonic: string): Promise<Partial<AnalystResult>
   return result
 }
 
+async function applyFxRateForTarget(
+  result: AnalystResult,
+  targetCurrency: string | undefined,
+): Promise<AnalystResult> {
+  const normalizedTarget = typeof targetCurrency === 'string' ? targetCurrency.trim().toUpperCase() : ''
+  if (!normalizedTarget || !result.financialCurrency) return result
+  try {
+    const fxRate = await deriveFxRate(result.financialCurrency, normalizedTarget)
+    if (fxRate != null && Number.isFinite(fxRate) && fxRate > 0) {
+      return { ...result, fxRate }
+    }
+  } catch {
+    // ignore FX fetch errors
+  }
+  return result
+}
+
 async function fetchAnalyst(
   ticker: string,
   isin?: string,
   mnemonic?: string,
   expectedName?: string,
+  targetCurrency?: string,
 ): Promise<AnalystResult> {
   const base: AnalystResult = {
     ticker,
@@ -936,7 +999,7 @@ async function fetchAnalyst(
         ms.enterpriseValue != null ||
         ms.returnOnAssets != null
       if (!hasData) throw new Error('MarketScreener: empty data')
-      return {
+      const result: AnalystResult = {
         ...base,
         recommendationKey: base.recommendationKey ?? ms.recommendationKey ?? null,
         numberOfAnalystOpinions: base.numberOfAnalystOpinions ?? ms.numberOfAnalystOpinions ?? null,
@@ -952,12 +1015,13 @@ async function fetchAnalyst(
         returnOnAssets: base.returnOnAssets ?? ms.returnOnAssets ?? null,
         source: base.leewayUsed ? 'leeway' : 'marketscreener',
       }
+      return await applyFxRateForTarget(result, targetCurrency)
     } catch (msErr: any) {
       // Fallback 2: OptionsAnalysisSuite (public HTML)
       try {
         const fallbackTicker = base.resolvedTicker ?? ticker
         const fallback = await fetchFromOptionAnalysisSuiteWithRetry(fallbackTicker)
-        return {
+        const result: AnalystResult = {
           ...base,
           recommendationKey: base.recommendationKey ?? fallback.recommendationKey ?? null,
           targetMeanPrice: base.targetMeanPrice ?? fallback.targetMeanPrice ?? null,
@@ -966,13 +1030,14 @@ async function fetchAnalyst(
           financialCurrency: base.financialCurrency ?? fallback.financialCurrency ?? fallback.currency ?? null,
           source: base.leewayUsed ? 'leeway' : 'optionsanalysissuite',
         }
+        return await applyFxRateForTarget(result, targetCurrency)
       } catch (fallbackErr: any) {
         base.error = [err?.message, msErr?.message, fallbackErr?.message].filter(Boolean).join(' | ')
       }
     }
   }
 
-  return base
+  return await applyFxRateForTarget(base, targetCurrency)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -984,8 +1049,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const expectedName: string | undefined = typeof req.body?.expectedName === 'string'
     ? req.body.expectedName.trim()
     : undefined
+  const targetCurrency: string | undefined = typeof req.body?.targetCurrency === 'string'
+    ? req.body.targetCurrency.trim()
+    : undefined
   if (!ticker) return res.status(400).json({ error: 'ticker required' })
-  const cacheKey = buildAnalystCacheKey(ticker, mnemonic, isin)
+  const cacheKey = buildAnalystCacheKey(ticker, mnemonic, isin, targetCurrency)
   const cached = analystCache.get(cacheKey)
   // Long TTL only when we actually have a target signal.
   // Rating-only payloads should refresh sooner so fallbacks can enrich targets.
@@ -993,7 +1061,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cached && Date.now() - cached.ts < cachedTtl) {
     return res.status(200).json(cached.data)
   }
-  const result = await fetchAnalyst(ticker, isin, mnemonic, expectedName)
+  const result = await fetchAnalyst(ticker, isin, mnemonic, expectedName, targetCurrency)
   analystCache.set(cacheKey, { ts: Date.now(), data: result })
   return res.status(200).json(result)
 }
