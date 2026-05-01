@@ -81,6 +81,8 @@ const YAHOO_GOOD_ERROR_RATE = 0.03
 const YAHOO_BAD_STREAK_REQUIRED = 2
 const YAHOO_GOOD_STREAK_REQUIRED = 3
 const YAHOO_ADAPTIVE_WARMUP_RUNS = 3
+const UPSIDE_PLAUSIBLE_MIN = -0.95
+const UPSIDE_PLAUSIBLE_MAX = 3.0
 
 function isBlockingLeewayPhase(phase: string): boolean {
   return phase === 'prices' || phase === 'openfigi' || phase === 'justetf' || phase === 'dedup'
@@ -107,6 +109,15 @@ function percentile(values: number[], p: number): number {
   const sorted = [...values].sort((a, b) => a - b)
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))
   return sorted[idx]
+}
+
+function isPlausibleUpsideRatio(value: number | null | undefined): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= UPSIDE_PLAUSIBLE_MIN &&
+    value <= UPSIDE_PLAUSIBLE_MAX
+  )
 }
 
 function normalizeTickerForCache(ticker: string): string {
@@ -1276,6 +1287,8 @@ export function usePipeline() {
             targetHighAdj: null,
             targetCurrencyUnknown: false,
             targetCurrencyConfidence: null,
+            analystUpside: null,
+            analystUpsideMode: null,
           },
         })
         return
@@ -1309,6 +1322,8 @@ export function usePipeline() {
         targetHigh: r.targetHighPrice ?? null,
         analystCurrency: r.currency ?? null,
         analystCurrentPrice: r.currentPrice ?? null,
+        analystUpside: null,
+        analystUpsideMode: null,
         analystSource: r.source ?? null,
         analystFetched: true,
         analystError: r.error ?? null,
@@ -1386,6 +1401,15 @@ export function usePipeline() {
         updates.targetCurrencyConfidence = currencyConfidence
       }
 
+      const providerUpside =
+        r.targetMeanPrice != null &&
+        r.currentPrice != null &&
+        Number.isFinite(r.targetMeanPrice) &&
+        Number.isFinite(r.currentPrice) &&
+        r.currentPrice > 0
+          ? (r.targetMeanPrice / r.currentPrice - 1)
+          : null
+
       // analystCurrency für Anzeige: gibt die ZIEL-Währung des Kursziels an
       // (nicht die Handelswährung des Instruments)
       updates.analystCurrency = analystCurrency
@@ -1418,12 +1442,45 @@ export function usePipeline() {
           )
             ? (updates.targetPrice ?? inst.targetPrice ?? null)
             : null
+      const priceComparableUpside =
+        targetComparableInPriceCurrency != null &&
+        currentPrice != null &&
+        Number.isFinite(targetComparableInPriceCurrency) &&
+        Number.isFinite(currentPrice) &&
+        currentPrice > 0
+          ? (targetComparableInPriceCurrency / currentPrice - 1)
+          : null
+
+      if (isPlausibleUpsideRatio(providerUpside)) {
+        updates.analystUpside = providerUpside
+        updates.analystUpsideMode = targetComparableInPriceCurrency == null ? 'mixed_plausibilized' : 'provider'
+      } else if (isPlausibleUpsideRatio(priceComparableUpside)) {
+        updates.analystUpside = priceComparableUpside
+        updates.analystUpsideMode = 'price_comparable'
+      } else {
+        updates.analystUpside = null
+        updates.analystUpsideMode = null
+      }
+
+      const tfaTargetComparable =
+        targetComparableInPriceCurrency != null &&
+        currentPrice != null &&
+        currentPrice > 0 &&
+        isPlausibleUpsideRatio(targetComparableInPriceCurrency / currentPrice - 1)
+          ? targetComparableInPriceCurrency
+          : (
+            updates.analystUpside != null &&
+            currentPrice != null &&
+            currentPrice > 0
+          )
+            ? (currentPrice * (1 + updates.analystUpside))
+            : null
 
       const fDetails = calculateTfaFDetails(
         effectivePb,
         effectiveEbitda,
         effectiveEV,
-        targetComparableInPriceCurrency,
+        tfaTargetComparable,
         currentPrice,
       )
 
@@ -1436,7 +1493,7 @@ export function usePipeline() {
         effectiveEV,
         effectiveRoA,
         updates.analystRating ?? null,
-        targetComparableInPriceCurrency,
+        tfaTargetComparable,
         currentPrice,
       )
       updates.tfaFScore5Y = f5yDetails.score ?? null

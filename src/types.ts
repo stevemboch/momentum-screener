@@ -82,6 +82,8 @@ export interface Instrument {
   targetFxApplied?: boolean
   targetCurrencyUnknown?: boolean
   targetCurrencyConfidence?: 'high' | 'medium' | 'low' | null
+  analystUpside?: number | null
+  analystUpsideMode?: 'provider' | 'price_comparable' | 'mixed_plausibilized' | null
   marketCap?: number | null
   analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite' | 'leeway'
   analystFetched?: boolean

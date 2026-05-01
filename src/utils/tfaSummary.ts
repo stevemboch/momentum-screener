@@ -45,6 +45,11 @@ export function generateTfaSummary(inst: Instrument): string {
   // Fundamentals kurz
   const pb = inst.pb != null ? `KBV ${inst.pb.toFixed(1)}` : null
   const upside = (() => {
+    if (inst.analystUpside != null && Number.isFinite(inst.analystUpside)) {
+      const u = (inst.analystUpside * 100).toFixed(0)
+      if (u === '0') return 'Kursziel 0%'
+      return u.startsWith('-') ? `Kursziel ${u}%` : `Kursziel +${u}%`
+    }
     const tp = inst.targetPriceAdj ?? inst.targetPrice
     if (tp != null && lastClose != null && lastClose > 0) {
       const u = ((tp - lastClose) / lastClose * 100).toFixed(0)

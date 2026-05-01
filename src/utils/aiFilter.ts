@@ -67,6 +67,9 @@ function toNumberOrNull(value: unknown): number | null {
 }
 
 function getUpsideRatio(inst: Instrument): number | null {
+  if (inst.analystUpside != null && Number.isFinite(inst.analystUpside)) {
+    return inst.analystUpside
+  }
   const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
   const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
   const analystCurrency = inst.analystCurrency ?? null

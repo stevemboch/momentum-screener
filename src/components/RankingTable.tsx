@@ -885,8 +885,12 @@ function ExpandedDetail({
     Number.isFinite(inst.analystCurrentPrice) &&
     inst.analystCurrentPrice > 0
   ) ? (inst.targetPrice / inst.analystCurrentPrice - 1) : null
-  const upside = upsidePriceComparable ?? upsideNative
-  const upsideIsNativeOnly = upsidePriceComparable == null && upsideNative != null
+  const upsideFromPipeline = (
+    inst.analystUpside != null &&
+    Number.isFinite(inst.analystUpside)
+  ) ? inst.analystUpside : null
+  const upside = upsideFromPipeline ?? upsidePriceComparable ?? upsideNative
+  const upsideIsNativeOnly = (upsidePriceComparable == null && upsideNative != null) || inst.analystUpsideMode === 'mixed_plausibilized'
   const targetForContext = targetForPriceUpside ?? inst.targetPrice ?? null
   const { result: ctx, loading: ctxLoading, load: loadCtx, invalidate } =
     useInstrumentContext(inst.isin)
@@ -1191,6 +1195,15 @@ function ExpandedDetail({
                           {upsideIsNativeOnly && analystCurrency && (
                             <div className="text-amber-300 text-[10px] break-words">
                               Upside based on analyst-native pair ({analystCurrency} target vs {analystCurrency} current).
+                            </div>
+                          )}
+                          {inst.analystUpsideMode && (
+                            <div className="text-muted text-[10px] break-words">
+                              Upside source: {inst.analystUpsideMode === 'provider'
+                                ? 'provider (target/current same source)'
+                                : inst.analystUpsideMode === 'price_comparable'
+                                  ? 'price comparable'
+                                  : 'mixed (plausibilized)'}
                             </div>
                           )}
                           {currencyMismatch && !inst.targetFxApplied && (
