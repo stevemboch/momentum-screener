@@ -25,6 +25,7 @@ interface AnalystResult {
 }
 
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const EMPTY_RESULT_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 const analystCache = new Map<string, { ts: number; data: AnalystResult }>()
 const oasCooldownUntil = new Map<string, number>()
 const YAHOO_SESSION_TTL_MS = 15 * 60 * 1000
@@ -302,6 +303,26 @@ async function fetchYahooFxRateDirect(fromCode: string, toCode: string): Promise
   return null
 }
 
+async function fetchFrankfurterFxRate(fromCode: string, toCode: string): Promise<number | null> {
+  const urls = [
+    `https://api.frankfurter.app/latest?from=${encodeURIComponent(fromCode)}&to=${encodeURIComponent(toCode)}`,
+    `https://api.frankfurter.app/latest?from=${encodeURIComponent(toCode)}&to=${encodeURIComponent(fromCode)}`,
+  ]
+  for (let i = 0; i < urls.length; i++) {
+    const invert = i === 1
+    try {
+      const res = await fetchWithTimeout(urls[i], { headers: { Accept: 'application/json' } }, 5000)
+      if (!res.ok) continue
+      const data = await res.json()
+      const rate = data?.rates?.[invert ? fromCode : toCode]
+      if (typeof rate === 'number' && Number.isFinite(rate) && rate > 0) {
+        return invert ? 1 / rate : rate
+      }
+    } catch {}
+  }
+  return null
+}
+
 async function deriveFxRate(fromCurrency: string | null | undefined, toCurrency: string | null | undefined): Promise<number | null> {
   const from = normalizeCurrencyUnit(fromCurrency)
   const to = normalizeCurrencyUnit(toCurrency)
@@ -309,10 +330,25 @@ async function deriveFxRate(fromCurrency: string | null | undefined, toCurrency:
   if (from.code === to.code) {
     return from.unitFactorToMajor / to.unitFactorToMajor
   }
-  const marketRate = await fetchYahooFxRateDirect(from.code, to.code)
+  let marketRate = await fetchYahooFxRateDirect(from.code, to.code)
+  if (marketRate == null) {
+    marketRate = await fetchFrankfurterFxRate(from.code, to.code)
+  }
   if (marketRate == null || !Number.isFinite(marketRate) || marketRate <= 0) return null
   // Convert from source quote unit into target quote unit.
   return marketRate * (from.unitFactorToMajor / to.unitFactorToMajor)
+}
+
+function hasAnalystSignal(result: Partial<AnalystResult> | null | undefined): boolean {
+  if (!result) return false
+  return (
+    result.targetMeanPrice != null ||
+    result.targetLowPrice != null ||
+    result.targetHighPrice != null ||
+    result.numberOfAnalystOpinions != null ||
+    result.recommendationMean != null ||
+    result.recommendationKey != null
+  )
 }
 
 function getFromPairs(map: Map<string, string>, ...labels: string[]) {
@@ -743,7 +779,7 @@ async function fetchAnalyst(
     if (!res) throw new Error('Yahoo API unavailable')
     const data = await res.json()
     const summary = data?.quoteSummary?.result?.[0]
-    if (!summary) return base
+    if (!summary) throw new Error('Yahoo summary empty')
 
     const fd = summary.financialData || {}
     const price = summary.price || {}
@@ -771,6 +807,13 @@ async function fetchAnalyst(
       } catch {
         // ignore FX fetch errors
       }
+    }
+
+    // Wichtiger Availability-Fix:
+    // Yahoo liefert oft "ok", aber financialData ohne Analyst-Target.
+    // In diesem Fall trotzdem auf HTML-Fallbacks wechseln statt still bei null zu bleiben.
+    if (!hasAnalystSignal(base)) {
+      throw new Error('Yahoo analyst payload empty')
     }
   } catch (err: any) {
     // Fallback 1: MarketScreener (search by ticker)
@@ -836,7 +879,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!ticker) return res.status(400).json({ error: 'ticker required' })
   const cacheKey = buildAnalystCacheKey(ticker, mnemonic)
   const cached = analystCache.get(cacheKey)
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+  const cachedTtl = hasAnalystSignal(cached?.data) ? CACHE_TTL_MS : EMPTY_RESULT_CACHE_TTL_MS
+  if (cached && Date.now() - cached.ts < cachedTtl) {
     return res.status(200).json(cached.data)
   }
   const result = await fetchAnalyst(ticker, isin, mnemonic)
