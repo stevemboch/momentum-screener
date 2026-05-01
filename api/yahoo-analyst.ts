@@ -203,7 +203,7 @@ function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string, 
   const mnemonicPart = normalizedMnemonic ?? '__NO_MNEMONIC__'
   const isinPart = (isin ?? '').trim().toUpperCase() || '__NO_ISIN__'
   const targetCurrencyPart = (targetCurrency ?? '').trim().toUpperCase() || '__NO_TARGET_CCY__'
-  return `${normalizedTicker}::${mnemonicPart}::${isinPart}::${targetCurrencyPart}`
+  return `v2::${normalizedTicker}::${mnemonicPart}::${isinPart}::${targetCurrencyPart}`
 }
 
 function normalizeNameForMatch(raw: string | null | undefined): string {
@@ -956,6 +956,23 @@ async function fetchAnalyst(
         const price = summary.price || {}
         const rt = summary.recommendationTrend || {}
         const trend0 = Array.isArray(rt.trend) ? rt.trend[0] : null
+        const quoteCurrency = typeof price.currency === 'string' ? price.currency.trim() : null
+        const financialCurrency = typeof fd.financialCurrency === 'string' ? fd.financialCurrency.trim() : null
+        const quoteUnit = normalizeCurrencyUnit(quoteCurrency)
+        const financialUnit = normalizeCurrencyUnit(financialCurrency)
+        const yahooValueScale =
+          quoteUnit &&
+          financialUnit &&
+          quoteUnit.code === financialUnit.code &&
+          quoteUnit.unitFactorToMajor > 0 &&
+          financialUnit.unitFactorToMajor > 0
+            ? (quoteUnit.unitFactorToMajor / financialUnit.unitFactorToMajor)
+            : 1
+        const scaleYahooValue = (v: any): number | null => {
+          const raw = typeof v === 'number' ? v : null
+          if (raw == null || !Number.isFinite(raw)) return null
+          return raw * yahooValueScale
+        }
         const quoteName: string | null = price.longName ?? price.shortName ?? null
         if (!isEntityNameMatch(expectedName, quoteName)) {
           throw new Error(`Yahoo entity mismatch: ${quoteName ?? 'unknown'}`)
@@ -964,12 +981,12 @@ async function fetchAnalyst(
         if (base.recommendationMean == null) base.recommendationMean = fd.recommendationMean?.raw ?? null
         if (base.recommendationKey == null) base.recommendationKey = fd.recommendationKey ?? trend0?.trend ?? null
         if (base.numberOfAnalystOpinions == null) base.numberOfAnalystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
-        if (base.targetMeanPrice == null) base.targetMeanPrice = fd.targetMeanPrice?.raw ?? null
-        if (base.targetLowPrice == null) base.targetLowPrice = fd.targetLowPrice?.raw ?? null
-        if (base.targetHighPrice == null) base.targetHighPrice = fd.targetHighPrice?.raw ?? null
-        base.currentPrice = fd.currentPrice?.raw ?? base.currentPrice ?? null
-        base.currency = price.currency ?? base.currency ?? null
-        base.financialCurrency = fd.financialCurrency ?? base.financialCurrency ?? null
+        if (base.targetMeanPrice == null) base.targetMeanPrice = scaleYahooValue(fd.targetMeanPrice?.raw)
+        if (base.targetLowPrice == null) base.targetLowPrice = scaleYahooValue(fd.targetLowPrice?.raw)
+        if (base.targetHighPrice == null) base.targetHighPrice = scaleYahooValue(fd.targetHighPrice?.raw)
+        base.currentPrice = scaleYahooValue(fd.currentPrice?.raw) ?? base.currentPrice ?? null
+        base.currency = quoteCurrency ?? base.currency ?? null
+        base.financialCurrency = financialCurrency ?? base.financialCurrency ?? null
         base.resolvedTicker = candidateTicker
         if (!base.leewayUsed) base.source = 'yahoo'
 

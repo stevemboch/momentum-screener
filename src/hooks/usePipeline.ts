@@ -131,7 +131,7 @@ function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string, 
   const m = normalizeMnemonicForCache(mnemonic) ?? '__NO_MNEMONIC__'
   const i = (isin ?? '').trim().toUpperCase() || '__NO_ISIN__'
   const c = (targetCurrency ?? '').trim().toUpperCase() || '__NO_TARGET_CCY__'
-  return `cache:analyst:v6:${normalizeTickerForCache(ticker)}:${m}:${i}:${c}`
+  return `cache:analyst:v7:${normalizeTickerForCache(ticker)}:${m}:${i}:${c}`
 }
 
 function buildLegacyAnalystCacheKey(ticker: string): string {
