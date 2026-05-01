@@ -19,6 +19,7 @@ interface AnalystResult {
   pe?: number | null
   pb?: number | null
   marketCap?: number | null
+  resolvedTicker?: string | null
   source?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite' | 'leeway'
   leewayUsed?: boolean
   error?: string
@@ -194,11 +195,90 @@ function normalizeMnemonic(raw?: string): string | null {
   return normalized.length > 0 ? normalized : null
 }
 
-function buildAnalystCacheKey(ticker: string, mnemonic?: string): string {
+function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string): string {
   const normalizedTicker = ticker.trim().toUpperCase()
   const normalizedMnemonic = normalizeMnemonic(mnemonic)
   const mnemonicPart = normalizedMnemonic ?? '__NO_MNEMONIC__'
-  return `${normalizedTicker}::${mnemonicPart}`
+  const isinPart = (isin ?? '').trim().toUpperCase() || '__NO_ISIN__'
+  return `${normalizedTicker}::${mnemonicPart}::${isinPart}`
+}
+
+function normalizeNameForMatch(raw: string | null | undefined): string {
+  if (!raw) return ''
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(inc|corp|corporation|ag|sa|plc|nv|holdings?|group|the|class)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function isEntityNameMatch(expectedName: string | null | undefined, candidateName: string | null | undefined): boolean {
+  const expected = normalizeNameForMatch(expectedName)
+  const candidate = normalizeNameForMatch(candidateName)
+  if (!expected || !candidate) return true
+  if (expected === candidate) return true
+  if (expected.includes(candidate) || candidate.includes(expected)) return true
+  const expectedTokens = new Set(expected.split(' ').filter((t) => t.length >= 3))
+  const candidateTokens = candidate.split(' ').filter((t) => t.length >= 3)
+  if (expectedTokens.size === 0 || candidateTokens.length === 0) return true
+  let overlap = 0
+  for (const token of candidateTokens) if (expectedTokens.has(token)) overlap++
+  return overlap >= Math.min(2, Math.max(1, Math.floor(Math.min(expectedTokens.size, candidateTokens.length) * 0.5)))
+}
+
+async function searchYahooSymbols(query: string): Promise<string[]> {
+  const q = query.trim()
+  if (!q) return []
+  const urls = [
+    `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`,
+    `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`,
+  ]
+  for (const url of urls) {
+    try {
+      const res = await fetchWithTimeout(url, { headers: YAHOO_API_HEADERS })
+      if (!res.ok) continue
+      const data = await res.json()
+      const quotes = Array.isArray(data?.quotes) ? data.quotes : []
+      const symbols = quotes
+        .map((item: any) => (typeof item?.symbol === 'string' ? item.symbol.trim() : ''))
+        .filter((symbol: string) => symbol.length > 0)
+      if (symbols.length > 0) return symbols
+    } catch {}
+  }
+  return []
+}
+
+async function buildTickerCandidates(ticker: string, isin?: string, mnemonic?: string): Promise<string[]> {
+  const ordered = new Set<string>()
+  const add = (value: string | null | undefined) => {
+    if (!value) return
+    const symbol = value.trim().toUpperCase()
+    if (symbol) ordered.add(symbol)
+  }
+
+  add(ticker)
+  const base = stripTickerUpper(ticker)
+  add(base)
+
+  const m = normalizeMnemonic(mnemonic)
+  if (m) {
+    add(`${m}.DE`)
+    add(m)
+  }
+  if (isin && isin.trim().length >= 6) {
+    const byIsin = await searchYahooSymbols(isin.trim())
+    byIsin.forEach(add)
+  }
+  if (m) {
+    const byMnemonic = await searchYahooSymbols(m)
+    byMnemonic.forEach(add)
+  }
+  if (base) {
+    const byBase = await searchYahooSymbols(base)
+    byBase.forEach(add)
+  }
+  return Array.from(ordered)
 }
 
 function parseMoney(text: string | null): number | null {
@@ -760,6 +840,7 @@ async function fetchAnalyst(
   ticker: string,
   isin?: string,
   mnemonic?: string,
+  expectedName?: string,
 ): Promise<AnalystResult> {
   const base: AnalystResult = {
     ticker,
@@ -773,6 +854,7 @@ async function fetchAnalyst(
     currency: null,
     financialCurrency: null,
     fxRate: null,
+    resolvedTicker: null,
   }
 
   // Leeway zuerst versuchen — liefert oft bessere Fundamentals + Analyst-Konsens.
@@ -786,49 +868,61 @@ async function fetchAnalyst(
   }
 
   try {
-    const res = await fetchYahooQuoteSummary(ticker, 'financialData,recommendationTrend,price')
-    if (!res) throw new Error('Yahoo API unavailable')
-    const data = await res.json()
-    const summary = data?.quoteSummary?.result?.[0]
-    if (!summary) throw new Error('Yahoo summary empty')
+    const candidates = await buildTickerCandidates(ticker, isin, mnemonic)
+    let yahooSuccess = false
+    let lastYahooErr: any = null
 
-    const fd = summary.financialData || {}
-    const price = summary.price || {}
-    const rt = summary.recommendationTrend || {}
-    const trend0 = Array.isArray(rt.trend) ? rt.trend[0] : null
-
-    if (base.recommendationMean == null) base.recommendationMean = fd.recommendationMean?.raw ?? null
-    if (base.recommendationKey == null) base.recommendationKey = fd.recommendationKey ?? trend0?.trend ?? null
-    if (base.numberOfAnalystOpinions == null) base.numberOfAnalystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
-    if (base.targetMeanPrice == null) base.targetMeanPrice = fd.targetMeanPrice?.raw ?? null
-    if (base.targetLowPrice == null) base.targetLowPrice = fd.targetLowPrice?.raw ?? null
-    if (base.targetHighPrice == null) base.targetHighPrice = fd.targetHighPrice?.raw ?? null
-    base.currentPrice = fd.currentPrice?.raw ?? base.currentPrice ?? null
-    base.currency = price.currency ?? base.currency ?? null
-    base.financialCurrency = fd.financialCurrency ?? base.financialCurrency ?? null
-    if (!base.leewayUsed) base.source = 'yahoo'
-
-    // Kein ISIN-basiertes financialCurrency-Override:
-    // Bei Cross-Listings/ADRs/sonderfällen kann das zu falschen Währungssignalen führen
-    // und damit fehlerhafte Upside-Berechnung triggern.
-
-    if (base.financialCurrency && base.currency && base.financialCurrency !== base.currency) {
+    for (const candidateTicker of candidates) {
       try {
-        base.fxRate = await deriveFxRate(base.financialCurrency, base.currency)
-      } catch {
-        // ignore FX fetch errors
+        const res = await fetchYahooQuoteSummary(candidateTicker, 'financialData,recommendationTrend,price')
+        if (!res) throw new Error('Yahoo API unavailable')
+        const data = await res.json()
+        const summary = data?.quoteSummary?.result?.[0]
+        if (!summary) throw new Error('Yahoo summary empty')
+
+        const fd = summary.financialData || {}
+        const price = summary.price || {}
+        const rt = summary.recommendationTrend || {}
+        const trend0 = Array.isArray(rt.trend) ? rt.trend[0] : null
+        const quoteName: string | null = price.longName ?? price.shortName ?? null
+        if (!isEntityNameMatch(expectedName, quoteName)) {
+          throw new Error(`Yahoo entity mismatch: ${quoteName ?? 'unknown'}`)
+        }
+
+        if (base.recommendationMean == null) base.recommendationMean = fd.recommendationMean?.raw ?? null
+        if (base.recommendationKey == null) base.recommendationKey = fd.recommendationKey ?? trend0?.trend ?? null
+        if (base.numberOfAnalystOpinions == null) base.numberOfAnalystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
+        if (base.targetMeanPrice == null) base.targetMeanPrice = fd.targetMeanPrice?.raw ?? null
+        if (base.targetLowPrice == null) base.targetLowPrice = fd.targetLowPrice?.raw ?? null
+        if (base.targetHighPrice == null) base.targetHighPrice = fd.targetHighPrice?.raw ?? null
+        base.currentPrice = fd.currentPrice?.raw ?? base.currentPrice ?? null
+        base.currency = price.currency ?? base.currency ?? null
+        base.financialCurrency = fd.financialCurrency ?? base.financialCurrency ?? null
+        base.resolvedTicker = candidateTicker
+        if (!base.leewayUsed) base.source = 'yahoo'
+
+        if (base.financialCurrency && base.currency && base.financialCurrency !== base.currency) {
+          try {
+            base.fxRate = await deriveFxRate(base.financialCurrency, base.currency)
+          } catch {
+            // ignore FX fetch errors
+          }
+        }
+
+        yahooSuccess = true
+        if (hasTargetSignal(base)) break
+      } catch (err: any) {
+        lastYahooErr = err
       }
     }
 
-    // Yahoo liefert oft Rating/Opinions, aber kein Target.
-    // Für die Target-Ermittlung explizit auf Fallbacks wechseln, wenn kein Zielkurs vorhanden ist.
-    if (!hasTargetSignal(base)) {
-      throw new Error('Yahoo analyst target empty')
-    }
+    if (!yahooSuccess) throw lastYahooErr ?? new Error('Yahoo candidate resolution failed')
+    if (!hasTargetSignal(base)) throw new Error('Yahoo analyst target empty')
   } catch (err: any) {
     // Fallback 1: MarketScreener (search by ticker)
     try {
-      const ms = await fetchFromMarketScreener(ticker)
+      const msTicker = base.resolvedTicker ?? ticker
+      const ms = await fetchFromMarketScreener(msTicker)
       const hasData =
         ms.recommendationKey != null ||
         ms.numberOfAnalystOpinions != null ||
@@ -861,7 +955,8 @@ async function fetchAnalyst(
     } catch (msErr: any) {
       // Fallback 2: OptionsAnalysisSuite (public HTML)
       try {
-        const fallback = await fetchFromOptionAnalysisSuiteWithRetry(ticker)
+        const fallbackTicker = base.resolvedTicker ?? ticker
+        const fallback = await fetchFromOptionAnalysisSuiteWithRetry(fallbackTicker)
         return {
           ...base,
           recommendationKey: base.recommendationKey ?? fallback.recommendationKey ?? null,
@@ -886,8 +981,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ticker: string | undefined = req.body?.ticker
   const isin: string | undefined = req.body?.isin
   const mnemonic: string | undefined = normalizeMnemonic(req.body?.mnemonic) ?? undefined
+  const expectedName: string | undefined = typeof req.body?.expectedName === 'string'
+    ? req.body.expectedName.trim()
+    : undefined
   if (!ticker) return res.status(400).json({ error: 'ticker required' })
-  const cacheKey = buildAnalystCacheKey(ticker, mnemonic)
+  const cacheKey = buildAnalystCacheKey(ticker, mnemonic, isin)
   const cached = analystCache.get(cacheKey)
   // Long TTL only when we actually have a target signal.
   // Rating-only payloads should refresh sooner so fallbacks can enrich targets.
@@ -895,7 +993,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cached && Date.now() - cached.ts < cachedTtl) {
     return res.status(200).json(cached.data)
   }
-  const result = await fetchAnalyst(ticker, isin, mnemonic)
+  const result = await fetchAnalyst(ticker, isin, mnemonic, expectedName)
   analystCache.set(cacheKey, { ts: Date.now(), data: result })
   return res.status(200).json(result)
 }

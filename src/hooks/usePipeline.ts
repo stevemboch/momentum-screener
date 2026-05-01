@@ -127,9 +127,10 @@ function buildLegacyYahooCacheKey(ticker: string): string {
   return `cache:yahoo:${ticker}`
 }
 
-function buildAnalystCacheKey(ticker: string, mnemonic?: string): string {
+function buildAnalystCacheKey(ticker: string, mnemonic?: string, isin?: string): string {
   const m = normalizeMnemonicForCache(mnemonic) ?? '__NO_MNEMONIC__'
-  return `cache:analyst:v4:${normalizeTickerForCache(ticker)}:${m}`
+  const i = (isin ?? '').trim().toUpperCase() || '__NO_ISIN__'
+  return `cache:analyst:v5:${normalizeTickerForCache(ticker)}:${m}:${i}`
 }
 
 function buildLegacyAnalystCacheKey(ticker: string): string {
@@ -1204,7 +1205,7 @@ export function usePipeline() {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { tfaPhase: 'fetching' } })
     }
     try {
-      const cacheKey = buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic)
+      const cacheKey = buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic, inst.isin)
       const analystTtlMs = inst.mnemonic ? LEEWAY_TTL_MS : ANALYST_TTL_MS
       let r = cacheGet<any>(cacheKey, analystTtlMs)
       if (!r) {
@@ -1289,6 +1290,7 @@ export function usePipeline() {
             ticker: inst.yahooTicker,
             isin: inst.isin,
             mnemonic: inst.mnemonic ?? undefined,
+            expectedName: inst.xetraName ?? inst.displayName ?? inst.longName ?? undefined,
           }),
         })
         if (r) cacheSet(cacheKey, r, analystTtlMs)
@@ -1531,7 +1533,7 @@ export function usePipeline() {
       let oldest = Date.now()
       for (const inst of topNFetched) {
         try {
-          const raw = JSON.parse(localStorage.getItem(buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic)) ?? 'null')
+          const raw = JSON.parse(localStorage.getItem(buildAnalystCacheKey(inst.yahooTicker, inst.mnemonic, inst.isin)) ?? 'null')
             ?? JSON.parse(localStorage.getItem(buildLegacyAnalystCacheKey(inst.yahooTicker)) ?? 'null')
           if (!raw?.ts) return null
           if (raw.ts < oldest) oldest = raw.ts
