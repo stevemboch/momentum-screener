@@ -1275,6 +1275,7 @@ export function usePipeline() {
             targetLowAdj: null,
             targetHighAdj: null,
             targetCurrencyUnknown: false,
+            targetCurrencyConfidence: null,
           },
         })
         return
@@ -1332,6 +1333,9 @@ export function usePipeline() {
       // ISIN-basierte Ableitung bleibt als Heuristik nützlich, ist hier aber nicht robust genug
       // (kann bei Listings/ADRs/sonderfällen zu falschen Mismatch-Signalen führen).
       const analystCurrency = r.financialCurrency ?? r.currency ?? null
+      const currencyConfidence: 'high' | 'medium' | 'low' | null = analystCurrency == null
+        ? 'low'
+        : (r.financialCurrency != null ? 'high' : 'medium')
 
       // FX-Rate-Bestimmung (nur belastbare Quellen, kein Preisverhältnis-Proxy):
       let fxRate: number | null = null
@@ -1339,10 +1343,10 @@ export function usePipeline() {
         // Reuse only when rate is aligned to analystCurrency -> priceCurrency.
         const fxAligned =
           r.fxRate != null &&
-          r.financialCurrency != null &&
-          r.currency != null &&
-          r.financialCurrency === analystCurrency &&
-          r.currency === priceCurrency
+          r.fxBaseCurrency != null &&
+          r.fxTargetCurrency != null &&
+          r.fxBaseCurrency === analystCurrency &&
+          r.fxTargetCurrency === priceCurrency
         if (fxAligned) {
           fxRate = r.fxRate
         }
@@ -1360,24 +1364,26 @@ export function usePipeline() {
         updates.targetPriceAdj = r.targetMeanPrice != null ? r.targetMeanPrice * fxRate : null
         updates.targetLowAdj = r.targetLowPrice != null ? r.targetLowPrice * fxRate : null
         updates.targetHighAdj = r.targetHighPrice != null ? r.targetHighPrice * fxRate : null
-        updates.targetCurrencyUnknown = false
+        updates.targetCurrencyUnknown = analystCurrency == null
+        updates.targetCurrencyConfidence = currencyConfidence
       } else if (shouldAdjust && fxRate == null) {
         // Währungsmismatch erkannt aber kein FX-Rate verfügbar
-        // → Target ausblenden statt falsche Währung anzeigen
+        // → Roh-Target beibehalten und nur als nicht konvertiert markieren
         updates.targetFxRate = null
         updates.targetFxApplied = false
         updates.targetPriceAdj = null
         updates.targetLowAdj = null
         updates.targetHighAdj = null
-        // Speichere raw-Target zur Information aber markiere es als unzuverlässig
-        updates.targetCurrencyUnknown = true
+        updates.targetCurrencyUnknown = analystCurrency == null
+        updates.targetCurrencyConfidence = currencyConfidence
       } else {
         updates.targetFxRate = null
         updates.targetFxApplied = false
         updates.targetPriceAdj = null
         updates.targetLowAdj = null
         updates.targetHighAdj = null
-        updates.targetCurrencyUnknown = false
+        updates.targetCurrencyUnknown = analystCurrency == null
+        updates.targetCurrencyConfidence = currencyConfidence
       }
 
       // analystCurrency für Anzeige: gibt die ZIEL-Währung des Kursziels an

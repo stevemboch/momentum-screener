@@ -869,10 +869,8 @@ function ExpandedDetail({
   const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
   const analystCurrency = inst.analystCurrency ?? null
   const currencyMismatch = analystCurrency != null && priceCurrency != null && analystCurrency !== priceCurrency
-  const targetDisplay = inst.targetCurrencyUnknown ? null : (inst.targetPriceAdj ?? inst.targetPrice)
-  const targetDisplayCurrency = inst.targetCurrencyUnknown
-    ? priceCurrency
-    : (inst.targetPriceAdj != null ? priceCurrency : (analystCurrency ?? priceCurrency))
+  const targetDisplay = inst.targetPriceAdj ?? inst.targetPrice
+  const targetDisplayCurrency = inst.targetPriceAdj != null ? priceCurrency : (analystCurrency ?? priceCurrency)
   const targetForUpside = inst.targetPriceAdj != null
     ? inst.targetPriceAdj
     : (analystCurrency && priceCurrency && analystCurrency !== priceCurrency ? null : inst.targetPrice)
@@ -1168,6 +1166,16 @@ function ExpandedDetail({
                           {inst.targetCurrencyUnknown && (
                             <div className="text-amber-400 text-[10px]">
                               ⚠ Could not verify target-price currency — value may be in a different currency
+                            </div>
+                          )}
+                          {!inst.targetCurrencyUnknown && inst.targetCurrencyConfidence === 'medium' && (
+                            <div className="text-amber-300 text-[10px]">
+                              ⚠ Target currency inferred with medium confidence
+                            </div>
+                          )}
+                          {!inst.targetCurrencyUnknown && currencyMismatch && !inst.targetFxApplied && (
+                            <div className="text-amber-300 text-[10px] break-words">
+                              ⚠ FX conversion unavailable. Showing original target/range in {analystCurrency}.
                             </div>
                           )}
                           {currencyMismatch && !inst.targetFxApplied && (

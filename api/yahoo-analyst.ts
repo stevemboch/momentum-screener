@@ -13,6 +13,8 @@ interface AnalystResult {
   currency?: string | null
   financialCurrency?: string | null
   fxRate?: number | null
+  fxBaseCurrency?: string | null
+  fxTargetCurrency?: string | null
   ebitda?: number | null
   enterpriseValue?: number | null
   returnOnAssets?: number | null
@@ -890,7 +892,12 @@ async function applyFxRateForTarget(
   try {
     const fxRate = await deriveFxRate(result.financialCurrency, normalizedTarget)
     if (fxRate != null && Number.isFinite(fxRate) && fxRate > 0) {
-      return { ...result, fxRate }
+      return {
+        ...result,
+        fxRate,
+        fxBaseCurrency: result.financialCurrency.trim().toUpperCase(),
+        fxTargetCurrency: normalizedTarget,
+      }
     }
   } catch {
     // ignore FX fetch errors
@@ -917,6 +924,8 @@ async function fetchAnalyst(
     currency: null,
     financialCurrency: null,
     fxRate: null,
+    fxBaseCurrency: null,
+    fxTargetCurrency: null,
     resolvedTicker: null,
   }
 
