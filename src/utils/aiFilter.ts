@@ -68,16 +68,33 @@ function toNumberOrNull(value: unknown): number | null {
 
 function getUpsideRatio(inst: Instrument): number | null {
   const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
-  if (lastPrice == null || !Number.isFinite(lastPrice) || lastPrice <= 0) return null
-
   const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
   const analystCurrency = inst.analystCurrency ?? null
-  const targetForUpside = inst.targetPriceAdj != null
+  const targetComparable = inst.targetPriceAdj != null
     ? inst.targetPriceAdj
-    : (analystCurrency && priceCurrency && analystCurrency !== priceCurrency ? null : inst.targetPrice)
-  if (targetForUpside == null || !Number.isFinite(targetForUpside)) return null
+    : (analystCurrency && priceCurrency && analystCurrency === priceCurrency ? inst.targetPrice : null)
+  if (
+    targetComparable != null &&
+    Number.isFinite(targetComparable) &&
+    lastPrice != null &&
+    Number.isFinite(lastPrice) &&
+    lastPrice > 0
+  ) {
+    return targetComparable / lastPrice - 1
+  }
 
-  return targetForUpside / lastPrice - 1
+  // Fallback: native analyst upside if both values are in analyst currency.
+  if (
+    inst.targetPrice != null &&
+    Number.isFinite(inst.targetPrice) &&
+    inst.analystCurrentPrice != null &&
+    Number.isFinite(inst.analystCurrentPrice) &&
+    inst.analystCurrentPrice > 0
+  ) {
+    return inst.targetPrice / inst.analystCurrentPrice - 1
+  }
+
+  return null
 }
 
 function getRuleFieldValue(inst: Instrument, field: string): unknown {

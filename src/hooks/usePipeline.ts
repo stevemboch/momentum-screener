@@ -1407,12 +1407,23 @@ export function usePipeline() {
       const currentPrice = inst.closes && inst.closes.length > 0
         ? inst.closes[inst.closes.length - 1]
         : null
+      const priceCurrencyNow = priceCurrency ?? null
+      const targetComparableInPriceCurrency =
+        updates.targetPriceAdj != null
+          ? updates.targetPriceAdj
+          : (
+            analystCurrency != null &&
+            priceCurrencyNow != null &&
+            analystCurrency === priceCurrencyNow
+          )
+            ? (updates.targetPrice ?? inst.targetPrice ?? null)
+            : null
 
       const fDetails = calculateTfaFDetails(
         effectivePb,
         effectiveEbitda,
         effectiveEV,
-        updates.targetPriceAdj ?? updates.targetPrice ?? inst.targetPriceAdj ?? inst.targetPrice ?? null,
+        targetComparableInPriceCurrency,
         currentPrice,
       )
 
@@ -1425,7 +1436,7 @@ export function usePipeline() {
         effectiveEV,
         effectiveRoA,
         updates.analystRating ?? null,
-        updates.targetPriceAdj ?? updates.targetPrice ?? inst.targetPrice ?? null,
+        targetComparableInPriceCurrency,
         currentPrice,
       )
       updates.tfaFScore5Y = f5yDetails.score ?? null

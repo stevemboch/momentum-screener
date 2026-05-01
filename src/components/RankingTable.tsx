@@ -871,13 +871,23 @@ function ExpandedDetail({
   const currencyMismatch = analystCurrency != null && priceCurrency != null && analystCurrency !== priceCurrency
   const targetDisplay = inst.targetPriceAdj ?? inst.targetPrice
   const targetDisplayCurrency = inst.targetPriceAdj != null ? priceCurrency : (analystCurrency ?? priceCurrency)
-  const targetForUpside = inst.targetPriceAdj != null
+  const targetForPriceUpside = inst.targetPriceAdj != null
     ? inst.targetPriceAdj
-    : (analystCurrency && priceCurrency && analystCurrency !== priceCurrency ? null : inst.targetPrice)
+    : (analystCurrency && priceCurrency && analystCurrency === priceCurrency ? inst.targetPrice : null)
   const referencePrice = lastPrice
-  const upside = (targetForUpside != null && referencePrice != null)
-    ? (targetForUpside / referencePrice - 1)
+  const upsidePriceComparable = (targetForPriceUpside != null && referencePrice != null)
+    ? (targetForPriceUpside / referencePrice - 1)
     : null
+  const upsideNative = (
+    inst.targetPrice != null &&
+    inst.analystCurrentPrice != null &&
+    Number.isFinite(inst.targetPrice) &&
+    Number.isFinite(inst.analystCurrentPrice) &&
+    inst.analystCurrentPrice > 0
+  ) ? (inst.targetPrice / inst.analystCurrentPrice - 1) : null
+  const upside = upsidePriceComparable ?? upsideNative
+  const upsideIsNativeOnly = upsidePriceComparable == null && upsideNative != null
+  const targetForContext = targetForPriceUpside ?? inst.targetPrice ?? null
   const { result: ctx, loading: ctxLoading, load: loadCtx, invalidate } =
     useInstrumentContext(inst.isin)
   const [combinedLoading, setCombinedLoading] = useState(false)
@@ -1047,7 +1057,7 @@ function ExpandedDetail({
                             inst.yahooTicker,
                             inst.displayName,
                             lastPrice ?? null,
-                            targetForUpside ?? null,
+                            targetForContext,
                             'fast'
                           ),
                         ])
@@ -1074,7 +1084,7 @@ function ExpandedDetail({
                             inst.yahooTicker,
                             inst.displayName,
                             lastPrice ?? null,
-                            targetForUpside ?? null,
+                            targetForContext,
                             'deep'
                           ),
                         ])
@@ -1176,6 +1186,11 @@ function ExpandedDetail({
                           {!inst.targetCurrencyUnknown && currencyMismatch && !inst.targetFxApplied && (
                             <div className="text-amber-300 text-[10px] break-words">
                               ⚠ FX conversion unavailable. Showing original target/range in {analystCurrency}.
+                            </div>
+                          )}
+                          {upsideIsNativeOnly && analystCurrency && (
+                            <div className="text-amber-300 text-[10px] break-words">
+                              Upside based on analyst-native pair ({analystCurrency} target vs {analystCurrency} current).
                             </div>
                           )}
                           {currencyMismatch && !inst.targetFxApplied && (
