@@ -44,9 +44,33 @@ interface ContextResponse {
   asOf: string
   searchWindow: { from: string; to: string }
   dataQuality: DataQuality
+  mode: 'fast' | 'deep'
 }
 
-const CONTEXT_SCHEMA_HINT = `{
+const CONTEXT_SCHEMA_HINT_FAST = `{
+  "lastEarnings": {
+    "date": "YYYY-MM-DD|null",
+    "result": "beat|miss|inline|null",
+    "detail": "string|null"
+  },
+  "nextEarnings": "string|null",
+  "news": [{ "headline": "string", "sentiment": "positive|negative|neutral" }],
+  "macroRisk": "string|null",
+  "macroRiskEvidence": [{
+    "sourceName": "string|null",
+    "sourceType": "primary|regulatory|major_media|secondary",
+    "url": "string|null",
+    "publishedAt": "YYYY-MM-DD|null",
+    "confidence": "high|medium|low",
+    "confidenceReason": "string|null"
+  }],
+  "macroRiskInsufficientEvidenceReason": "string|null",
+  "asOf": "ISO-8601",
+  "searchWindow": { "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" },
+  "dataQuality": "high|medium|low"
+}`
+
+const CONTEXT_SCHEMA_HINT_DEEP = `{
   "lastEarnings": {
     "date": "YYYY-MM-DD|null",
     "result": "beat|miss|inline|null",
@@ -130,9 +154,9 @@ function normalizeEvidence(v: unknown): EvidenceItem | null {
   }
 }
 
-function normalizeEvidenceList(v: unknown): EvidenceItem[] {
+function normalizeEvidenceList(v: unknown, max = 3): EvidenceItem[] {
   if (!Array.isArray(v)) return []
-  return v.map(normalizeEvidence).filter(Boolean).slice(0, 3) as EvidenceItem[]
+  return v.map(normalizeEvidence).filter(Boolean).slice(0, max) as EvidenceItem[]
 }
 
 function asRiskLevel(v: unknown): RiskLevel | null {
@@ -163,8 +187,9 @@ function deriveDataQuality(proposed: DataQuality | null, evidenceCount: number):
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!requireAuth(req, res)) return
-  const { ticker, name, lastPrice, targetPrice } = req.body
+  const { ticker, name, lastPrice, targetPrice, mode } = req.body
   if (!ticker || !name) return res.status(400).json({ error: 'ticker und name required' })
+  const contextMode: 'fast' | 'deep' = mode === 'deep' ? 'deep' : 'fast'
 
   const nowIso = new Date().toISOString()
   const today = nowIso.split('T')[0]
@@ -193,7 +218,7 @@ Search for:
 2. The next earnings date if known
 3. Up to 2 relevant recent news headlines (last 4 weeks)
 4. One currently relevant macro or sector risk
-5. Bankruptcy risk assessment (last 12 months):
+${contextMode === 'deep' ? `5. Bankruptcy risk assessment (last 12 months):
    Check for insolvency filing/proceedings, going-concern warnings, debt restructuring,
    covenant breaches, or acute liquidity stress.
    Return risk level: low | medium | high.
@@ -201,11 +226,12 @@ Search for:
 6. Financial health assessment (based on latest reported data):
    Assess leverage, liquidity, interest coverage, free cash flow trend, and profitability trend.
    Return status: healthy | watch | stressed.
-   Provide a short factual rationale.
+   Provide a short factual rationale.` : ''}
 
 Important:
 - If reliable data is unavailable, return null fields and state "insufficient data".
 - Do not infer insolvency risk from price action alone.
+- Keep output minimal and strict JSON.
 
 Answer as JSON:
 {
@@ -227,7 +253,7 @@ Answer as JSON:
       "confidenceReason": string | null
     }
   ],
-  "macroRiskInsufficientEvidenceReason": string | null,
+  "macroRiskInsufficientEvidenceReason": string | null,${contextMode === 'deep' ? `
   "bankruptcyRisk": {
     "level": "low" | "medium" | "high" | null,
     "signals": string[],
@@ -258,7 +284,7 @@ Answer as JSON:
       }
     ],
     "insufficientEvidenceReason": string | null
-  },
+  },` : ''}
   "asOf": "${nowIso}",
   "searchWindow": { "from": "${from}", "to": "${today}" },
   "dataQuality": "high" | "medium" | "low"
@@ -266,7 +292,10 @@ Answer as JSON:
 
   try {
     const search = await geminiSearchChatWithMeta(systemPrompt, userMessage)
-    const parsed = await parseJSONWithRepair<any>(search.text, CONTEXT_SCHEMA_HINT)
+    const parsed = await parseJSONWithRepair<any>(
+      search.text,
+      contextMode === 'deep' ? CONTEXT_SCHEMA_HINT_DEEP : CONTEXT_SCHEMA_HINT_FAST
+    )
     const raw = (parsed.value && typeof parsed.value === 'object') ? parsed.value : {}
 
     const response: ContextResponse & {
@@ -304,24 +333,24 @@ Answer as JSON:
             .slice(0, 2) as { headline: string; sentiment: 'positive' | 'negative' | 'neutral' }[]
         : [],
       macroRisk: asString(raw.macroRisk),
-      macroRiskEvidence: normalizeEvidenceList(raw.macroRiskEvidence),
+      macroRiskEvidence: normalizeEvidenceList(raw.macroRiskEvidence, contextMode === 'deep' ? 3 : 1),
       macroRiskInsufficientEvidenceReason: asString(raw.macroRiskInsufficientEvidenceReason),
-      bankruptcyRisk: (raw.bankruptcyRisk && typeof raw.bankruptcyRisk === 'object')
+      bankruptcyRisk: contextMode === 'deep' && (raw.bankruptcyRisk && typeof raw.bankruptcyRisk === 'object')
         ? {
             level: asRiskLevel(raw.bankruptcyRisk.level),
             signals: Array.isArray(raw.bankruptcyRisk.signals)
               ? raw.bankruptcyRisk.signals.map((s: unknown) => asString(s)).filter(Boolean).slice(0, 3) as string[]
               : [],
             detail: asString(raw.bankruptcyRisk.detail),
-            evidence: normalizeEvidenceList(raw.bankruptcyRisk.evidence),
+            evidence: normalizeEvidenceList(raw.bankruptcyRisk.evidence, 3),
             insufficientEvidenceReason: asString(raw.bankruptcyRisk.insufficientEvidenceReason),
           }
         : null,
-      financialHealth: (raw.financialHealth && typeof raw.financialHealth === 'object')
+      financialHealth: contextMode === 'deep' && (raw.financialHealth && typeof raw.financialHealth === 'object')
         ? {
             status: asHealthStatus(raw.financialHealth.status),
             detail: asString(raw.financialHealth.detail),
-            evidence: normalizeEvidenceList(raw.financialHealth.evidence),
+            evidence: normalizeEvidenceList(raw.financialHealth.evidence, 3),
             insufficientEvidenceReason: asString(raw.financialHealth.insufficientEvidenceReason),
           }
         : null,
@@ -331,6 +360,7 @@ Answer as JSON:
         to: asString(raw.searchWindow?.to) ?? today,
       },
       dataQuality: 'low',
+      mode: contextMode,
       diagnostics: {
         modelId: search.meta.modelId,
         searchMode: search.meta.searchMode,

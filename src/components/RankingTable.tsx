@@ -427,7 +427,8 @@ function formatAsOfLabel(asOf: string | null, fetchedAt: number | null): string 
 function readRowContextPreview(isin: string): RowContextPreview | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = localStorage.getItem(`cache:context:${isin}`)
+    const raw = localStorage.getItem(`cache:context:${isin}:deep`)
+      ?? localStorage.getItem(`cache:context:${isin}:fast`)
     if (!raw) return null
     const parsed = JSON.parse(raw)
     const healthRaw = parsed?.financialHealth?.status
@@ -843,6 +844,7 @@ function ExpandedDetail({
   allInstruments,
   onLoadPrices,
   onLoadAnalyst,
+  onLoadTfaCatalyst,
   viewPreset,
   onContextUpdated,
   onTogglePortfolio,
@@ -855,6 +857,7 @@ function ExpandedDetail({
   allInstruments: any[]
   onLoadPrices: (isin: string) => void
   onLoadAnalyst: (isin: string) => void
+  onLoadTfaCatalyst: (isin: string) => void
   viewPreset: ViewPreset
   onContextUpdated: (isin: string) => void
   onTogglePortfolio: (isin: string) => void
@@ -1046,7 +1049,8 @@ function ExpandedDetail({
                             inst.yahooTicker,
                             inst.displayName,
                             lastPrice ?? null,
-                            targetForUpside ?? null
+                            targetForUpside ?? null,
+                            'fast'
                           ),
                         ])
                       } finally {
@@ -1060,6 +1064,34 @@ function ExpandedDetail({
                     aria-label={ctx ? 'Refresh analyst and context data' : 'Load analyst and context data'}
                   >
                     {(ctxLoading || combinedLoading) ? '…' : ctx ? '↺ Refresh' : '⬇ Load'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setCombinedLoading(true)
+                      try {
+                        await Promise.all([
+                          onLoadAnalyst(inst.isin),
+                          loadCtx(
+                            inst.yahooTicker,
+                            inst.displayName,
+                            lastPrice ?? null,
+                            targetForUpside ?? null,
+                            'deep'
+                          ),
+                        ])
+                      } finally {
+                        setCombinedLoading(false)
+                        setContextOpen((prev) => ({ ...prev, analyst: true }))
+                        onContextUpdated(inst.isin)
+                      }
+                    }}
+                    disabled={ctxLoading || combinedLoading}
+                    className="btn btn-sm btn-ghost focus-ring disabled:opacity-40"
+                    aria-label="Load deep analyst and context data"
+                    title="Deep mode: adds bankruptcy and financial-health checks"
+                  >
+                    Deep
                   </button>
                   {(ctxLoading || combinedLoading) && (
                     <span className="text-[10px] text-muted font-mono">
@@ -1398,7 +1430,7 @@ function ExpandedDetail({
                           onLoadAnalyst(inst.isin)
                         }}
                         className="btn btn-sm btn-secondary focus-ring"
-                        title="Load fundamentals and Gemini catalyst check"
+                        title="Load fundamentals for TFA scoring"
                       >
                         Load analysis
                       </button>
@@ -1408,10 +1440,10 @@ function ExpandedDetail({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation()
-                          onLoadAnalyst(inst.isin)
+                          onLoadTfaCatalyst(inst.isin)
                         }}
                         className="btn btn-sm btn-secondary focus-ring"
-                        title="Load Gemini catalyst check"
+                        title="Load Gemini catalyst check (on demand)"
                       >
                         Load Gemini
                       </button>
@@ -1804,7 +1836,7 @@ function MobileInstrumentCard({
 
 export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { state, dispatch } = useAppState()
-  const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst } = usePipeline()
+  const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst, fetchSingleInstrumentTfaCatalyst } = usePipeline()
   const instruments = useDisplayedInstruments()
   const isPriceUpdating = state.fetchStatus.phase === 'prices'
   const allInstruments = state.instruments   // full list incl. non-winners
@@ -2300,6 +2332,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     allInstruments={allInstruments}
                     onLoadPrices={fetchSingleInstrumentPrices}
                     onLoadAnalyst={fetchSingleInstrumentAnalyst}
+                    onLoadTfaCatalyst={fetchSingleInstrumentTfaCatalyst}
                     viewPreset={viewPreset}
                     onContextUpdated={refreshContextPreview}
                     onTogglePortfolio={(isin) => dispatch({ type: 'TOGGLE_PORTFOLIO', isin })}

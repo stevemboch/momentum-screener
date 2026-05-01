@@ -51,6 +51,7 @@ export interface ContextResult {
   asOf: string | null
   searchWindow: { from: string | null; to: string | null }
   dataQuality: DataQuality | null
+  mode?: 'fast' | 'deep'
   diagnostics?: {
     modelId?: string
     searchMode?: string
@@ -97,6 +98,11 @@ function asConfidence(value: unknown): Confidence {
 function asDataQuality(value: unknown): DataQuality | null {
   if (value === 'high' || value === 'medium' || value === 'low') return value
   return null
+}
+
+function asMode(value: unknown): 'fast' | 'deep' | undefined {
+  if (value === 'fast' || value === 'deep') return value
+  return undefined
 }
 
 function normalizeEvidence(value: unknown): EvidenceItem | null {
@@ -190,6 +196,7 @@ function normalizeContext(raw: any, fetchedAtFallback: number): ContextResult {
       to: asNonEmptyString(src.searchWindow?.to),
     },
     dataQuality: asDataQuality(src.dataQuality),
+    mode: asMode(src.mode),
     diagnostics: (src.diagnostics && typeof src.diagnostics === 'object')
       ? {
           modelId: asNonEmptyString(src.diagnostics.modelId) ?? undefined,
@@ -207,12 +214,13 @@ function normalizeContext(raw: any, fetchedAtFallback: number): ContextResult {
 export function useInstrumentContext(isin: string) {
   const [result, setResult] = useState<ContextResult | null>(null)
   const [loading, setLoading] = useState(false)
-  const cacheKey = `cache:context:${isin}`
+  const cacheKeyFast = `cache:context:${isin}:fast`
+  const cacheKeyDeep = `cache:context:${isin}:deep`
 
   // Beim Mount gecachtes Ergebnis laden
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(cacheKey)
+      const raw = localStorage.getItem(cacheKeyDeep) ?? localStorage.getItem(cacheKeyFast)
       if (!raw) return
       const parsed = JSON.parse(raw)
       const fetchedAt = (parsed && typeof parsed === 'object' && typeof parsed.fetchedAt === 'number')
@@ -229,19 +237,20 @@ export function useInstrumentContext(isin: string) {
     ticker: string,
     name: string,
     lastPrice: number | null,
-    targetPrice: number | null
+    targetPrice: number | null,
+    mode: 'fast' | 'deep' = 'fast',
   ) => {
     setLoading(true)
     try {
       const data = await apiFetchJson<any>('/api/claude-context', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, name, lastPrice, targetPrice }),
+        body: JSON.stringify({ ticker, name, lastPrice, targetPrice, mode }),
       })
-      const withTs = normalizeContext(data, Date.now())
+      const withTs = normalizeContext({ ...data, mode }, Date.now())
       setResult(withTs)
       try {
-        localStorage.setItem(cacheKey, JSON.stringify(withTs))
+        localStorage.setItem(mode === 'deep' ? cacheKeyDeep : cacheKeyFast, JSON.stringify(withTs))
       } catch { /* quota ignore */ }
     } catch (e: any) {
       setResult(normalizeContext({ error: e?.message ?? 'Failed to load context' }, Date.now()))
@@ -251,7 +260,8 @@ export function useInstrumentContext(isin: string) {
   }, [isin])
 
   const invalidate = useCallback(() => {
-    localStorage.removeItem(cacheKey)
+    localStorage.removeItem(cacheKeyFast)
+    localStorage.removeItem(cacheKeyDeep)
     setResult(null)
   }, [isin])
 

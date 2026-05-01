@@ -1453,82 +1453,6 @@ export function usePipeline() {
 
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
 
-      const updatedPhase = updates.tfaPhase
-      if (
-        !options?.suppressGemini &&
-        inst.type === 'Stock' &&
-        (updatedPhase === 'watch' || updatedPhase === 'above_all_mas' ||
-         inst.tfaPhase === 'watch' || inst.tfaPhase === 'above_all_mas') &&
-        !inst.tfaFetched &&
-        !tfaInFlight.current.has(inst.isin)
-      ) {
-        tfaInFlight.current.add(inst.isin)
-        try {
-          dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'fetching' } })
-          const catalystCacheKey = `cache:tfa-catalyst:${inst.yahooTicker}`
-          let data = cacheGet<any>(catalystCacheKey, TFA_CATALYST_TTL_MS)
-
-          if (!data) {
-            data = await apiFetchJson<any>('/api/tfa-catalyst', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ticker: inst.yahooTicker,
-                name: inst.displayName,
-                drawFromHigh: inst.drawFromHigh,
-                drawFrom5YHigh: inst.drawFrom5YHigh ?? null,
-                drawFrom7YHigh: inst.drawFrom7YHigh ?? null,
-                scenario: phase1.scenario ?? inst.tfaScenario ?? '52w',
-              }),
-            })
-            cacheSet(catalystCacheKey, data, TFA_CATALYST_TTL_MS)
-          }
-
-          const scenario = phase1.scenario
-          const baseT = (scenario === '5y' || scenario === '7y')
-            ? (inst.tfaTScore5Y ?? tDetails.score ?? null)
-            : (tDetails.score ?? null)
-          const baseF = (scenario === '5y' || scenario === '7y')
-            ? (f5yDetails.score ?? fDetails.score ?? null)
-            : (fDetails.score ?? null)
-          const rawEScore = data.eScore ?? null
-          let finalScore: number | null = null
-          if (!data.koRisk) {
-            if (rawEScore != null && baseT != null && baseF != null) {
-              finalScore = (baseT * 0.35) + (baseF * 0.40) + (rawEScore * 0.25)
-            } else if (baseT != null && baseF != null) {
-              finalScore = (baseT * 0.35 + baseF * 0.40) / 0.75
-            } else if (baseT != null) {
-              finalScore = baseT
-            }
-          }
-          dispatch({
-            type: 'UPDATE_INSTRUMENT',
-            isin: inst.isin,
-            updates: {
-              tfaEScore: rawEScore,
-              tfaScore: data.koRisk ? null : finalScore,
-              tfaKO: data.koRisk ?? false,
-              tfaCatalyst: {
-                earningsBeatRecent: data.signals?.earnings_beat_recent ?? null,
-                earningsBeatPrior: data.signals?.earnings_beat_prior ?? null,
-                guidanceRaised: data.signals?.guidance_raised ?? null,
-                analystUpgrade: data.signals?.analyst_upgrade ?? null,
-                insiderBuying: data.signals?.insider_buying ?? null,
-                restructuring: data.signals?.restructuring ?? null,
-                koRisk: data.signals?.ko_risk ?? null,
-                eScore: data.eScore ?? null,
-                summary: data.summary ?? null,
-                fetchedAt: Date.now(),
-              },
-              tfaPhase: data.koRisk ? 'ko' : 'qualified',
-              tfaFetched: true,
-            },
-          })
-        } finally {
-          tfaInFlight.current.delete(inst.isin)
-        }
-      }
     } catch (err: any) {
       dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message, tfaPhase: 'watch' } })
     } finally {
@@ -1665,6 +1589,80 @@ export function usePipeline() {
     fetchSingleInstrumentAnalyst,
   ])
 
+  const fetchSingleInstrumentTfaCatalyst = useCallback(async (isin: string) => {
+    const inst = state.instruments.find(i => i.isin === isin)
+    if (!inst || !inst.yahooTicker || inst.type !== 'Stock') return
+    if (tfaInFlight.current.has(inst.isin)) return
+
+    tfaInFlight.current.add(inst.isin)
+    try {
+      dispatch({ type: 'UPDATE_INSTRUMENT', isin: inst.isin, updates: { tfaPhase: 'fetching' } })
+      const catalystCacheKey = `cache:tfa-catalyst:${inst.yahooTicker}`
+      let data = cacheGet<any>(catalystCacheKey, TFA_CATALYST_TTL_MS)
+
+      if (!data) {
+        data = await apiFetchJson<any>('/api/tfa-catalyst', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ticker: inst.yahooTicker,
+            name: inst.displayName,
+            drawFromHigh: inst.drawFromHigh,
+            drawFrom5YHigh: inst.drawFrom5YHigh ?? null,
+            drawFrom7YHigh: inst.drawFrom7YHigh ?? null,
+            scenario: inst.tfaScenario ?? '52w',
+          }),
+        })
+        cacheSet(catalystCacheKey, data, TFA_CATALYST_TTL_MS)
+      }
+
+      const scenario = inst.tfaScenario
+      const baseT = (scenario === '5y' || scenario === '7y')
+        ? (inst.tfaTScore5Y ?? inst.tfaTScore ?? null)
+        : (inst.tfaTScore ?? null)
+      const baseF = (scenario === '5y' || scenario === '7y')
+        ? (inst.tfaFScore5Y ?? inst.tfaFScore ?? null)
+        : (inst.tfaFScore ?? null)
+      const rawEScore = data.eScore ?? null
+      let finalScore: number | null = null
+      if (!data.koRisk) {
+        if (rawEScore != null && baseT != null && baseF != null) {
+          finalScore = (baseT * 0.35) + (baseF * 0.40) + (rawEScore * 0.25)
+        } else if (baseT != null && baseF != null) {
+          finalScore = (baseT * 0.35 + baseF * 0.40) / 0.75
+        } else if (baseT != null) {
+          finalScore = baseT
+        }
+      }
+
+      dispatch({
+        type: 'UPDATE_INSTRUMENT',
+        isin: inst.isin,
+        updates: {
+          tfaEScore: rawEScore,
+          tfaScore: data.koRisk ? null : finalScore,
+          tfaKO: data.koRisk ?? false,
+          tfaCatalyst: {
+            earningsBeatRecent: data.signals?.earnings_beat_recent ?? null,
+            earningsBeatPrior: data.signals?.earnings_beat_prior ?? null,
+            guidanceRaised: data.signals?.guidance_raised ?? null,
+            analystUpgrade: data.signals?.analyst_upgrade ?? null,
+            insiderBuying: data.signals?.insider_buying ?? null,
+            restructuring: data.signals?.restructuring ?? null,
+            koRisk: data.signals?.ko_risk ?? null,
+            eScore: data.eScore ?? null,
+            summary: data.summary ?? null,
+            fetchedAt: Date.now(),
+          },
+          tfaPhase: data.koRisk ? 'ko' : 'qualified',
+          tfaFetched: true,
+        },
+      })
+    } finally {
+      tfaInFlight.current.delete(inst.isin)
+    }
+  }, [state.instruments])
+
   const fetchPortfolioPrices = useCallback(async (isins: string[]) => {
     const targets = state.instruments.filter((i) => isins.includes(i.isin) && i.yahooTicker)
     if (targets.length === 0) return
@@ -1674,5 +1672,14 @@ export function usePipeline() {
     dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
   }, [state.instruments, fetchPrices])
 
-  return { processManualInput, loadXetraBackground, activateXetra, xetraBuffer, fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst, fetchPortfolioPrices }
+  return {
+    processManualInput,
+    loadXetraBackground,
+    activateXetra,
+    xetraBuffer,
+    fetchSingleInstrumentPrices,
+    fetchSingleInstrumentAnalyst,
+    fetchSingleInstrumentTfaCatalyst,
+    fetchPortfolioPrices,
+  }
 }

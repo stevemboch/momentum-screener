@@ -88,7 +88,7 @@ function asDataQuality(v: unknown): 'high' | 'medium' | 'low' {
   return 'low'
 }
 
-function normalizeEvidenceList(v: unknown, max = 3): BriefingFinding['evidence'] {
+function normalizeEvidenceList(v: unknown, max = 1): BriefingFinding['evidence'] {
   if (!Array.isArray(v)) return []
   return v
     .map((item: unknown) => {
@@ -262,13 +262,17 @@ export function usePortfolioAnalysis() {
 
   // ── Haupt-Trigger: beide parallel ────────────────────────
 
-  const run = useCallback(async () => {
+  const runStructure = useCallback(async () => {
     const payload = buildPayload()
     if (payload.length === 0) return
-    // Beide gleichzeitig starten — kein sequenzielles await
     fetchStructure(payload)
+  }, [buildPayload, fetchStructure])
+
+  const runBriefing = useCallback(async () => {
+    const payload = buildPayload()
+    if (payload.length === 0) return
     fetchBriefing(payload)
-  }, [buildPayload, fetchStructure, fetchBriefing])
+  }, [buildPayload, fetchBriefing])
 
   // ── Clear ────────────────────────────────────────────────
 
@@ -286,7 +290,8 @@ export function usePortfolioAnalysis() {
     structureStatus, structureResult, structureError,
     briefingStatus,  briefingResult,  briefingError, briefingIsStale,
     isRunning,
-    run,
+    runStructure,
+    runBriefing,
     clear,
   }
 }

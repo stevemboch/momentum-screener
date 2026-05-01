@@ -12,7 +12,8 @@ export function PortfolioPanel() {
     structureStatus, structureResult, structureError,
     briefingStatus,  briefingResult,  briefingError, briefingIsStale,
     isRunning,
-    run,
+    runStructure,
+    runBriefing,
     clear,
   } = usePortfolioAnalysis()
   const [briefingExpanded, setBriefingExpanded] = useState(false)
@@ -84,19 +85,34 @@ export function PortfolioPanel() {
       <div className="flex gap-2 mt-3 items-center">
         <button
           type="button"
-          onClick={run}
-          disabled={isRunning || portfolioCount === 0}
+          onClick={runStructure}
+          disabled={structureStatus === 'loading' || portfolioCount === 0}
           className="btn btn-md btn-secondary focus-ring flex-1 font-semibold"
-          title="Analyze portfolio structure and search for current market 
-             developments (uses web search for briefing, cached 2h)"
+          title="Analyze portfolio structure (non-search AI call)"
         >
-          {isRunning ? (
+          {structureStatus === 'loading' ? (
             <>
               <span className="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />
-              Analyzing...
+              Analyzing Structure...
             </>
           ) : (
-            'Analyze portfolio'
+            'Analyze Structure'
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={runBriefing}
+          disabled={briefingStatus === 'loading' || portfolioCount === 0}
+          className="btn btn-md btn-secondary focus-ring flex-1 font-semibold"
+          title="Run market briefing (web search, cached 2h)"
+        >
+          {briefingStatus === 'loading' ? (
+            <>
+              <span className="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />
+              Searching Briefing...
+            </>
+          ) : (
+            'Run Market Briefing'
           )}
         </button>
 
@@ -114,18 +130,22 @@ export function PortfolioPanel() {
       </div>
 
       {/* ── Progress Rows — nur während des Ladens sichtbar ── */}
-      {isRunning && (
+      {(structureStatus === 'loading' || briefingStatus === 'loading') && (
         <div className="mt-2 flex flex-col gap-1">
-          <AnalysisProgressRow
-            label="Structure"
-            icon="🔍"
-            status={structureStatus}
-          />
-          <AnalysisProgressRow
-            label="Market Briefing"
-            icon="🌐"
-            status={briefingStatus}
-          />
+          {structureStatus === 'loading' && (
+            <AnalysisProgressRow
+              label="Structure"
+              icon="🔍"
+              status={structureStatus}
+            />
+          )}
+          {briefingStatus === 'loading' && (
+            <AnalysisProgressRow
+              label="Market Briefing"
+              icon="🌐"
+              status={briefingStatus}
+            />
+          )}
           {briefingStatus === 'loading' && (
             <div className="text-ui-xs text-muted font-mono pl-6">
               Searching... This may take up to 30 seconds.

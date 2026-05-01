@@ -119,7 +119,7 @@ function normalizeEvidence(v: unknown): EvidenceItem | null {
   }
 }
 
-function normalizeEvidenceList(v: unknown, max = 3): EvidenceItem[] {
+function normalizeEvidenceList(v: unknown, max = 1): EvidenceItem[] {
   if (!Array.isArray(v)) return []
   return v
     .map(normalizeEvidence)
@@ -257,7 +257,7 @@ Return as JSON:
   "generatedAt": "${nowIso}"
 }
 
-Maximum 5 findings. Sort by priority (high first). Include 1-3 evidence items per finding when available.`
+Maximum 4 findings. Sort by priority (high first). Include at most 1 evidence item per finding.`
 
   try {
     const search = await geminiSearchChatWithMeta(systemPrompt, userMessage)
@@ -265,7 +265,7 @@ Maximum 5 findings. Sort by priority (high first). Include 1-3 evidence items pe
     const raw = (parsed.value && typeof parsed.value === 'object') ? parsed.value : {}
 
     const findings = Array.isArray(raw.findings)
-      ? raw.findings.map(normalizeFinding).filter(Boolean).slice(0, 5) as BriefingFinding[]
+      ? raw.findings.map(normalizeFinding).filter(Boolean).slice(0, 4) as BriefingFinding[]
       : []
     const macroContext = asString(raw.macroContext) ?? ''
     const macroContextEvidence = normalizeEvidenceList(raw.macroContextEvidence, 3)
