@@ -27,9 +27,6 @@
     "api/tfa-catalyst.ts": {
       "maxDuration": 45
     },
-    "api/claude-regime.ts": {
-      "maxDuration": 30
-    },
     "api/claude-portfolio.ts": {
       "maxDuration": 30
     },

@@ -1307,26 +1307,19 @@ export function usePipeline() {
         updates.leewayError = r.leewayUsed ? null : 'Keine Leeway-Daten'
       }
 
-      const lastPrice = inst.closes?.length ? inst.closes[inst.closes.length - 1] : null
       const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
 
-      // Financial Currency: ISIN-basiert ist Ground Truth, Yahoo-Feld ist Fallback
-      const isinCurrency = isinToFinancialCurrency(inst.isin)
-      const analystCurrency = isinCurrency ?? r.financialCurrency ?? r.currency ?? null
+      // Für Upside/FX nur belastbare Quellwährung verwenden.
+      // ISIN-basierte Ableitung bleibt als Heuristik nützlich, ist hier aber nicht robust genug
+      // (kann bei Listings/ADRs/sonderfällen zu falschen Mismatch-Signalen führen).
+      const analystCurrency = r.financialCurrency ?? r.currency ?? null
 
-      const analystCurrent = r.currentPrice ?? null
-
-      // FX-Rate-Bestimmung (Priorität: Yahoo-Rate > Preisverhältnis):
+      // FX-Rate-Bestimmung (nur belastbare Quellen, kein Preisverhältnis-Proxy):
       let fxRate: number | null = null
       if (priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency) {
-        // Yahoo hat die Rate bereits korrekt geliefert (wenn financialCurrency ≠ currency erkannt)
+        // Yahoo hat die Rate bereits geliefert (wenn financialCurrency ≠ currency erkannt)
         if (r.fxRate != null) {
           fxRate = r.fxRate
-        } else if (lastPrice != null && analystCurrent != null && analystCurrent > 0) {
-          // Preisverhältnis als Proxy: lastPrice (priceCurrency) / analystCurrent (analystCurrency)
-          // Sanity-Check: Rate muss sinnvoll sein (nicht < 0.01 oder > 100)
-          const ratio = lastPrice / analystCurrent
-          if (ratio >= 0.01 && ratio <= 100) fxRate = ratio
         }
         // Letzter Fallback: falls kein Rate verfügbar, Target nicht anzeigen
       }
@@ -1334,15 +1327,7 @@ export function usePipeline() {
       // Keine FX nötig wenn gleiche Währung
       const currencyMismatch = priceCurrency != null && analystCurrency != null && priceCurrency !== analystCurrency
 
-      // Ratio-Mismatch als zusätzlichen Trigger (deckt Fälle ab wo ISIN-Mapping fehlt)
-      const ratioProxy = fxRate == null && priceCurrency === analystCurrency
-        ? (lastPrice != null && analystCurrent != null && analystCurrent > 0
-          ? lastPrice / analystCurrent
-          : null)
-        : null
-      const ratioMismatch = ratioProxy != null && (ratioProxy < 0.85 || ratioProxy > 1.15)
-
-      const shouldAdjust = currencyMismatch || ratioMismatch
+      const shouldAdjust = currencyMismatch
 
       if (shouldAdjust && fxRate != null) {
         updates.targetFxRate = fxRate

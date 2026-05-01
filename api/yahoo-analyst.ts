@@ -237,6 +237,84 @@ function inferCurrency(text: string | null): string | null {
   return null
 }
 
+type NormalizedCurrencyUnit = {
+  code: string
+  unitFactorToMajor: number
+}
+
+function normalizeCurrencyUnit(raw: string | null | undefined): NormalizedCurrencyUnit | null {
+  if (!raw) return null
+  const code = raw.trim().toUpperCase()
+  if (!code) return null
+  // Subunit handling (e.g. London quotes in pence)
+  if (code === 'GBX') return { code: 'GBP', unitFactorToMajor: 0.01 }
+  if (code === 'ZAC') return { code: 'ZAR', unitFactorToMajor: 0.01 }
+  return { code, unitFactorToMajor: 1 }
+}
+
+async function fetchYahooFxRateDirect(fromCode: string, toCode: string): Promise<number | null> {
+  const directPair = `${fromCode}${toCode}=X`
+  const inversePair = `${toCode}${fromCode}=X`
+  const pairs: Array<{ symbol: string; invert: boolean }> = [
+    { symbol: directPair, invert: false },
+    { symbol: inversePair, invert: true },
+  ]
+
+  for (const { symbol, invert } of pairs) {
+    const chartUrls = [
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d&includePrePost=false`,
+      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d&includePrePost=false`,
+    ]
+    for (const url of chartUrls) {
+      try {
+        const res = await fetchWithTimeout(url, { headers: YAHOO_API_HEADERS })
+        if (!res.ok) continue
+        const data = await res.json()
+        const result = data?.chart?.result?.[0]
+        const quote = result?.indicators?.quote?.[0]
+        const close = Array.isArray(quote?.close)
+          ? quote.close.filter((v: any) => v != null && !isNaN(v)).pop()
+          : null
+        if (typeof close === 'number' && Number.isFinite(close) && close > 0) {
+          return invert ? 1 / close : close
+        }
+      } catch {}
+    }
+
+    const quoteUrls = [
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`,
+      `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`,
+    ]
+    for (const url of quoteUrls) {
+      try {
+        const res = await fetchWithTimeout(url, { headers: YAHOO_API_HEADERS })
+        if (!res.ok) continue
+        const data = await res.json()
+        const q = data?.quoteResponse?.result?.[0]
+        const px = q?.regularMarketPrice
+        if (typeof px === 'number' && Number.isFinite(px) && px > 0) {
+          return invert ? 1 / px : px
+        }
+      } catch {}
+    }
+  }
+
+  return null
+}
+
+async function deriveFxRate(fromCurrency: string | null | undefined, toCurrency: string | null | undefined): Promise<number | null> {
+  const from = normalizeCurrencyUnit(fromCurrency)
+  const to = normalizeCurrencyUnit(toCurrency)
+  if (!from || !to) return null
+  if (from.code === to.code) {
+    return from.unitFactorToMajor / to.unitFactorToMajor
+  }
+  const marketRate = await fetchYahooFxRateDirect(from.code, to.code)
+  if (marketRate == null || !Number.isFinite(marketRate) || marketRate <= 0) return null
+  // Convert from source quote unit into target quote unit.
+  return marketRate * (from.unitFactorToMajor / to.unitFactorToMajor)
+}
+
 function getFromPairs(map: Map<string, string>, ...labels: string[]) {
   for (const l of labels) {
     const v = map.get(l)
@@ -683,41 +761,13 @@ async function fetchAnalyst(
     base.financialCurrency = fd.financialCurrency ?? base.financialCurrency ?? null
     if (!base.leewayUsed) base.source = 'yahoo'
 
-    // ISIN-basierte Currency als Fallback wenn Yahoo nichts oder falsch liefert
-    const isinPrefix = (isin ?? '').slice(0, 2).toUpperCase()
-    const isinCurrencyMap: Record<string, string> = {
-      US: 'USD', CA: 'CAD', GB: 'GBP', AU: 'AUD', NZ: 'NZD',
-      JP: 'JPY', HK: 'HKD', SG: 'SGD', KR: 'KRW', CN: 'CNY',
-      CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK',
-    }
-    const isinFinancialCurrency = isinCurrencyMap[isinPrefix] ?? null
-
-    // Wenn Yahoo keine financialCurrency liefert, ISIN-basierte verwenden
-    if (!base.financialCurrency && isinFinancialCurrency) {
-      base.financialCurrency = isinFinancialCurrency
-    }
+    // Kein ISIN-basiertes financialCurrency-Override:
+    // Bei Cross-Listings/ADRs/sonderfällen kann das zu falschen Währungssignalen führen
+    // und damit fehlerhafte Upside-Berechnung triggern.
 
     if (base.financialCurrency && base.currency && base.financialCurrency !== base.currency) {
       try {
-        const pair = `${base.financialCurrency}${base.currency}=X`
-        const fxUrls = [
-          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(pair)}?range=5d&interval=1d&includePrePost=false`,
-          `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(pair)}?range=5d&interval=1d&includePrePost=false`,
-        ]
-        for (const fxUrl of fxUrls) {
-          const fxRes = await fetchWithTimeout(fxUrl, { headers: YAHOO_API_HEADERS })
-          if (!fxRes.ok) continue
-          const fxData = await fxRes.json()
-          const fxResult = fxData?.chart?.result?.[0]
-          const fxQuote = fxResult?.indicators?.quote?.[0]
-          const fxClose = Array.isArray(fxQuote?.close)
-            ? fxQuote.close.filter((v: any) => v != null && !isNaN(v)).pop()
-            : null
-          if (typeof fxClose === 'number' && Number.isFinite(fxClose)) {
-            base.fxRate = fxClose
-            break
-          }
-        }
+        base.fxRate = await deriveFxRate(base.financialCurrency, base.currency)
       } catch {
         // ignore FX fetch errors
       }
