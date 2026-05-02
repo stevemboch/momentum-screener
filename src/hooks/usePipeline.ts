@@ -1413,6 +1413,10 @@ export function usePipeline() {
         r.currentPrice > 0
           ? (r.targetMeanPrice / r.currentPrice - 1)
           : null
+      const providerPairSameSource =
+        typeof r.targetOrigin === 'string' &&
+        typeof r.currentOrigin === 'string' &&
+        r.targetOrigin === r.currentOrigin
 
       // analystCurrency für Anzeige: gibt die ZIEL-Währung des Kursziels an
       // (nicht die Handelswährung des Instruments)
@@ -1455,12 +1459,15 @@ export function usePipeline() {
           ? (targetComparableInPriceCurrency / currentPrice - 1)
           : null
 
-      if (isPlausibleUpsideRatio(providerUpside)) {
+      if (providerPairSameSource && isPlausibleUpsideRatio(providerUpside)) {
         updates.analystUpside = providerUpside
         updates.analystUpsideMode = targetComparableInPriceCurrency == null ? 'mixed_plausibilized' : 'provider'
       } else if (isPlausibleUpsideRatio(priceComparableUpside)) {
         updates.analystUpside = priceComparableUpside
         updates.analystUpsideMode = 'price_comparable'
+      } else if (isPlausibleUpsideRatio(providerUpside)) {
+        updates.analystUpside = providerUpside
+        updates.analystUpsideMode = 'mixed_plausibilized'
       } else {
         updates.analystUpside = null
         updates.analystUpsideMode = null

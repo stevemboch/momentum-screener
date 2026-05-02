@@ -1206,11 +1206,6 @@ function ExpandedDetail({
                                   : 'mixed (plausibilized)'}
                             </div>
                           )}
-                          {(inst.analystTargetOrigin || inst.analystCurrentOrigin) && (
-                            <div className="text-muted text-[10px] break-words">
-                              Debug origins (temp): target={inst.analystTargetOrigin ?? 'n/a'}, current={inst.analystCurrentOrigin ?? 'n/a'}
-                            </div>
-                          )}
                           {currencyMismatch && !inst.targetFxApplied && (
                             <div className="text-amber-300 text-[10px] break-words">
                               Currency mismatch: {analystCurrency} target vs {priceCurrency} price

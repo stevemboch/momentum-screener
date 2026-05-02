@@ -1066,6 +1066,23 @@ async function fetchAnalyst(
         returnOnAssets: base.returnOnAssets ?? ms.returnOnAssets ?? null,
         source: base.leewayUsed ? 'leeway' : 'marketscreener',
       }
+      // Atomarer Pair-Fix:
+      // Wenn MarketScreener sowohl Target als auch Current hat, verwende beide zusammen
+      // statt gemischter Herkunft.
+      if (
+        ms.targetMeanPrice != null &&
+        ms.currentPrice != null &&
+        Number.isFinite(ms.targetMeanPrice) &&
+        Number.isFinite(ms.currentPrice) &&
+        ms.currentPrice > 0
+      ) {
+        result.targetMeanPrice = ms.targetMeanPrice
+        result.currentPrice = ms.currentPrice
+        result.targetOrigin = 'marketscreener'
+        result.currentOrigin = 'marketscreener'
+        if (ms.targetLowPrice != null) result.targetLowPrice = ms.targetLowPrice
+        if (ms.targetHighPrice != null) result.targetHighPrice = ms.targetHighPrice
+      }
       return await applyFxRateForTarget(result, targetCurrency)
     } catch (msErr: any) {
       // Fallback 2: OptionsAnalysisSuite (public HTML)
