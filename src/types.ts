@@ -84,6 +84,8 @@ export interface Instrument {
   targetCurrencyConfidence?: 'high' | 'medium' | 'low' | null
   analystUpside?: number | null
   analystUpsideMode?: 'provider' | 'price_comparable' | 'mixed_plausibilized' | null
+  analystTargetOrigin?: 'yahoo' | 'leeway' | 'marketscreener' | 'optionsanalysissuite' | null
+  analystCurrentOrigin?: 'yahoo' | 'leeway' | 'marketscreener' | 'optionsanalysissuite' | null
   marketCap?: number | null
   analystSource?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite' | 'leeway'
   analystFetched?: boolean

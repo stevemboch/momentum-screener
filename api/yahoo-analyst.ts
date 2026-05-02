@@ -22,6 +22,8 @@ interface AnalystResult {
   pb?: number | null
   marketCap?: number | null
   resolvedTicker?: string | null
+  targetOrigin?: 'yahoo' | 'leeway' | 'marketscreener' | 'optionsanalysissuite' | null
+  currentOrigin?: 'yahoo' | 'leeway' | 'marketscreener' | 'optionsanalysissuite' | null
   source?: 'yahoo' | 'marketscreener' | 'optionsanalysissuite' | 'leeway'
   leewayUsed?: boolean
   error?: string
@@ -873,7 +875,10 @@ async function fetchFromLeeway(mnemonic: string): Promise<Partial<AnalystResult>
   if (recommendationMean != null) result.recommendationMean = recommendationMean
   if (recommendationKey != null) result.recommendationKey = recommendationKey
   if (total > 0) result.numberOfAnalystOpinions = total
-  if (targetMeanPrice != null) result.targetMeanPrice = targetMeanPrice
+  if (targetMeanPrice != null) {
+    result.targetMeanPrice = targetMeanPrice
+    result.targetOrigin = 'leeway'
+  }
 
   const hasUsefulData = pe != null || pb != null || marketCap != null || ebitda != null ||
     enterpriseValue != null || returnOnAssets != null ||
@@ -927,6 +932,8 @@ async function fetchAnalyst(
     fxBaseCurrency: null,
     fxTargetCurrency: null,
     resolvedTicker: null,
+    targetOrigin: null,
+    currentOrigin: null,
   }
 
   // Leeway zuerst versuchen — liefert oft bessere Fundamentals + Analyst-Konsens.
@@ -981,10 +988,22 @@ async function fetchAnalyst(
         if (base.recommendationMean == null) base.recommendationMean = fd.recommendationMean?.raw ?? null
         if (base.recommendationKey == null) base.recommendationKey = fd.recommendationKey ?? trend0?.trend ?? null
         if (base.numberOfAnalystOpinions == null) base.numberOfAnalystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
-        if (base.targetMeanPrice == null) base.targetMeanPrice = scaleYahooValue(fd.targetMeanPrice?.raw)
+        if (base.targetMeanPrice == null) {
+          const yahooTarget = scaleYahooValue(fd.targetMeanPrice?.raw)
+          if (yahooTarget != null) {
+            base.targetMeanPrice = yahooTarget
+            base.targetOrigin = 'yahoo'
+          }
+        }
         if (base.targetLowPrice == null) base.targetLowPrice = scaleYahooValue(fd.targetLowPrice?.raw)
         if (base.targetHighPrice == null) base.targetHighPrice = scaleYahooValue(fd.targetHighPrice?.raw)
-        base.currentPrice = scaleYahooValue(fd.currentPrice?.raw) ?? base.currentPrice ?? null
+        const yahooCurrent = scaleYahooValue(fd.currentPrice?.raw)
+        if (yahooCurrent != null) {
+          base.currentPrice = yahooCurrent
+          base.currentOrigin = 'yahoo'
+        } else {
+          base.currentPrice = base.currentPrice ?? null
+        }
         base.currency = quoteCurrency ?? base.currency ?? null
         base.financialCurrency = financialCurrency ?? base.financialCurrency ?? null
         base.resolvedTicker = candidateTicker
@@ -1033,6 +1052,12 @@ async function fetchAnalyst(
         targetLowPrice: base.targetLowPrice ?? ms.targetLowPrice ?? null,
         targetHighPrice: base.targetHighPrice ?? ms.targetHighPrice ?? null,
         currentPrice: base.currentPrice ?? ms.currentPrice ?? null,
+        targetOrigin: base.targetMeanPrice != null
+          ? (base.targetOrigin ?? null)
+          : (ms.targetMeanPrice != null ? 'marketscreener' : null),
+        currentOrigin: base.currentPrice != null
+          ? (base.currentOrigin ?? null)
+          : (ms.currentPrice != null ? 'marketscreener' : null),
         financialCurrency: base.financialCurrency ?? ms.financialCurrency ?? ms.currency ?? null,
         pe: base.pe ?? ms.pe ?? null,
         pb: base.pb ?? ms.pb ?? null,
@@ -1047,15 +1072,19 @@ async function fetchAnalyst(
       try {
         const fallbackTicker = base.resolvedTicker ?? ticker
         const fallback = await fetchFromOptionAnalysisSuiteWithRetry(fallbackTicker)
-        const result: AnalystResult = {
-          ...base,
-          recommendationKey: base.recommendationKey ?? fallback.recommendationKey ?? null,
-          targetMeanPrice: base.targetMeanPrice ?? fallback.targetMeanPrice ?? null,
-          targetLowPrice: base.targetLowPrice ?? fallback.targetLowPrice ?? null,
-          targetHighPrice: base.targetHighPrice ?? fallback.targetHighPrice ?? null,
-          financialCurrency: base.financialCurrency ?? fallback.financialCurrency ?? fallback.currency ?? null,
-          source: base.leewayUsed ? 'leeway' : 'optionsanalysissuite',
-        }
+      const result: AnalystResult = {
+        ...base,
+        recommendationKey: base.recommendationKey ?? fallback.recommendationKey ?? null,
+        targetMeanPrice: base.targetMeanPrice ?? fallback.targetMeanPrice ?? null,
+        targetLowPrice: base.targetLowPrice ?? fallback.targetLowPrice ?? null,
+        targetHighPrice: base.targetHighPrice ?? fallback.targetHighPrice ?? null,
+        targetOrigin: base.targetMeanPrice != null
+          ? (base.targetOrigin ?? null)
+          : (fallback.targetMeanPrice != null ? 'optionsanalysissuite' : null),
+        currentOrigin: base.currentOrigin ?? null,
+        financialCurrency: base.financialCurrency ?? fallback.financialCurrency ?? fallback.currency ?? null,
+        source: base.leewayUsed ? 'leeway' : 'optionsanalysissuite',
+      }
         return await applyFxRateForTarget(result, targetCurrency)
       } catch (fallbackErr: any) {
         base.error = [err?.message, msErr?.message, fallbackErr?.message].filter(Boolean).join(' | ')
