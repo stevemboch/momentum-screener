@@ -987,6 +987,15 @@ async function fetchAnalyst(
 
         if (base.recommendationMean == null) base.recommendationMean = fd.recommendationMean?.raw ?? null
         if (base.recommendationKey == null) base.recommendationKey = fd.recommendationKey ?? trend0?.trend ?? null
+
+        // Fallback: Generate recommendationKey from recommendationMean if key is missing or 'none'
+        if ((base.recommendationKey == null || base.recommendationKey.toLowerCase() === 'none') && base.recommendationMean != null) {
+          if (base.recommendationMean <= 1.5) base.recommendationKey = 'strongbuy'
+          else if (base.recommendationMean <= 2.5) base.recommendationKey = 'buy'
+          else if (base.recommendationMean <= 3.5) base.recommendationKey = 'hold'
+          else if (base.recommendationMean <= 4.5) base.recommendationKey = 'sell'
+          else base.recommendationKey = 'strongsell'
+        }
         if (base.numberOfAnalystOpinions == null) base.numberOfAnalystOpinions = fd.numberOfAnalystOpinions?.raw ?? null
         if (base.targetMeanPrice == null) {
           const yahooTarget = scaleYahooValue(fd.targetMeanPrice?.raw)
