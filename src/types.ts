@@ -293,6 +293,7 @@ export interface AppSettings {
   aumFloor: number
   atrMultiplier: number   // 3–5, default 4
   riskFreeRate: number    // annualised, default 0.035 (3.5%)
+  isinDoubleClickAction: 'google' | 'claude'
 }
 
 export type MarketRegime = 'RISK_ON' | 'RISK_OFF' | 'SIDEWAYS' | 'TRANSITION'

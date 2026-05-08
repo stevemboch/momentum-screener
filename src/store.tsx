@@ -127,6 +127,7 @@ const DEFAULT_STATE: AppState = {
     aumFloor: 100_000_000,
     atrMultiplier: 4,
     riskFreeRate: 0.035,  // 3.5% p.a. (ECB/EUR)
+    isinDoubleClickAction: 'google',
   },
   tableState: {
     sortColumn: 'riskAdjustedScore',
@@ -189,6 +190,7 @@ type Action =
   | { type: 'SET_ATR_MULTIPLIER'; multiplier: number }
   | { type: 'SET_RISK_FREE_RATE'; rate: number }
   | { type: 'SET_REFERENCE_R3M'; r3m: number | null }
+  | { type: 'SET_ISIN_DOUBLE_CLICK_ACTION'; action: 'google' | 'claude' }
   | { type: 'SET_TABLE_STATE'; updates: Partial<TableState> }
   | { type: 'SET_ETF_GROUP'; groupKey: string; enabled: boolean }
   | { type: 'SET_STOCK_GROUP'; groupKey: string; enabled: boolean }
@@ -283,6 +285,8 @@ function reducer(state: AppState, action: Action): AppState {
       const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, action.r3m)
       return { ...state, referenceR3m: action.r3m, instruments }
     }
+    case 'SET_ISIN_DOUBLE_CLICK_ACTION':
+      return { ...state, settings: { ...state.settings, isinDoubleClickAction: action.action } }
     case 'SET_TABLE_STATE': {
       const updates = action.updates
       // Mutual Exclusion: TFA und Pullback-Modus schließen sich aus

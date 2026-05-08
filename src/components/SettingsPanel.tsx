@@ -9,7 +9,7 @@ import { ToggleRow } from './ui/ToggleRow'
 export function SettingsPanel() {
   const [open, setOpen] = useState(false)
   const { state, dispatch } = useAppState()
-  const { weights, aumFloor, atrMultiplier, riskFreeRate } = state.settings
+  const { weights, aumFloor, atrMultiplier, riskFreeRate, isinDoubleClickAction } = state.settings
   const { showDeduped, filterBelowRiskFree } = state.tableState
 
   const raw = {
@@ -156,26 +156,75 @@ export function SettingsPanel() {
             <div className="mt-1 text-ui-xs font-mono text-muted">
               ECB deposit rate ~2.5% · short-term EUR yields ~3.5%
             </div>
-          </FieldRow>
+            </FieldRow>
 
-          <FieldRow label="AUM Floor (ETFs)">
-            <div className="flex items-center gap-2">
-              <span className="text-ui-sm font-mono text-muted">EUR</span>
-              <input
-                type="number"
-                value={aumFloor / 1_000_000}
-                onChange={(e) =>
-                  dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })
-                }
-                className="focus-ring w-32 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
-                min={0}
-                step={10}
-                aria-label="AUM floor in millions"
-              />
-              <span className="text-ui-sm font-mono text-muted">M</span>
-            </div>
-          </FieldRow>
-        </ModalShell>
+           <FieldRow label="AUM Floor (ETFs)">
+             <div className="flex items-center gap-2">
+               <span className="text-ui-sm font-mono text-muted">EUR</span>
+               <input
+                 type="number"
+                 value={aumFloor / 1_000_000}
+                 onChange={(e) =>
+                   dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })
+                 }
+                 className="focus-ring w-32 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
+                 min={0}
+                 step={10}
+                 aria-label="AUM floor in millions"
+               />
+               <span className="text-ui-sm font-mono text-muted">M</span>
+             </div>
+           </FieldRow>
+
+           <FieldRow label="ISIN Doppelklick">
+             <div className="flex gap-4">
+               <label className="flex items-center gap-2 text-ui-sm">
+                 <input
+                   type="radio"
+                   name="isinDoubleClickAction"
+                   value="google"
+                   checked={isinDoubleClickAction === 'google'}
+                   onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'google' })}
+                   className="accent-blue-500"
+                 />
+                 <span>Google-Suche</span>
+               </label>
+               <label className="flex items-center gap-2 text-ui-sm">
+                 <input
+                   type="radio"
+                   name="isinDoubleClickAction"
+                   value="claude"
+                   checked={isinDoubleClickAction === 'claude'}
+                   onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'claude' })}
+                   className="accent-blue-500"
+                 />
+                 <span>Claude-Chat</span>
+               </label>
+              </div>
+              <div className="mt-1 text-ui-xs font-mono text-muted">
+                Aktion beim Doppelklick auf eine ISIN
+              </div>
+             </FieldRow>
+
+           <FieldRow label="AUM Floor (ETFs)">
+             <div className="flex items-center gap-2">
+               <span className="text-ui-sm font-mono text-muted">EUR</span>
+               <input
+                 type="number"
+                 value={aumFloor / 1_000_000}
+                 onChange={(e) =>
+                   dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })
+                 }
+                 className="focus-ring w-32 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
+                 min={0}
+                 step={10}
+                 aria-label="AUM floor in millions"
+               />
+               <span className="text-ui-sm font-mono text-muted">M</span>
+             </div>
+           </FieldRow>
+
+         </ModalShell>
       )}
     </>
   )

@@ -154,10 +154,16 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
-function openIsinSearch(isin: string) {
+function openIsinSearch(isin: string, action: 'google' | 'claude') {
   if (!isin || typeof window === 'undefined') return
-  const query = encodeURIComponent(isin)
-  window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer')
+
+  if (action === 'claude') {
+    const prompt = `Analysiere diese ISIN: ${isin}%0A%0AIch habe diese ISIN in meinem Momentum-Screener doppelgeklickt. Bitte führe eine fokussierte, strukturierte Analyse durch:%0A%0A1. *Bewertung*: Aktueller Kurs, Bewertungskennzahlen (P/E, P/B, EV/EBITDA), historische Bewertungs-Bandbreite%0A2. *Finanzielle Gesundheit*: Bilanzstärke (Schulden/EBITDA, Cashflow-Deckung), Profitabilität (Margen, ROE/ROIC), Trends%0A3. *Analyst Consensus*: Konsensmeinung (Buy/Hold/Sell-Verteilung), durchschnittliches Kursziel, Empfehlungstrend (Up-/Downgrades)%0A4. *Relative Stärke vs. Mitbewerber*: Wie schneidet der Wert bei Bewertung, Finanzkennzahlen und Momentum im direkten Sektor-Vergleich ab? Wo sind relative Schwächen/Stärken?%0A5. *Risiken*: 2-3 wesentliche Risikofaktoren, die den Wert vom Sektor-Durchschnitt unterscheiden%0A%0A*Fokus*: Priorisiere Fakten und harte Kennzahlen. Vermeide allgemeine Floskeln. Nenne konkrete Vergleiche zu Peers.`
+    window.open(`https://claude.ai/chat?message=${prompt}`, '_blank', 'noopener,noreferrer')
+  } else {
+    const query = encodeURIComponent(isin)
+    window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer')
+  }
 }
 
 function ScoreCell({ score, rank, colorFn }: { score: number | null | undefined; rank: number | undefined; colorFn?: (v: any) => string }) {
@@ -644,6 +650,8 @@ function CandidateRow({
   hiddenKeys: Set<string>
   colCount: number
 }) {
+  const { state } = useAppState()
+  const action = state.settings.isinDoubleClickAction
   const [loading, setLoading] = useState(false)
   const hasPrices = candidate.priceFetched
   const nameColSpan = Math.max(1, Math.min(colCount, 1))
@@ -671,7 +679,7 @@ function CandidateRow({
             <span
               className="cursor-pointer hover:text-gray-200"
               title="Double-click to search ISIN"
-              onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(candidate.isin) }}
+               onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(candidate.isin, action) }}
             >
               {candidate.isin}
             </span>
@@ -852,20 +860,23 @@ function ExpandedDetail({
   colSpan,
   hiddenKeys,
 }: {
-  inst: any
+  inst: Instrument
   atrMultiplier: number
-  allInstruments: any[]
+  allInstruments: Instrument[]
   onLoadPrices: (isin: string) => void
   onLoadAnalyst: (isin: string) => void
   onLoadTfaCatalyst: (isin: string) => void
   viewPreset: ViewPreset
-  onContextUpdated: (isin: string) => void
+  onContextUpdated: () => void
   onTogglePortfolio: (isin: string) => void
   onRemove: (isin: string) => void
   colSpan: number
   hiddenKeys: Set<string>
 }) {
-  const lastPrice = inst.closes?.length > 0 ? inst.closes[inst.closes.length - 1] : undefined
+  const { state } = useAppState()
+  const action = state.settings.isinDoubleClickAction
+  const closes = inst.closes
+  const lastPrice = closes && closes.length > 0 ? closes[closes.length - 1] : undefined
   const priceCurrency = inst.priceCurrency ?? inst.currency ?? null
   const analystCurrency = inst.analystCurrency ?? null
   const currencyMismatch = analystCurrency != null && priceCurrency != null && analystCurrency !== priceCurrency
@@ -942,7 +953,7 @@ function ExpandedDetail({
                 <span
                   className="text-gray-300 cursor-pointer hover:text-gray-200"
                   title="Double-click to search ISIN"
-                  onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin) }}
+                          onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin, action) }}
                 >
                   {inst.isin}
                 </span>
@@ -1064,16 +1075,16 @@ function ExpandedDetail({
                             targetForContext,
                             'fast'
                           ),
-                        ])
-                      } finally {
-                        setCombinedLoading(false)
-                        setContextOpen((prev) => ({ ...prev, analyst: true }))
-                        onContextUpdated(inst.isin)
-                      }
-                    }}
-                    disabled={ctxLoading || combinedLoading}
-                    className="btn btn-sm btn-ghost focus-ring disabled:opacity-40"
-                    aria-label={ctx ? 'Refresh analyst and context data' : 'Load analyst and context data'}
+                         ])
+                       } finally {
+                         setCombinedLoading(false)
+                         setContextOpen((prev) => ({ ...prev, analyst: true }))
+                         onContextUpdated()
+                       }
+                     }}
+                     disabled={ctxLoading || combinedLoading}
+                     className="btn btn-sm btn-ghost focus-ring disabled:opacity-40"
+                     aria-label={ctx ? 'Refresh analyst and context data' : 'Load analyst and context data'}
                   >
                     {(ctxLoading || combinedLoading) ? '…' : ctx ? '↺ Refresh' : '⬇ Load'}
                   </button>
@@ -1090,18 +1101,18 @@ function ExpandedDetail({
                             lastPrice ?? null,
                             targetForContext,
                             'deep'
-                          ),
-                        ])
-                      } finally {
-                        setCombinedLoading(false)
-                        setContextOpen((prev) => ({ ...prev, analyst: true }))
-                        onContextUpdated(inst.isin)
-                      }
-                    }}
-                    disabled={ctxLoading || combinedLoading}
-                    className="btn btn-sm btn-ghost focus-ring disabled:opacity-40"
-                    aria-label="Load deep analyst and context data"
-                    title="Deep mode: adds bankruptcy and financial-health checks"
+                           ),
+                         ])
+                       } finally {
+                         setCombinedLoading(false)
+                         setContextOpen((prev) => ({ ...prev, analyst: true }))
+                         onContextUpdated()
+                       }
+                     }}
+                     disabled={ctxLoading || combinedLoading}
+                     className="btn btn-sm btn-ghost focus-ring disabled:opacity-40"
+                     aria-label="Load deep analyst and context data"
+                     title="Deep mode: adds bankruptcy and financial-health checks"
                   >
                     Deep
                   </button>
@@ -1872,6 +1883,7 @@ function MobileInstrumentCard({
 
 export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { state, dispatch } = useAppState()
+  const isinDoubleClickAction = state.settings.isinDoubleClickAction
   const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst, fetchSingleInstrumentTfaCatalyst } = usePipeline()
   const instruments = useDisplayedInstruments()
   const isPriceUpdating = state.fetchStatus.phase === 'prices'
@@ -2127,11 +2139,11 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     <div className="text-muted text-[10px] mt-0.5 flex items-center gap-1.5">
                       <TypeBadge type={inst.type} />
                       <span>
-                        <span
-                          className="cursor-pointer hover:text-gray-200"
-                          title="Double-click to search ISIN"
-                          onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin) }}
-                        >
+                         <span
+                           className="cursor-pointer hover:text-gray-200"
+                           title="Double-click to search ISIN"
+                           onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin, isinDoubleClickAction) }}
+                         >
                           {inst.isin}
                         </span>
                         {inst.isin?.startsWith('WKN:') && <span className="text-[9px] ml-1 text-amber-300">(temp)</span>}
