@@ -156,78 +156,60 @@ export function SettingsPanel() {
             <div className="mt-1 text-ui-xs font-mono text-muted">
               ECB deposit rate ~2.5% · short-term EUR yields ~3.5%
             </div>
-            </FieldRow>
+          </FieldRow>
 
-           <FieldRow label="AUM Floor (ETFs)">
-             <div className="flex items-center gap-2">
-               <span className="text-ui-sm font-mono text-muted">EUR</span>
-               <input
-                 type="number"
-                 value={aumFloor / 1_000_000}
-                 onChange={(e) =>
-                   dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })
-                 }
-                 className="focus-ring w-32 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
-                 min={0}
-                 step={10}
-                 aria-label="AUM floor in millions"
-               />
-               <span className="text-ui-sm font-mono text-muted">M</span>
-             </div>
-           </FieldRow>
+          <FieldRow label="AUM Floor (ETFs)">
+            <div className="flex items-center gap-2">
+              <span className="text-ui-sm font-mono text-muted">EUR</span>
+              <input
+                type="number"
+                value={aumFloor / 1_000_000}
+                onChange={(e) =>
+                  dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })
+                }
+                className="focus-ring w-32 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
+                min={0}
+                step={10}
+                aria-label="AUM floor in millions"
+              />
+              <span className="text-ui-sm font-mono text-muted">M</span>
+            </div>
+          </FieldRow>
 
-           <FieldRow label="ISIN Doppelklick">
-             <div className="flex items-center justify-between gap-4">
-               <div className="min-w-0">
-                 <div className="truncate text-ui-sm font-mono text-gray-300">Aktion</div>
-                 <div className="mt-0.5 text-ui-xs font-mono text-muted">Bei Doppelklick auf ISIN</div>
-               </div>
-               <div className="flex gap-5">
-                 <label className="flex items-center gap-2 text-ui-sm">
-                   <input
-                     type="radio"
-                     name="isinDoubleClickAction"
-                     value="google"
-                     checked={isinDoubleClickAction === 'google'}
-                     onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'google' })}
-                     className="accent-blue-500 h-3.5 w-3.5"
-                   />
-                   <span className="text-gray-300">Google-Suche</span>
-                 </label>
-                 <label className="flex items-center gap-2 text-ui-sm">
-                   <input
-                     type="radio"
-                     name="isinDoubleClickAction"
-                     value="claude"
-                     checked={isinDoubleClickAction === 'claude'}
-                     onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'claude' })}
-                     className="accent-blue-500 h-3.5 w-3.5"
-                   />
-                   <span className="text-gray-300">Claude-Chat</span>
-                 </label>
-               </div>
-             </div>
-           </FieldRow>
+          <FieldRow label="ISIN Double-Click Action">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="truncate text-ui-sm font-mono text-gray-300">Open ISIN in</div>
+                <div className="mt-0.5 text-ui-xs font-mono text-muted">Action on ISIN double-click</div>
+              </div>
+              <div className="flex rounded-full border border-border bg-surface2 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'google' })}
+                  className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-mono transition-colors ${
+                    isinDoubleClickAction === 'google'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-300 hover:bg-surface'
+                  }`}
+                >
+                  Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'claude' })}
+                  className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-mono transition-colors ${
+                    isinDoubleClickAction === 'claude'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-300 hover:bg-surface'
+                  }`}
+                >
+                  Claude
+                </button>
+              </div>
+            </div>
+          </FieldRow>
 
-           <FieldRow label="AUM Floor (ETFs)">
-             <div className="flex items-center gap-2">
-               <span className="text-ui-sm font-mono text-muted">EUR</span>
-               <input
-                 type="number"
-                 value={aumFloor / 1_000_000}
-                 onChange={(e) =>
-                   dispatch({ type: 'SET_AUM_FLOOR', floor: Number(e.target.value) * 1_000_000 })
-                 }
-                 className="focus-ring w-32 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
-                 min={0}
-                 step={10}
-                 aria-label="AUM floor in millions"
-               />
-               <span className="text-ui-sm font-mono text-muted">M</span>
-             </div>
-           </FieldRow>
-
-         </ModalShell>
+        </ModalShell>
       )}
     </>
   )

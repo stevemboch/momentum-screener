@@ -25,6 +25,7 @@ const DEFAULT_WEIGHTS: MomentumWeights = { w1m: 1/3, w3m: 1/3, w6m: 1/3 }
 
 const GROUPS_STORAGE_KEY = 'xetra:groups'
 const PORTFOLIO_STORAGE_KEY = 'portfolio:isins'
+const SETTINGS_STORAGE_KEY = 'app:settings'
 const HIDDEN_COLUMNS_KEY = 'ui:hiddenColumnGroups'
 
 function loadGroupPrefs(): { etf: string[]; stock: string[] } | null {
@@ -91,6 +92,28 @@ function savePortfolio(isins: string[]) {
   }
 }
 
+function loadSettings(): Partial<AppSettings> | null {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed as Partial<AppSettings>
+  } catch {
+    return null
+  }
+}
+
+function saveSettings(settings: AppSettings) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function loadHiddenColumnGroups(): ColumnGroup[] {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return []
   try {
@@ -116,19 +139,22 @@ function saveHiddenColumnGroups(groups: ColumnGroup[]) {
 
 const persistedGroups = loadGroupPrefs()
 const persistedPortfolio = loadPortfolio()
+const persistedSettings = loadSettings()
 const persistedHiddenColumns = loadHiddenColumnGroups()
+
+const DEFAULT_SETTINGS: AppSettings = {
+  weights: DEFAULT_WEIGHTS,
+  aumFloor: 100_000_000,
+  atrMultiplier: 4,
+  riskFreeRate: 0.035,
+  isinDoubleClickAction: 'claude',
+}
 
 const DEFAULT_STATE: AppState = {
   instruments: [],
   xetraReady: false,
   xetraLoading: false,
-  settings: {
-    weights: DEFAULT_WEIGHTS,
-    aumFloor: 100_000_000,
-    atrMultiplier: 4,
-    riskFreeRate: 0.035,  // 3.5% p.a. (ECB/EUR)
-    isinDoubleClickAction: 'google',
-  },
+  settings: { ...DEFAULT_SETTINGS, ...persistedSettings },
   tableState: {
     sortColumn: 'riskAdjustedScore',
     sortDirection: 'desc',
@@ -286,7 +312,9 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, referenceR3m: action.r3m, instruments }
     }
     case 'SET_ISIN_DOUBLE_CLICK_ACTION':
-      return { ...state, settings: { ...state.settings, isinDoubleClickAction: action.action } }
+      const nextSettings = { ...state.settings, isinDoubleClickAction: action.action }
+      saveSettings(nextSettings)
+      return { ...state, settings: nextSettings }
     case 'SET_TABLE_STATE': {
       const updates = action.updates
       // Mutual Exclusion: TFA und Pullback-Modus schließen sich aus
