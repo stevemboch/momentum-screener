@@ -158,8 +158,18 @@ function openIsinSearch(isin: string, action: 'google' | 'claude') {
   if (!isin || typeof window === 'undefined') return
 
   if (action === 'claude') {
-    const prompt = `Analysiere diese ISIN: ${isin}%0A%0AIch habe diese ISIN in meinem Momentum-Screener doppelgeklickt. Bitte führe eine fokussierte, strukturierte Analyse durch:%0A%0A1. *Bewertung*: Aktueller Kurs, Bewertungskennzahlen (P/E, P/B, EV/EBITDA), historische Bewertungs-Bandbreite%0A2. *Finanzielle Gesundheit*: Bilanzstärke (Schulden/EBITDA, Cashflow-Deckung), Profitabilität (Margen, ROE/ROIC), Trends%0A3. *Analyst Consensus*: Konsensmeinung (Buy/Hold/Sell-Verteilung), durchschnittliches Kursziel, Empfehlungstrend (Up-/Downgrades)%0A4. *Relative Stärke vs. Mitbewerber*: Wie schneidet der Wert bei Bewertung, Finanzkennzahlen und Momentum im direkten Sektor-Vergleich ab? Wo sind relative Schwächen/Stärken?%0A5. *Risiken*: 2-3 wesentliche Risikofaktoren, die den Wert vom Sektor-Durchschnitt unterscheiden%0A%0A*Fokus*: Priorisiere Fakten und harte Kennzahlen. Vermeide allgemeine Floskeln. Nenne konkrete Vergleiche zu Peers.`
-    window.open(`https://claude.ai/chat?message=${prompt}`, '_blank', 'noopener,noreferrer')
+    const prompt = `Analysiere diese ISIN: ${isin}
+
+Ich habe diese ISIN in meinem Momentum-Screener doppelgeklickt. Bitte führe eine fokussierte, strukturierte Analyse durch:
+
+1. *Bewertung*: Aktueller Kurs, Bewertungskennzahlen (P/E, P/B, EV/EBITDA), historische Bewertungs-Bandbreite
+2. *Finanzielle Gesundheit*: Bilanzstärke (Schulden/EBITDA, Cashflow-Deckung), Profitabilität (Margen, ROE/ROIC), Trends
+3. *Analyst Consensus*: Konsensmeinung (Buy/Hold/Sell-Verteilung), durchschnittliches Kursziel, Empfehlungstrend (Up-/Downgrades)
+4. *Relative Stärke vs. Mitbewerber*: Wie schneidet der Wert bei Bewertung, Finanzkennzahlen und Momentum im direkten Sektor-Vergleich ab? Wo sind relative Schwächen/Stärken?
+5. *Risiken*: 2-3 wesentliche Risikofaktoren, die den Wert vom Sektor-Durchschnitt unterscheiden
+
+*Fokus*: Priorisiere Fakten und harte Kennzahlen. Vermeide allgemeine Floskeln. Nenne konkrete Vergleiche zu Peers.`
+    window.open(`https://claude.ai/chat?message=${encodeURIComponent(prompt)}`, '_blank', 'noopener,noreferrer')
   } else {
     const query = encodeURIComponent(isin)
     window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer')

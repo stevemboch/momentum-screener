@@ -177,34 +177,37 @@ export function SettingsPanel() {
            </FieldRow>
 
            <FieldRow label="ISIN Doppelklick">
-             <div className="flex gap-4">
-               <label className="flex items-center gap-2 text-ui-sm">
-                 <input
-                   type="radio"
-                   name="isinDoubleClickAction"
-                   value="google"
-                   checked={isinDoubleClickAction === 'google'}
-                   onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'google' })}
-                   className="accent-blue-500"
-                 />
-                 <span>Google-Suche</span>
-               </label>
-               <label className="flex items-center gap-2 text-ui-sm">
-                 <input
-                   type="radio"
-                   name="isinDoubleClickAction"
-                   value="claude"
-                   checked={isinDoubleClickAction === 'claude'}
-                   onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'claude' })}
-                   className="accent-blue-500"
-                 />
-                 <span>Claude-Chat</span>
-               </label>
-              </div>
-              <div className="mt-1 text-ui-xs font-mono text-muted">
-                Aktion beim Doppelklick auf eine ISIN
-              </div>
-             </FieldRow>
+             <div className="flex items-center justify-between gap-4">
+               <div className="min-w-0">
+                 <div className="truncate text-ui-sm font-mono text-gray-300">Aktion</div>
+                 <div className="mt-0.5 text-ui-xs font-mono text-muted">Bei Doppelklick auf ISIN</div>
+               </div>
+               <div className="flex gap-5">
+                 <label className="flex items-center gap-2 text-ui-sm">
+                   <input
+                     type="radio"
+                     name="isinDoubleClickAction"
+                     value="google"
+                     checked={isinDoubleClickAction === 'google'}
+                     onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'google' })}
+                     className="accent-blue-500 h-3.5 w-3.5"
+                   />
+                   <span className="text-gray-300">Google-Suche</span>
+                 </label>
+                 <label className="flex items-center gap-2 text-ui-sm">
+                   <input
+                     type="radio"
+                     name="isinDoubleClickAction"
+                     value="claude"
+                     checked={isinDoubleClickAction === 'claude'}
+                     onChange={() => dispatch({ type: 'SET_ISIN_DOUBLE_CLICK_ACTION', action: 'claude' })}
+                     className="accent-blue-500 h-3.5 w-3.5"
+                   />
+                   <span className="text-gray-300">Claude-Chat</span>
+                 </label>
+               </div>
+             </div>
+           </FieldRow>
 
            <FieldRow label="AUM Floor (ETFs)">
              <div className="flex items-center gap-2">
