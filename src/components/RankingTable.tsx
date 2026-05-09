@@ -169,7 +169,7 @@ Ich habe diese ISIN in meinem Momentum-Screener doppelgeklickt. Bitte führe ein
 5. *Risiken*: 2-3 wesentliche Risikofaktoren, die den Wert vom Sektor-Durchschnitt unterscheiden
 
 *Fokus*: Priorisiere Fakten und harte Kennzahlen. Vermeide allgemeine Floskeln. Nenne konkrete Vergleiche zu Peers.`
-    window.open(`https://claude.ai/chat?message=${encodeURIComponent(prompt)}`, '_blank', 'noopener,noreferrer')
+    window.open(`https://claude.ai/new?q=${encodeURIComponent(prompt)}`, '_blank', 'noopener,noreferrer')
   } else {
     const query = encodeURIComponent(isin)
     window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer')
