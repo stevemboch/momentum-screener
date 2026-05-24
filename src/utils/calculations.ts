@@ -808,12 +808,12 @@ function calculateAccelerationDetails(
   const normRelKick = relativeKick5d == null ? 0.5 : Math.max(0, Math.min(1, relativeKick5d / 0.03))
   const normVolShock = Math.max(0, Math.min(1, volumeShock / 0.40))
 
-  const score =
+  const rawScore =
     normImpulse * 0.35 +
-    normAccelFast * 0.20 +
-    normAccelSlope * 0.15 +
-    normRelKick * 0.20 +
-    normVolShock * 0.10
+    normAccelFast * 0.25 +
+    normAccelSlope * 0.10 +
+    normRelKick * 0.25 +
+    normVolShock * 0.05
 
   let ageDays: number | null = null
   if (Array.isArray(timestamps) && timestamps.length >= 2) {
@@ -829,6 +829,14 @@ function calculateAccelerationDetails(
       }
     }
   }
+
+  const freshnessFactor =
+    ageDays == null ? 0.9
+    : ageDays <= 3 ? 1.0
+    : ageDays <= 7 ? 0.85
+    : ageDays <= 14 ? 0.65
+    : 0.4
+  const score = rawScore * freshnessFactor
 
   return { score, impulse5d, relativeKick5d, ageDays }
 }

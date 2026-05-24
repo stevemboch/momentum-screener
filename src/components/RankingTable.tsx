@@ -201,8 +201,16 @@ function AccelerationCell({ inst }: { inst: Instrument }) {
   if (score == null) return <span className="text-muted">—</span>
   const cls = score >= 0.75 ? 'text-green-300 font-semibold' : score >= 0.6 ? 'text-amber-300' : 'text-gray-300'
   const early = score >= 0.75 && (inst.impulse5d ?? -99) > 1
+  const age = inst.accelAgeDays
   return (
-    <span className={cls} title={inst.relativeKick5d != null ? `5D kick vs URTH: ${(inst.relativeKick5d * 100).toFixed(2)}%` : undefined}>
+    <span
+      className={cls}
+      title={[
+        inst.relativeKick5d != null ? `5D kick vs URTH: ${(inst.relativeKick5d * 100).toFixed(2)}%` : null,
+        age != null ? `Signal age: ${age}d` : 'Signal age: n/a',
+        'Score includes freshness decay',
+      ].filter(Boolean).join(' · ')}
+    >
       {score.toFixed(2)}
       {inst.accelerationRank != null && <span className="text-gray-400 text-[10px] ml-1">#{inst.accelerationRank}</span>}
       {early && <span className="ml-1">⚡</span>}
@@ -1799,7 +1807,7 @@ function TableToolbar({
         <span className="hidden xl:inline">Sort: {sortColumn} {sortDirection === 'desc' ? '↓' : '↑'}</span>
       </div>
       <div className="flex flex-wrap items-center gap-1.5 text-ui-xs font-mono">
-        {(['scan', 'detail', 'risk'] as const).map((preset) => {
+        {(['scan', 'early', 'detail', 'risk'] as const).map((preset) => {
           const active = activePreset === preset
           return (
             <button
