@@ -57,6 +57,16 @@ export interface Instrument {
   impulse5d?: number | null
   relativeKick5d?: number | null
   accelAgeDays?: number | null
+  accelRawScore?: number | null
+  accelFreshnessFactor?: number | null
+  accelNormImpulse?: number | null
+  accelNormFast?: number | null
+  accelNormSlope?: number | null
+  accelNormRelativeKick?: number | null
+  accelNormVolumeShock?: number | null
+  accelFast?: number | null
+  accelSlope?: number | null
+  accelVolumeShock?: number | null
   breakoutDate?: number
   breakoutAgeDays?: number
   breakoutScore?: number | null

@@ -234,14 +234,34 @@ function AccelerationCell({ inst }: { inst: Instrument }) {
   const cls = score >= 0.75 ? 'text-green-300 font-semibold' : score >= 0.6 ? 'text-amber-300' : 'text-gray-300'
   const early = score >= 0.75 && (inst.impulse5d ?? -99) > 1
   const age = inst.accelAgeDays
+  const tooltipParts = [
+    inst.impulse5d != null && inst.accelNormImpulse != null
+      ? `impulse5d: raw ${inst.impulse5d.toFixed(3)} | norm ${inst.accelNormImpulse.toFixed(3)}`
+      : null,
+    inst.accelFast != null && inst.accelNormFast != null
+      ? `accelFast: raw ${(inst.accelFast * 100).toFixed(2)}% | norm ${inst.accelNormFast.toFixed(3)}`
+      : null,
+    inst.accelSlope != null && inst.accelNormSlope != null
+      ? `accelSlope: raw ${(inst.accelSlope * 100).toFixed(2)}% | norm ${inst.accelNormSlope.toFixed(3)}`
+      : null,
+    inst.relativeKick5d != null && inst.accelNormRelativeKick != null
+      ? `relativeKick5d: raw ${(inst.relativeKick5d * 100).toFixed(2)}% | norm ${inst.accelNormRelativeKick.toFixed(3)}`
+      : null,
+    inst.accelVolumeShock != null && inst.accelNormVolumeShock != null
+      ? `volumeShock: raw ${(inst.accelVolumeShock * 100).toFixed(1)}% | norm ${inst.accelNormVolumeShock.toFixed(3)}`
+      : null,
+    inst.accelRawScore != null
+      ? `rawScore: ${inst.accelRawScore.toFixed(3)}`
+      : null,
+    inst.accelFreshnessFactor != null
+      ? `freshnessFactor: ${inst.accelFreshnessFactor.toFixed(2)}`
+      : null,
+    age != null ? `age: ${age}d` : 'age: n/a',
+  ].filter(Boolean)
   return (
     <span
       className={cls}
-      title={[
-        inst.relativeKick5d != null ? `5D kick vs URTH: ${(inst.relativeKick5d * 100).toFixed(2)}%` : null,
-        age != null ? `Signal age: ${age}d` : 'Signal age: n/a',
-        'Score includes freshness decay',
-      ].filter(Boolean).join(' · ')}
+      title={tooltipParts.join(' | ')}
     >
       {score.toFixed(2)}
       {inst.accelerationRank != null && <span className="text-gray-400 text-[10px] ml-1">#{inst.accelerationRank}</span>}

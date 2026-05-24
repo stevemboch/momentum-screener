@@ -764,18 +764,28 @@ function calculateAccelerationDetails(
   referenceR5d: number | null | undefined,
 ): {
   score: number | null
+  rawScore: number | null
+  freshnessFactor: number | null
   impulse5d: number | null
   relativeKick5d: number | null
+  accelFast: number | null
+  accelSlope: number | null
+  volumeShock: number | null
+  normImpulse: number | null
+  normAccelFast: number | null
+  normAccelSlope: number | null
+  normRelKick: number | null
+  normVolShock: number | null
   ageDays: number | null
 } {
   const n = closes.length
-  if (n < 61) return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+  if (n < 61) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
 
   const r5d = calculateReturnDays(closes, 5)
   const r20d = calculateReturnDays(closes, 20)
   const r60d = calculateReturnDays(closes, 60)
   if (r5d == null || r20d == null || r60d == null) {
-    return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+    return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
   }
 
   const daily: number[] = []
@@ -783,11 +793,11 @@ function calculateAccelerationDetails(
     const prev = closes[i - 1]
     if (prev > 0) daily.push((closes[i] - prev) / prev)
   }
-  if (daily.length < 10) return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+  if (daily.length < 10) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
   const mean = daily.reduce((a, b) => a + b, 0) / daily.length
   const variance = daily.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / Math.max(1, daily.length - 1)
   const vola20d = Math.sqrt(Math.max(variance, 0))
-  if (vola20d <= 0) return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+  if (vola20d <= 0) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
 
   const impulse5d = r5d / (vola20d * Math.sqrt(5))
   const accelFast = r5d - (r20d / 4)
@@ -838,7 +848,22 @@ function calculateAccelerationDetails(
     : 0.4
   const score = rawScore * freshnessFactor
 
-  return { score, impulse5d, relativeKick5d, ageDays }
+  return {
+    score,
+    rawScore,
+    freshnessFactor,
+    impulse5d,
+    relativeKick5d,
+    accelFast,
+    accelSlope,
+    volumeShock,
+    normImpulse,
+    normAccelFast,
+    normAccelSlope,
+    normRelKick,
+    normVolShock,
+    ageDays,
+  }
 }
 
 // ─── Combined Score ──────────────────────────────────────────────────────────
@@ -1013,8 +1038,18 @@ export function recalculateAll(
         referenceR5d
       )
       updated.accelerationScore = accel.score
+      updated.accelRawScore = accel.rawScore
+      updated.accelFreshnessFactor = accel.freshnessFactor
       updated.impulse5d = accel.impulse5d
       updated.relativeKick5d = accel.relativeKick5d
+      updated.accelFast = accel.accelFast
+      updated.accelSlope = accel.accelSlope
+      updated.accelVolumeShock = accel.volumeShock
+      updated.accelNormImpulse = accel.normImpulse
+      updated.accelNormFast = accel.normAccelFast
+      updated.accelNormSlope = accel.normAccelSlope
+      updated.accelNormRelativeKick = accel.normRelKick
+      updated.accelNormVolumeShock = accel.normVolShock
       updated.accelAgeDays = accel.ageDays
 
       // Moving averages
