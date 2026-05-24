@@ -250,6 +250,9 @@ function AccelerationCell({ inst }: { inst: Instrument }) {
     inst.accelVolumeShock != null && inst.accelNormVolumeShock != null
       ? `volumeShock: raw ${(inst.accelVolumeShock * 100).toFixed(1)}% | norm ${inst.accelNormVolumeShock.toFixed(3)}`
       : null,
+    inst.accelAdaptiveEpsilon != null
+      ? `adaptiveEpsilon: ${(inst.accelAdaptiveEpsilon * 100).toFixed(2)}%`
+      : null,
     inst.accelRawScore != null
       ? `rawScore: ${inst.accelRawScore.toFixed(3)}`
       : null,

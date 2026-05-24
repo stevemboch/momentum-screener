@@ -8,6 +8,7 @@ import { ToggleRow } from './ui/ToggleRow'
 
 export function SettingsPanel() {
   const [open, setOpen] = useState(false)
+  const [kVolDraft, setKVolDraft] = useState('')
   const { state, dispatch } = useAppState()
   const { weights, aumFloor, atrMultiplier, riskFreeRate, accelKVol, isinDoubleClickAction } = state.settings
   const { showDeduped, filterBelowRiskFree } = state.tableState
@@ -40,11 +41,27 @@ export function SettingsPanel() {
     dispatch({ type: 'SET_ACCEL_KVOL', kVol: 0.2 })
   }
 
+  const commitKVolDraft = () => {
+    const parsed = Number(kVolDraft)
+    if (!Number.isFinite(parsed)) {
+      setKVolDraft(accelKVol.toFixed(2))
+      return
+    }
+    const clamped = Math.max(0, Math.min(2, parsed))
+    if (Math.abs(clamped - accelKVol) > 1e-9) {
+      dispatch({ type: 'SET_ACCEL_KVOL', kVol: clamped })
+    }
+    setKVolDraft(clamped.toFixed(2))
+  }
+
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setKVolDraft(accelKVol.toFixed(2))
+          setOpen(true)
+        }}
         className="btn btn-sm btn-secondary focus-ring"
       >
         <Settings size={12} />
@@ -163,10 +180,14 @@ export function SettingsPanel() {
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                value={accelKVol.toFixed(2)}
-                onChange={(e) =>
-                  dispatch({ type: 'SET_ACCEL_KVOL', kVol: Number(e.target.value) })
-                }
+                value={kVolDraft}
+                onChange={(e) => setKVolDraft(e.target.value)}
+                onBlur={commitKVolDraft}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    ;(e.currentTarget as HTMLInputElement).blur()
+                  }
+                }}
                 className="focus-ring w-24 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
                 min={0}
                 max={2}

@@ -67,6 +67,7 @@ export interface Instrument {
   accelFast?: number | null
   accelSlope?: number | null
   accelVolumeShock?: number | null
+  accelAdaptiveEpsilon?: number | null
   breakoutDate?: number
   breakoutAgeDays?: number
   breakoutScore?: number | null

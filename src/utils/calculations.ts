@@ -772,6 +772,7 @@ function calculateAccelerationDetails(
   accelFast: number | null
   accelSlope: number | null
   volumeShock: number | null
+  adaptiveEpsilon: number | null
   normImpulse: number | null
   normAccelFast: number | null
   normAccelSlope: number | null
@@ -790,13 +791,13 @@ function calculateAccelerationDetails(
   }
 
   const n = closes.length
-  if (n < 61) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
+  if (n < 61) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, adaptiveEpsilon: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
 
   const r5d = calculateReturnDays(closes, 5)
   const r20d = calculateReturnDays(closes, 20)
   const r60d = calculateReturnDays(closes, 60)
   if (r5d == null || r20d == null || r60d == null) {
-    return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
+    return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, adaptiveEpsilon: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
   }
 
   const daily: number[] = []
@@ -804,11 +805,11 @@ function calculateAccelerationDetails(
     const prev = closes[i - 1]
     if (prev > 0) daily.push((closes[i] - prev) / prev)
   }
-  if (daily.length < 10) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
+  if (daily.length < 10) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, adaptiveEpsilon: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
   const mean = daily.reduce((a, b) => a + b, 0) / daily.length
   const variance = daily.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / Math.max(1, daily.length - 1)
   const vola20d = Math.sqrt(Math.max(variance, 0))
-  if (vola20d <= 0) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
+  if (vola20d <= 0) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, adaptiveEpsilon: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
 
   const impulse5d = r5d / (vola20d * Math.sqrt(5))
   const adaptiveEpsilon = Math.max(0, accelKVol * vola20d * Math.sqrt(5))
@@ -838,17 +839,24 @@ function calculateAccelerationDetails(
     normVolShock * 0.05
 
   let ageDays: number | null = null
+  const isActiveNow = r5d > (r20d / 4) + adaptiveEpsilon
   if (Array.isArray(timestamps) && timestamps.length >= 2) {
     const lastTs = timestamps[timestamps.length - 1]
-    for (let i = timestamps.length - 2; i >= 0; i--) {
-      const ts = timestamps[i]
-      const r5Past = calculateReturnDays(closes.slice(0, i + 1), 5)
-      const r20Past = calculateReturnDays(closes.slice(0, i + 1), 20)
-      if (r5Past == null || r20Past == null) continue
-      if (r5Past <= (r20Past / 4) + adaptiveEpsilon) {
-        ageDays = Math.max(0, Math.round(timestampDiffToDays(lastTs, ts)))
-        break
+    if (isActiveNow) {
+      let startIdx = timestamps.length - 1
+      for (let i = timestamps.length - 2; i >= 0; i--) {
+        const r5Past = calculateReturnDays(closes.slice(0, i + 1), 5)
+        const r20Past = calculateReturnDays(closes.slice(0, i + 1), 20)
+        if (r5Past == null || r20Past == null) continue
+        const activePast = r5Past > (r20Past / 4) + adaptiveEpsilon
+        if (!activePast) {
+          startIdx = i + 1
+          break
+        }
+        startIdx = i
       }
+      const startTs = timestamps[startIdx]
+      ageDays = Math.max(0, Math.round(timestampDiffToDays(lastTs, startTs)))
     }
   }
 
@@ -869,6 +877,7 @@ function calculateAccelerationDetails(
     accelFast,
     accelSlope,
     volumeShock,
+    adaptiveEpsilon,
     normImpulse,
     normAccelFast,
     normAccelSlope,
@@ -1059,6 +1068,7 @@ export function recalculateAll(
       updated.accelFast = accel.accelFast
       updated.accelSlope = accel.accelSlope
       updated.accelVolumeShock = accel.volumeShock
+      updated.accelAdaptiveEpsilon = accel.adaptiveEpsilon
       updated.accelNormImpulse = accel.normImpulse
       updated.accelNormFast = accel.normAccelFast
       updated.accelNormSlope = accel.normAccelSlope
