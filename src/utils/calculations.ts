@@ -778,6 +778,16 @@ function calculateAccelerationDetails(
   normVolShock: number | null
   ageDays: number | null
 } {
+  const timestampDiffToDays = (a: number, b: number): number => {
+    const diff = Math.abs(a - b)
+    // Yahoo timestamps are typically epoch-seconds; keep ms fallback for safety.
+    const secondsPerDay = 86400
+    const msPerDay = 86400000
+    return diff > 10_000_000_000
+      ? diff / msPerDay
+      : diff / secondsPerDay
+  }
+
   const n = closes.length
   if (n < 61) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
 
@@ -834,7 +844,7 @@ function calculateAccelerationDetails(
       const r20Past = calculateReturnDays(closes.slice(0, i + 1), 20)
       if (r5Past == null || r20Past == null) continue
       if (r5Past <= r20Past / 4) {
-        ageDays = Math.max(0, Math.round((lastTs - ts) / 86400000))
+        ageDays = Math.max(0, Math.round(timestampDiffToDays(lastTs, ts)))
         break
       }
     }
