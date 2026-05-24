@@ -762,7 +762,7 @@ function calculateAccelerationDetails(
   volumes: number[] | undefined,
   timestamps: number[] | undefined,
   referenceR5d: number | null | undefined,
-  accelEpsilon: number,
+  accelKVol: number,
 ): {
   score: number | null
   rawScore: number | null
@@ -811,6 +811,7 @@ function calculateAccelerationDetails(
   if (vola20d <= 0) return { score: null, rawScore: null, freshnessFactor: null, impulse5d: null, relativeKick5d: null, accelFast: null, accelSlope: null, volumeShock: null, normImpulse: null, normAccelFast: null, normAccelSlope: null, normRelKick: null, normVolShock: null, ageDays: null }
 
   const impulse5d = r5d / (vola20d * Math.sqrt(5))
+  const adaptiveEpsilon = Math.max(0, accelKVol * vola20d * Math.sqrt(5))
   const accelFast = r5d - (r20d / 4)
   const accelSlope = r20d - (r60d / 3)
   const relativeKick5d = referenceR5d != null ? (r5d - referenceR5d) : null
@@ -844,7 +845,7 @@ function calculateAccelerationDetails(
       const r5Past = calculateReturnDays(closes.slice(0, i + 1), 5)
       const r20Past = calculateReturnDays(closes.slice(0, i + 1), 20)
       if (r5Past == null || r20Past == null) continue
-      if (r5Past <= (r20Past / 4) + accelEpsilon) {
+      if (r5Past <= (r20Past / 4) + adaptiveEpsilon) {
         ageDays = Math.max(0, Math.round(timestampDiffToDays(lastTs, ts)))
         break
       }
@@ -1031,7 +1032,7 @@ export function recalculateAll(
   atrMultiplier = 4,
   referenceR3m?: number | null,
   referenceR5d?: number | null,
-  accelEpsilon = 0.002
+  accelKVol = 0.2
 ): Instrument[] {
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
@@ -1048,7 +1049,7 @@ export function recalculateAll(
         inst.volumes,
         inst.timestamps,
         referenceR5d,
-        accelEpsilon
+        accelKVol
       )
       updated.accelerationScore = accel.score
       updated.accelRawScore = accel.rawScore

@@ -308,7 +308,7 @@ export interface AppSettings {
   aumFloor: number
   atrMultiplier: number   // 3–5, default 4
   riskFreeRate: number    // annualised, default 0.035 (3.5%)
-  accelEpsilon: number    // acceleration hysteresis epsilon, default 0.002 (0.2%)
+  accelKVol: number       // acceleration hysteresis = kVol * 5d volatility width
   isinDoubleClickAction: 'google' | 'claude'
 }
 
