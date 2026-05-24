@@ -161,11 +161,12 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
-function openIsinSearch(isin: string, action: 'google' | 'claude') {
+function openIsinSearch(isin: string, action: 'google' | 'claude', instrumentType?: string) {
   if (!isin || typeof window === 'undefined') return
 
   if (action === 'claude') {
-    const prompt = `Analysiere diese ISIN: ${isin}
+    const isEtfLike = instrumentType === 'ETF' || instrumentType === 'ETC' || instrumentType === 'ETN'
+    const stockPrompt = `Analysiere diese ISIN: ${isin}
 
 Ich habe diese ISIN in meinem Momentum-Screener doppelgeklickt. Bitte führe eine fokussierte, strukturierte Analyse durch:
 
@@ -176,6 +177,37 @@ Ich habe diese ISIN in meinem Momentum-Screener doppelgeklickt. Bitte führe ein
 5. *Risiken*: 2-3 wesentliche Risikofaktoren, die den Wert vom Sektor-Durchschnitt unterscheiden
 
 *Fokus*: Priorisiere Fakten und harte Kennzahlen. Vermeide allgemeine Floskeln. Nenne konkrete Vergleiche zu Peers.`
+    const etfPrompt = `Analysiere diese ISIN (ETF/ETC): ${isin}
+
+Ich habe diese ISIN in meinem Momentum-Screener doppelgeklickt. Bitte liefere eine fokussierte, faktenbasierte Analyse mit Schwerpunkt auf Momentum-Nachhaltigkeit.
+
+1. *ETF-Kontext*
+- Welchen Index/Sektor/Theme bildet das Produkt konkret ab?
+- Wichtigste Top-Positionen und deren aktuelle Treiber.
+
+2. *Momentum-Lage (aktuell)*
+- Warum zeigt das Produkt gerade Momentum?
+- Ist das Momentum breit getragen (mehrere Holdings) oder von wenigen Schwergewichten getrieben?
+- Einordnung relativ zum Gesamtmarkt (z. B. MSCI World / S&P 500): Outperformance oder primär Beta-Effekt?
+
+3. *Katalysatoren (entscheidend)*
+- Nenne die 3-5 wichtigsten aktuellen oder nahen Katalysatoren, die weiteres signifikantes Momentum stützen könnten.
+- Für jeden Katalysator:
+  - Mechanismus (warum wirkt er auf den ETF?)
+  - Zeithorizont (kurzfristig/mittelfristig)
+  - Wahrscheinlichkeit (hoch/mittel/niedrig)
+
+4. *Gegenkräfte / Momentum-Risiken*
+- Welche 3 wichtigsten Faktoren könnten das Momentum abbrechen?
+- Woran erkennt man früh, dass das Setup kippt?
+
+5. *Konkrete Einschätzung*
+- Wahrscheinlichkeit, dass das Momentum in den nächsten Wochen signifikant anhält: in %.
+- Urteil: „Fortsetzung wahrscheinlich“, „unklar“, oder „überdehnt“.
+- 3 klare Beobachtungspunkte/Trigger, die ich im Screener monitoren sollte.
+
+*Fokus*: Priorisiere konkrete, überprüfbare Punkte statt allgemeiner Floskeln. Wenn möglich, nenne aktuelle Quellen/Events kurz. Antworte strukturiert in Bulletpoints.`
+    const prompt = isEtfLike ? etfPrompt : stockPrompt
     window.open(`https://claude.ai/new?q=${encodeURIComponent(prompt)}`, '_blank', 'noopener,noreferrer')
   } else {
     const query = encodeURIComponent(isin)
@@ -718,7 +750,7 @@ function CandidateRow({
             <span
               className="cursor-pointer hover:text-gray-200"
               title="Double-click to search ISIN"
-               onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(candidate.isin, action) }}
+               onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(candidate.isin, action, candidate.type) }}
             >
               {candidate.isin}
             </span>
@@ -997,7 +1029,7 @@ function ExpandedDetail({
                 <span
                   className="text-gray-300 cursor-pointer hover:text-gray-200"
                   title="Double-click to search ISIN"
-                          onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin, action) }}
+                          onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin, action, inst.type) }}
                 >
                   {inst.isin}
                 </span>
@@ -2186,7 +2218,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                          <span
                            className="cursor-pointer hover:text-gray-200"
                            title="Double-click to search ISIN"
-                           onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin, isinDoubleClickAction) }}
+                           onDoubleClick={(e) => { e.stopPropagation(); openIsinSearch(inst.isin, isinDoubleClickAction, inst.type) }}
                          >
                           {inst.isin}
                         </span>
