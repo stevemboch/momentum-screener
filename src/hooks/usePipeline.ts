@@ -83,6 +83,7 @@ const YAHOO_GOOD_STREAK_REQUIRED = 3
 const YAHOO_ADAPTIVE_WARMUP_RUNS = 3
 const UPSIDE_PLAUSIBLE_MIN = -0.95
 const UPSIDE_PLAUSIBLE_MAX = 3.0
+const BACKGROUND_UPDATE_FLUSH_MS = 100
 
 function isBlockingLeewayPhase(phase: string): boolean {
   return phase === 'prices' || phase === 'openfigi' || phase === 'justetf' || phase === 'dedup'
@@ -258,6 +259,10 @@ function canWriteOpenFigiCache(now = Date.now()): boolean {
 
 function blockOpenFIGI_CacheWrites(now = Date.now()) {
   openFigiCacheWritesBlockedUntilTs = now + OPENFIGI_CACHE_WRITE_COOLDOWN_MS
+}
+
+async function yieldToMainThread() {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
 }
 
 interface OpenFIGIResult { name?: string; securityDescription?: string; isin?: string; ticker?: string; securityType?: string; securityType2?: string }
@@ -436,6 +441,8 @@ export function usePipeline() {
   const tfaAutoRunning = useRef(false)
   const leewayRunning = useRef(false)
   const leewayStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const backgroundUpdateQueueRef = useRef<Map<string, Partial<Instrument>>>(new Map())
+  const backgroundUpdateFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastStatusEmitRef = useRef<{
     phase: string
     message: string
@@ -476,6 +483,34 @@ export function usePipeline() {
     lastStatusEmitRef.current = { phase, message, current, total, ts: now }
     dispatch({ type: 'SET_FETCH_STATUS', status: { message, current, total } })
   }, [dispatch, state.fetchStatus.phase])
+
+  const flushBackgroundUpdates = useCallback(() => {
+    const queued = backgroundUpdateQueueRef.current
+    if (queued.size === 0) return
+    const updates = new Map(queued)
+    queued.clear()
+    dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
+  }, [dispatch])
+
+  const queueBackgroundUpdate = useCallback((isin: string, updates: Partial<Instrument>) => {
+    const existing = backgroundUpdateQueueRef.current.get(isin)
+    backgroundUpdateQueueRef.current.set(isin, existing ? { ...existing, ...updates } : updates)
+    if (backgroundUpdateFlushTimerRef.current) return
+    backgroundUpdateFlushTimerRef.current = setTimeout(() => {
+      backgroundUpdateFlushTimerRef.current = null
+      flushBackgroundUpdates()
+    }, BACKGROUND_UPDATE_FLUSH_MS)
+  }, [flushBackgroundUpdates])
+
+  useEffect(() => {
+    return () => {
+      if (backgroundUpdateFlushTimerRef.current) {
+        clearTimeout(backgroundUpdateFlushTimerRef.current)
+        backgroundUpdateFlushTimerRef.current = null
+      }
+      flushBackgroundUpdates()
+    }
+  }, [flushBackgroundUpdates])
 
   const enrichWithOpenFIGI = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     // Xetra-Stocks haben ISIN, mnemonic, yahooTicker und displayName bereits
@@ -1298,26 +1333,22 @@ export function usePipeline() {
       // mark as fetched and skip the heavier analyst pipeline.
       if (options?.suppressGemini && preloadedYahooPayload && hasPreloadedYahooTarget) {
         cacheSet(cacheKey, preloadedYahooPayload, analystTtlMs)
-        dispatch({
-          type: 'UPDATE_INSTRUMENT',
-          isin,
-          updates: {
-            analystFetched: true,
-            analystError: undefined,
-            analystSource: 'yahoo',
-            // Reset stale FX/visibility flags when we short-circuit with preloaded Yahoo data.
-            targetFxRate: null,
-            targetFxApplied: false,
-            targetPriceAdj: null,
-            targetLowAdj: null,
-            targetHighAdj: null,
-            targetCurrencyUnknown: false,
-            targetCurrencyConfidence: null,
-            analystTargetOrigin: null,
-            analystCurrentOrigin: null,
-            analystUpside: null,
-            analystUpsideMode: null,
-          },
+        queueBackgroundUpdate(isin, {
+          analystFetched: true,
+          analystError: undefined,
+          analystSource: 'yahoo',
+          // Reset stale FX/visibility flags when we short-circuit with preloaded Yahoo data.
+          targetFxRate: null,
+          targetFxApplied: false,
+          targetPriceAdj: null,
+          targetLowAdj: null,
+          targetHighAdj: null,
+          targetCurrencyUnknown: false,
+          targetCurrencyConfidence: null,
+          analystTargetOrigin: null,
+          analystCurrentOrigin: null,
+          analystUpside: null,
+          analystUpsideMode: null,
         })
         return
       }
@@ -1587,14 +1618,22 @@ export function usePipeline() {
         updates.tfaRejectReason = undefined
       }
 
-      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
+      if (options?.suppressGemini) {
+        queueBackgroundUpdate(isin, updates)
+      } else {
+        dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates })
+      }
 
     } catch (err: any) {
-      dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message, tfaPhase: 'watch' } })
+      if (options?.suppressGemini) {
+        queueBackgroundUpdate(isin, { analystFetched: true, analystError: err.message, tfaPhase: 'watch' })
+      } else {
+        dispatch({ type: 'UPDATE_INSTRUMENT', isin, updates: { analystFetched: true, analystError: err.message, tfaPhase: 'watch' } })
+      }
     } finally {
       analystInFlight.current.delete(isin)
     }
-  }, [state.instruments])
+  }, [state.instruments, queueBackgroundUpdate])
 
   useEffect(() => {
     if (!state.tableState.tfaMode) return
@@ -1620,6 +1659,7 @@ export function usePipeline() {
           tfaFundInFlight.current.add(inst.isin)
           try {
             await fetchSingleInstrumentAnalyst(inst.isin)
+            await yieldToMainThread()
           } finally {
             tfaFundInFlight.current.delete(inst.isin)
           }
@@ -1707,6 +1747,7 @@ export function usePipeline() {
                 if (idx >= candidates.length) return
                 const inst = candidates[idx]
                 await fetchSingleInstrumentAnalyst(inst.isin, { suppressGemini: true })
+                await yieldToMainThread()
               }
             })())
           )
