@@ -818,6 +818,12 @@ function calculateAccelerationDetails(
   const accelFast = r5d - (r20d / 4)
   const accelSlope = r20d - (r60d / 3)
   const relativeKick5d = referenceR5d != null ? (r5d - referenceR5d) : null
+  const vola5dWidth = vola20d * Math.sqrt(5)
+  const vola20dWidth = vola20d * Math.sqrt(20)
+
+  const accelFastZ = vola5dWidth > 0 ? accelFast / vola5dWidth : 0
+  const accelSlopeZ = vola20dWidth > 0 ? accelSlope / vola20dWidth : 0
+  const relativeKickZ = relativeKick5d != null && vola5dWidth > 0 ? relativeKick5d / vola5dWidth : null
 
   const volumeRecent = Array.isArray(volumes) ? volumes.slice(Math.max(0, volumes.length - 5)) : []
   const volumeBase = Array.isArray(volumes) ? volumes.slice(Math.max(0, volumes.length - 20), Math.max(0, volumes.length - 5)) : []
@@ -827,10 +833,11 @@ function calculateAccelerationDetails(
     ? (avgRecentVol / avgBaseVol - 1)
     : 0
 
-  const normImpulse = Math.max(0, Math.min(1, impulse5d / 2))
-  const normAccelFast = Math.max(0, Math.min(1, accelFast / 0.03))
-  const normAccelSlope = Math.max(0, Math.min(1, accelSlope / 0.06))
-  const normRelKick = relativeKick5d == null ? 0.5 : Math.max(0, Math.min(1, relativeKick5d / 0.03))
+  const normFromZ = (z: number) => Math.max(0, Math.min(1, z / 2))
+  const normImpulse = normFromZ(impulse5d)
+  const normAccelFast = normFromZ(accelFastZ)
+  const normAccelSlope = normFromZ(accelSlopeZ)
+  const normRelKick = relativeKickZ == null ? 0.5 : normFromZ(relativeKickZ)
   const normVolShock = Math.max(0, Math.min(1, volumeShock / 0.40))
 
   const rawScore =
