@@ -9,7 +9,7 @@ import { ToggleRow } from './ui/ToggleRow'
 export function SettingsPanel() {
   const [open, setOpen] = useState(false)
   const { state, dispatch } = useAppState()
-  const { weights, aumFloor, atrMultiplier, riskFreeRate, isinDoubleClickAction } = state.settings
+  const { weights, aumFloor, atrMultiplier, riskFreeRate, accelEpsilon, isinDoubleClickAction } = state.settings
   const { showDeduped, filterBelowRiskFree } = state.tableState
 
   const raw = {
@@ -37,6 +37,7 @@ export function SettingsPanel() {
     dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: 4 })
     dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
     dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })
+    dispatch({ type: 'SET_ACCEL_EPSILON', epsilon: 0.002 })
   }
 
   return (
@@ -155,6 +156,27 @@ export function SettingsPanel() {
             </div>
             <div className="mt-1 text-ui-xs font-mono text-muted">
               ECB deposit rate ~2.5% · short-term EUR yields ~3.5%
+            </div>
+          </FieldRow>
+
+          <FieldRow label="Accel Epsilon" hint="Hysteresis for acceleration age detection">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={(accelEpsilon * 100).toFixed(2)}
+                onChange={(e) =>
+                  dispatch({ type: 'SET_ACCEL_EPSILON', epsilon: Number(e.target.value) / 100 })
+                }
+                className="focus-ring w-24 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
+                min={0}
+                max={5}
+                step={0.05}
+                aria-label="Acceleration epsilon in percent"
+              />
+              <span className="text-ui-sm font-mono text-muted">%</span>
+            </div>
+            <div className="mt-1 text-ui-xs font-mono text-muted">
+              Higher value = less noise sensitivity in accel freshness switch
             </div>
           </FieldRow>
 

@@ -148,6 +148,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   aumFloor: 100_000_000,
   atrMultiplier: 4,
   riskFreeRate: 0.035,
+  accelEpsilon: 0.002,
   isinDoubleClickAction: 'claude',
 }
 
@@ -217,6 +218,7 @@ type Action =
   | { type: 'SET_AUM_FLOOR'; floor: number }
   | { type: 'SET_ATR_MULTIPLIER'; multiplier: number }
   | { type: 'SET_RISK_FREE_RATE'; rate: number }
+  | { type: 'SET_ACCEL_EPSILON'; epsilon: number }
   | { type: 'SET_REFERENCE_RETURNS'; r3m: number | null; r5d: number | null }
   | { type: 'SET_ISIN_DOUBLE_CLICK_ACTION'; action: 'google' | 'claude' }
   | { type: 'SET_TABLE_STATE'; updates: Partial<TableState> }
@@ -247,7 +249,7 @@ function reducer(state: AppState, action: Action): AppState {
         })
         .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
       const merged = [...state.instruments, ...newInst]
-      return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d) }
+      return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelEpsilon) }
     }
     case 'SET_INSTRUMENTS':
       {
@@ -260,7 +262,7 @@ function reducer(state: AppState, action: Action): AppState {
             return true
           })
           .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
-        return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d) }
+        return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelEpsilon) }
       }
     case 'UPDATE_INSTRUMENT': {
       const instruments = state.instruments.map((inst) =>
@@ -269,7 +271,7 @@ function reducer(state: AppState, action: Action): AppState {
       if (!updatesAffectScores(action.updates)) {
         return { ...state, instruments }
       }
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d) }
+      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelEpsilon) }
     }
     case 'UPDATE_INSTRUMENTS': {
       const needsRecalc = Array.from(action.updates.values()).some((u) => updatesAffectScores(u))
@@ -280,7 +282,7 @@ function reducer(state: AppState, action: Action): AppState {
       if (!needsRecalc) {
         return { ...state, instruments }
       }
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d) }
+      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelEpsilon) }
     }
     case 'SET_FETCH_STATUS': {
       const nextFetchStatus = { ...state.fetchStatus, ...action.status }
@@ -295,7 +297,7 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, fetchStatus: nextFetchStatus }
     }
     case 'SET_WEIGHTS': {
-      const instruments = recalculateAll(state.instruments, action.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d)
+      const instruments = recalculateAll(state.instruments, action.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelEpsilon)
       return { ...state, settings: { ...state.settings, weights: action.weights }, instruments }
     }
     case 'SET_AUM_FLOOR':
@@ -304,13 +306,17 @@ function reducer(state: AppState, action: Action): AppState {
         settings: { ...state.settings, aumFloor: action.floor },
       }
     case 'SET_ATR_MULTIPLIER': {
-      const instruments = recalculateAll(state.instruments, state.settings.weights, action.multiplier, state.referenceR3m, state.referenceR5d)
+      const instruments = recalculateAll(state.instruments, state.settings.weights, action.multiplier, state.referenceR3m, state.referenceR5d, state.settings.accelEpsilon)
       return { ...state, settings: { ...state.settings, atrMultiplier: action.multiplier }, instruments }
     }
     case 'SET_RISK_FREE_RATE':
       return { ...state, settings: { ...state.settings, riskFreeRate: action.rate } }
+    case 'SET_ACCEL_EPSILON': {
+      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, action.epsilon)
+      return { ...state, settings: { ...state.settings, accelEpsilon: action.epsilon }, instruments }
+    }
     case 'SET_REFERENCE_RETURNS': {
-      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, action.r3m, action.r5d)
+      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, action.r3m, action.r5d, state.settings.accelEpsilon)
       return { ...state, referenceR3m: action.r3m, referenceR5d: action.r5d, instruments }
     }
     case 'SET_ISIN_DOUBLE_CLICK_ACTION':

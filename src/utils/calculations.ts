@@ -762,6 +762,7 @@ function calculateAccelerationDetails(
   volumes: number[] | undefined,
   timestamps: number[] | undefined,
   referenceR5d: number | null | undefined,
+  accelEpsilon: number,
 ): {
   score: number | null
   rawScore: number | null
@@ -843,7 +844,7 @@ function calculateAccelerationDetails(
       const r5Past = calculateReturnDays(closes.slice(0, i + 1), 5)
       const r20Past = calculateReturnDays(closes.slice(0, i + 1), 20)
       if (r5Past == null || r20Past == null) continue
-      if (r5Past <= r20Past / 4) {
+      if (r5Past <= (r20Past / 4) + accelEpsilon) {
         ageDays = Math.max(0, Math.round(timestampDiffToDays(lastTs, ts)))
         break
       }
@@ -1029,7 +1030,8 @@ export function recalculateAll(
   weights: MomentumWeights,
   atrMultiplier = 4,
   referenceR3m?: number | null,
-  referenceR5d?: number | null
+  referenceR5d?: number | null,
+  accelEpsilon = 0.002
 ): Instrument[] {
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
@@ -1045,7 +1047,8 @@ export function recalculateAll(
         inst.closes,
         inst.volumes,
         inst.timestamps,
-        referenceR5d
+        referenceR5d,
+        accelEpsilon
       )
       updated.accelerationScore = accel.score
       updated.accelRawScore = accel.rawScore
