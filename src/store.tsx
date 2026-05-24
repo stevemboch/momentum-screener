@@ -148,7 +148,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   aumFloor: 100_000_000,
   atrMultiplier: 4,
   riskFreeRate: 0.035,
-  accelKVol: 0.2,
+  accelKVol: 0.5,
   isinDoubleClickAction: 'claude',
 }
 

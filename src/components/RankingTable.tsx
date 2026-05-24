@@ -259,6 +259,12 @@ function AccelerationCell({ inst }: { inst: Instrument }) {
     inst.accelFreshnessFactor != null
       ? `freshnessFactor: ${inst.accelFreshnessFactor.toFixed(2)}`
       : null,
+    inst.accelIsActive != null
+      ? `activeNow: ${inst.accelIsActive ? 'yes' : 'no'}`
+      : null,
+    inst.accelDaysSinceActive != null
+      ? `daysSinceActive: ${inst.accelDaysSinceActive}d`
+      : null,
     age != null ? `age: ${age}d` : 'age: n/a',
   ].filter(Boolean)
   return (

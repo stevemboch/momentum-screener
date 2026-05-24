@@ -38,20 +38,27 @@ export function SettingsPanel() {
     dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: 4 })
     dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
     dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })
-    dispatch({ type: 'SET_ACCEL_KVOL', kVol: 0.2 })
+    dispatch({ type: 'SET_ACCEL_KVOL', kVol: 0.5 })
+    setKVolDraft('0.50')
   }
 
-  const commitKVolDraft = () => {
+  const commitKVolDraft = (): number => {
     const parsed = Number(kVolDraft)
     if (!Number.isFinite(parsed)) {
       setKVolDraft(accelKVol.toFixed(2))
-      return
+      return accelKVol
     }
     const clamped = Math.max(0, Math.min(2, parsed))
-    if (Math.abs(clamped - accelKVol) > 1e-9) {
-      dispatch({ type: 'SET_ACCEL_KVOL', kVol: clamped })
-    }
     setKVolDraft(clamped.toFixed(2))
+    return clamped
+  }
+
+  const closeWithCommit = () => {
+    const next = commitKVolDraft()
+    if (Math.abs(next - accelKVol) > 1e-9) {
+      dispatch({ type: 'SET_ACCEL_KVOL', kVol: next })
+    }
+    setOpen(false)
   }
 
   return (
@@ -72,14 +79,14 @@ export function SettingsPanel() {
         <ModalShell
           title="Settings"
           subtitle="Scoring, risk, and visibility preferences"
-          onClose={() => setOpen(false)}
+          onClose={closeWithCommit}
           widthClass="max-w-lg"
           footer={(
             <div className="flex justify-end gap-2">
               <button type="button" onClick={resetDefaults} className="btn btn-sm btn-ghost focus-ring">
                 Reset defaults
               </button>
-              <button type="button" onClick={() => setOpen(false)} className="btn btn-sm btn-secondary focus-ring">
+              <button type="button" onClick={closeWithCommit} className="btn btn-sm btn-secondary focus-ring">
                 Close
               </button>
             </div>
@@ -182,12 +189,6 @@ export function SettingsPanel() {
                 type="number"
                 value={kVolDraft}
                 onChange={(e) => setKVolDraft(e.target.value)}
-                onBlur={commitKVolDraft}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    ;(e.currentTarget as HTMLInputElement).blur()
-                  }
-                }}
                 className="focus-ring w-24 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
                 min={0}
                 max={2}

@@ -57,6 +57,8 @@ export interface Instrument {
   impulse5d?: number | null
   relativeKick5d?: number | null
   accelAgeDays?: number | null
+  accelIsActive?: boolean | null
+  accelDaysSinceActive?: number | null
   accelRawScore?: number | null
   accelFreshnessFactor?: number | null
   accelNormImpulse?: number | null
