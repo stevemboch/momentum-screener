@@ -616,20 +616,26 @@ export function usePipeline() {
     )
   }, [])
 
-  const ensureReferenceR3m = useCallback(async () => {
-    if (state.referenceR3m != null) return state.referenceR3m
+  const ensureReferenceReturns = useCallback(async () => {
+    if (state.referenceR3m != null && state.referenceR5d != null) {
+      return { r3m: state.referenceR3m, r5d: state.referenceR5d }
+    }
     try {
       const r = sanitizeYahooResult(await apiYahooSingle('URTH', { includeWeekly: false, profile: 'fund' }))
       if (r?.closes?.length) {
         const { r3m } = calculateReturns(r.closes)
-        dispatch({ type: 'SET_REFERENCE_R3M', r3m: r3m ?? null })
-        return r3m ?? null
+        const n = r.closes.length
+        const r5d = n > 5 && r.closes[n - 6] > 0
+          ? (r.closes[n - 1] - r.closes[n - 6]) / r.closes[n - 6]
+          : null
+        dispatch({ type: 'SET_REFERENCE_RETURNS', r3m: r3m ?? null, r5d })
+        return { r3m: r3m ?? null, r5d }
       }
     } catch {
       // ignore
     }
-    return null
-  }, [state.referenceR3m, dispatch])
+    return { r3m: state.referenceR3m, r5d: state.referenceR5d }
+  }, [state.referenceR3m, state.referenceR5d, dispatch])
 
   const fetchPrices = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
     const withTickers = instruments.filter((i) => i.yahooTicker)
@@ -1009,7 +1015,7 @@ export function usePipeline() {
       })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: 0 } })
       const withPrices = await fetchPrices(enriched)
-      const refR3m = await ensureReferenceR3m()
+      const refs = await ensureReferenceReturns()
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'justetf', message: '', current: 0, total: 0 } })
       const withStats = await fetchStats(withPrices)
       const existingByYahoo = new Map(state.instruments.map((i) => [i.yahooTicker, i]))
@@ -1043,13 +1049,22 @@ export function usePipeline() {
 
       if (updates.size > 0) dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
       if (toAdd.length > 0) {
-        dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(toAdd, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
+        dispatch({
+          type: 'ADD_INSTRUMENTS',
+          instruments: recalculateAll(
+            toAdd,
+            state.settings.weights,
+            state.settings.atrMultiplier,
+            refs.r3m ?? state.referenceR3m,
+            refs.r5d ?? state.referenceR5d,
+          ),
+        })
       }
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Added ${withStats.length} instruments`, current: withStats.length, total: withStats.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceR3m, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m])
+  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceReturns, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d])
 
   const loadXetraBackground = useCallback(async () => {
     dispatch({ type: 'SET_XETRA_LOADING', loading: true })
@@ -1140,7 +1155,7 @@ export function usePipeline() {
       const toFetch = combined.filter((i) => i.isDedupWinner !== false || i.type === 'Stock')
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: toFetch.length } })
       const withPrices = await fetchPrices(toFetch)
-      const refR3m = await ensureReferenceR3m()
+      const refs = await ensureReferenceReturns()
       const finalMap = new Map(withPrices.map((i) => [i.isin, i]))
       const final = combined.map((i) => finalMap.get(i.isin) || i)
 
@@ -1160,12 +1175,21 @@ export function usePipeline() {
       }
 
       const winners = finalEtfsAfter.filter((i) => i.isDedupWinner)
-      dispatch({ type: 'ADD_INSTRUMENTS', instruments: recalculateAll(finalCombined, state.settings.weights, state.settings.atrMultiplier, refR3m ?? state.referenceR3m) })
+      dispatch({
+        type: 'ADD_INSTRUMENTS',
+        instruments: recalculateAll(
+          finalCombined,
+          state.settings.weights,
+          state.settings.atrMultiplier,
+          refs.r3m ?? state.referenceR3m,
+          refs.r5d ?? state.referenceR5d,
+        ),
+      })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: finalCombined.length, total: finalCombined.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceR3m])
+  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceReturns])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)

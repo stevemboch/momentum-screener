@@ -52,6 +52,11 @@ export interface Instrument {
   riskAdjustedRank?: number
   combinedScore?: number | null
   combinedRank?: number
+  accelerationScore?: number | null
+  accelerationRank?: number
+  impulse5d?: number | null
+  relativeKick5d?: number | null
+  accelAgeDays?: number | null
   breakoutDate?: number
   breakoutAgeDays?: number
   breakoutScore?: number | null
@@ -322,6 +327,7 @@ export type SortColumn =
   | 'marketCap'
   | 'pe' | 'pb' | 'earningsYield' | 'returnOnAssets'
   | 'combinedScore'
+  | 'accelerationScore'
   | 'breakoutScore'
   | 'sellingThreshold'
   | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS' | 'tfaTScore' | 'tfaFScore'

@@ -23,6 +23,17 @@ export function calculateReturns(closes: number[]) {
   return result
 }
 
+function calculateReturnDays(closes: number[], days: number): number | null {
+  const n = closes.length
+  if (n < 2 || days <= 0) return null
+  const target = n - 1 - days
+  if (target < 0) return null
+  const last = closes[n - 1]
+  const base = closes[target]
+  if (!base || base === 0) return null
+  return (last - base) / base
+}
+
 // ─── Volatility ──────────────────────────────────────────────────────────────
 
 export function calculateVola(closes: number[]): number | null {
@@ -746,6 +757,82 @@ export function calculateRiskAdjustedScore(momentumScore: number | null, vola: n
   return momentumScore / vola
 }
 
+function calculateAccelerationDetails(
+  closes: number[],
+  volumes: number[] | undefined,
+  timestamps: number[] | undefined,
+  referenceR5d: number | null | undefined,
+): {
+  score: number | null
+  impulse5d: number | null
+  relativeKick5d: number | null
+  ageDays: number | null
+} {
+  const n = closes.length
+  if (n < 61) return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+
+  const r5d = calculateReturnDays(closes, 5)
+  const r20d = calculateReturnDays(closes, 20)
+  const r60d = calculateReturnDays(closes, 60)
+  if (r5d == null || r20d == null || r60d == null) {
+    return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+  }
+
+  const daily: number[] = []
+  for (let i = Math.max(1, n - 20); i < n; i++) {
+    const prev = closes[i - 1]
+    if (prev > 0) daily.push((closes[i] - prev) / prev)
+  }
+  if (daily.length < 10) return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+  const mean = daily.reduce((a, b) => a + b, 0) / daily.length
+  const variance = daily.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / Math.max(1, daily.length - 1)
+  const vola20d = Math.sqrt(Math.max(variance, 0))
+  if (vola20d <= 0) return { score: null, impulse5d: null, relativeKick5d: null, ageDays: null }
+
+  const impulse5d = r5d / (vola20d * Math.sqrt(5))
+  const accelFast = r5d - (r20d / 4)
+  const accelSlope = r20d - (r60d / 3)
+  const relativeKick5d = referenceR5d != null ? (r5d - referenceR5d) : null
+
+  const volumeRecent = Array.isArray(volumes) ? volumes.slice(Math.max(0, volumes.length - 5)) : []
+  const volumeBase = Array.isArray(volumes) ? volumes.slice(Math.max(0, volumes.length - 20), Math.max(0, volumes.length - 5)) : []
+  const avgRecentVol = volumeRecent.length > 0 ? volumeRecent.reduce((a, b) => a + b, 0) / volumeRecent.length : null
+  const avgBaseVol = volumeBase.length > 0 ? volumeBase.reduce((a, b) => a + b, 0) / volumeBase.length : null
+  const volumeShock = (avgRecentVol != null && avgBaseVol != null && avgBaseVol > 0)
+    ? (avgRecentVol / avgBaseVol - 1)
+    : 0
+
+  const normImpulse = Math.max(0, Math.min(1, impulse5d / 2))
+  const normAccelFast = Math.max(0, Math.min(1, accelFast / 0.03))
+  const normAccelSlope = Math.max(0, Math.min(1, accelSlope / 0.06))
+  const normRelKick = relativeKick5d == null ? 0.5 : Math.max(0, Math.min(1, relativeKick5d / 0.03))
+  const normVolShock = Math.max(0, Math.min(1, volumeShock / 0.40))
+
+  const score =
+    normImpulse * 0.35 +
+    normAccelFast * 0.20 +
+    normAccelSlope * 0.15 +
+    normRelKick * 0.20 +
+    normVolShock * 0.10
+
+  let ageDays: number | null = null
+  if (Array.isArray(timestamps) && timestamps.length >= 2) {
+    const lastTs = timestamps[timestamps.length - 1]
+    for (let i = timestamps.length - 2; i >= 0; i--) {
+      const ts = timestamps[i]
+      const r5Past = calculateReturnDays(closes.slice(0, i + 1), 5)
+      const r20Past = calculateReturnDays(closes.slice(0, i + 1), 20)
+      if (r5Past == null || r20Past == null) continue
+      if (r5Past <= r20Past / 4) {
+        ageDays = Math.max(0, Math.round((lastTs - ts) / 86400000))
+        break
+      }
+    }
+  }
+
+  return { score, impulse5d, relativeKick5d, ageDays }
+}
+
 // ─── Combined Score ──────────────────────────────────────────────────────────
 // Simple average of momentumScore and riskAdjustedScore, both higher = better.
 // Gives a single "best of both" metric to sort by.
@@ -797,6 +884,7 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
     momentumScore: 'momentumRank',
     riskAdjustedScore: 'riskAdjustedRank',
     combinedScore: 'combinedRank',
+    accelerationScore: 'accelerationRank',
     earningsYield: 'earningsYieldRank',
     returnOnAssets: 'returnOnAssetsRank',
   }
@@ -829,6 +917,7 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
   rank(indexed, 'momentumScore', true)
   rank(indexed, 'riskAdjustedScore', true)
   rank(indexed, 'combinedScore', true)
+  rank(indexed, 'accelerationScore', true)
   rank(indexed, 'earningsYield', true)
   rank(indexed, 'returnOnAssets', true)
   rank(indexed, 'valueScore', false) // lower = better
@@ -896,7 +985,8 @@ export function recalculateAll(
   instruments: Instrument[],
   weights: MomentumWeights,
   atrMultiplier = 4,
-  referenceR3m?: number | null
+  referenceR3m?: number | null,
+  referenceR5d?: number | null
 ): Instrument[] {
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
@@ -908,6 +998,16 @@ export function recalculateAll(
       updated.vola = calculateVola(inst.closes)
       updated.momentumScore = calculateMomentumScore(r1m, r3m, r6m, weights)
       updated.riskAdjustedScore = calculateRiskAdjustedScore(updated.momentumScore, updated.vola)
+      const accel = calculateAccelerationDetails(
+        inst.closes,
+        inst.volumes,
+        inst.timestamps,
+        referenceR5d
+      )
+      updated.accelerationScore = accel.score
+      updated.impulse5d = accel.impulse5d
+      updated.relativeKick5d = accel.relativeKick5d
+      updated.accelAgeDays = accel.ageDays
 
       // Moving averages
       const mas = calculateMAs(inst.closes)

@@ -10,7 +10,7 @@ import {
 import { generateTfaSummary } from '../utils/tfaSummary'
 
 type Col = { key: string; label: string; title?: string; align?: 'right' | 'left' }
-type ViewPreset = 'scan' | 'detail' | 'risk'
+type ViewPreset = 'scan' | 'early' | 'detail' | 'risk'
 type StickyColumnKey = 'displayName' | 'combinedScore' | 'tfaPhase'
 
 const CORE_STICKY_COLUMNS: StickyColumnKey[] = ['displayName', 'combinedScore', 'tfaPhase']
@@ -33,6 +33,12 @@ const VIEW_PRESET_CONFIG: Record<ViewPreset, { label: string; sortColumn: SortCo
     sortDirection: 'desc',
     hiddenGroups: ['fundamentals', 'breakout', 'pullback', 'tfa'],
   },
+  early: {
+    label: 'Early Momentum',
+    sortColumn: 'accelerationScore',
+    sortDirection: 'desc',
+    hiddenGroups: ['fundamentals', 'pullback', 'tfa'],
+  },
   detail: {
     label: 'Detail',
     sortColumn: 'riskAdjustedScore',
@@ -52,6 +58,7 @@ const COLUMNS: Col[] = [
   { key: 'riskAdjustedScore', label: 'Risk-Adj.', title: 'Momentum ÷ annualized volatility (rank)' },
   { key: 'momentumScore', label: 'Momentum', title: 'Weighted return score (rank)' },
   { key: 'combinedScore', label: 'Combined', title: 'Average of Momentum + Sharpe score (rank)' },
+  { key: 'accelerationScore', label: 'Accel', title: 'Early momentum acceleration score (0–1) incl. 5D relative kick vs URTH' },
   { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
   { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'r1m',           label: '1M',       title: '1-month return' },
@@ -86,7 +93,7 @@ const COLUMNS: Col[] = [
 ]
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
-  scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore'],
+  scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore', 'accelerationScore'],
   returns:      ['r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
@@ -185,6 +192,20 @@ function ScoreCell({ score, rank, colorFn }: { score: number | null | undefined;
       {rank !== undefined && (
         <span className="text-gray-400 text-[10px] ml-1">#{rank}</span>
       )}
+    </span>
+  )
+}
+
+function AccelerationCell({ inst }: { inst: Instrument }) {
+  const score = inst.accelerationScore
+  if (score == null) return <span className="text-muted">—</span>
+  const cls = score >= 0.75 ? 'text-green-300 font-semibold' : score >= 0.6 ? 'text-amber-300' : 'text-gray-300'
+  const early = score >= 0.75 && (inst.impulse5d ?? -99) > 1
+  return (
+    <span className={cls} title={inst.relativeKick5d != null ? `5D kick vs URTH: ${(inst.relativeKick5d * 100).toFixed(2)}%` : undefined}>
+      {score.toFixed(2)}
+      {inst.accelerationRank != null && <span className="text-gray-400 text-[10px] ml-1">#{inst.accelerationRank}</span>}
+      {early && <span className="ml-1">⚡</span>}
     </span>
   )
 }
@@ -715,6 +736,11 @@ function CandidateRow({
           style={stickyColumnStyle('combinedScore')}
         >
           <ScoreCell score={candidate.combinedScore} rank={candidate.combinedRank} />
+        </td>
+      )}
+      {!hiddenKeys.has('accelerationScore') && (
+        <td className="px-2 py-1.5 text-right">
+          <AccelerationCell inst={candidate} />
         </td>
       )}
       {!hiddenKeys.has('ma') && (
@@ -2192,6 +2218,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                       style={stickyColumnStyle('combinedScore')}
                     >
                       <ScoreCell score={inst.combinedScore} rank={inst.combinedRank} colorFn={scoreColor} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('accelerationScore') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <AccelerationCell inst={inst} />
                     </td>
                   )}
 
