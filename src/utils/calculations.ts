@@ -833,19 +833,26 @@ function calculateAccelerationDetails(
     ? (avgRecentVol / avgBaseVol - 1)
     : 0
 
-  const normFromZ = (z: number) => Math.max(0, Math.min(1, z / 2))
+  const normFromZ = (z: number) => 1 / (1 + Math.exp(-0.9 * z))
   const normImpulse = normFromZ(impulse5d)
   const normAccelFast = normFromZ(accelFastZ)
   const normAccelSlope = normFromZ(accelSlopeZ)
-  const normRelKick = relativeKickZ == null ? 0.5 : normFromZ(relativeKickZ)
+  const hasRelKick = relativeKickZ != null
+  const normRelKick = hasRelKick ? normFromZ(relativeKickZ) : 0
   const normVolShock = Math.max(0, Math.min(1, volumeShock / 0.40))
 
+  const wImpulse = hasRelKick ? 0.35 : 0.35 + 0.25 * (0.35 / 0.70)
+  const wFast = hasRelKick ? 0.25 : 0.25 + 0.25 * (0.25 / 0.70)
+  const wSlope = hasRelKick ? 0.10 : 0.10 + 0.25 * (0.10 / 0.70)
+  const wRelKick = hasRelKick ? 0.25 : 0
+  const wVolShock = 0.05
+
   const rawScore =
-    normImpulse * 0.35 +
-    normAccelFast * 0.25 +
-    normAccelSlope * 0.10 +
-    normRelKick * 0.25 +
-    normVolShock * 0.05
+    normImpulse * wImpulse +
+    normAccelFast * wFast +
+    normAccelSlope * wSlope +
+    normRelKick * wRelKick +
+    normVolShock * wVolShock
 
   let ageDays: number | null = null
   let isActive: boolean | null = null
@@ -860,8 +867,10 @@ function calculateAccelerationDetails(
     let state = false
     let seeded = false
     for (let i = 0; i < timestamps.length; i++) {
-      const r5Past = calculateReturnDays(closes.slice(0, i + 1), 5)
-      const r20Past = calculateReturnDays(closes.slice(0, i + 1), 20)
+      if (i < 5 || i < 20) continue
+      const c = closes[i]
+      const r5Past = closes[i - 5] > 0 ? (c - closes[i - 5]) / closes[i - 5] : null
+      const r20Past = closes[i - 20] > 0 ? (c - closes[i - 20]) / closes[i - 20] : null
       if (r5Past == null || r20Past == null) continue
       const base = r20Past / 4
       if (!seeded) {
@@ -902,11 +911,9 @@ function calculateAccelerationDetails(
   }
 
   const freshnessFactor =
-    ageDays == null ? 0.9
-    : ageDays <= 3 ? 1.0
-    : ageDays <= 7 ? 0.85
-    : ageDays <= 14 ? 0.65
-    : 0.4
+    ageDays == null
+      ? 0.75
+      : Math.max(0.35, Math.exp(-0.045 * ageDays))
   const score = rawScore * freshnessFactor
 
   return {
@@ -1084,7 +1091,7 @@ export function recalculateAll(
   atrMultiplier = 4,
   referenceR3m?: number | null,
   referenceR5d?: number | null,
-  accelKVol = 0.2
+  accelKVol = 0.5
 ): Instrument[] {
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
