@@ -841,10 +841,10 @@ function calculateAccelerationDetails(
   const normRelKick = hasRelKick ? normFromZ(relativeKickZ) : 0
   const normVolShock = Math.max(0, Math.min(1, volumeShock / 0.40))
 
-  const wImpulse = hasRelKick ? 0.35 : 0.35 + 0.25 * (0.35 / 0.70)
-  const wFast = hasRelKick ? 0.25 : 0.25 + 0.25 * (0.25 / 0.70)
-  const wSlope = hasRelKick ? 0.10 : 0.10 + 0.25 * (0.10 / 0.70)
-  const wRelKick = hasRelKick ? 0.25 : 0
+  const wImpulse = hasRelKick ? 0.15 : 0.15 + 0.35 * (0.15 / 0.60)
+  const wFast = hasRelKick ? 0.35 : 0.35 + 0.35 * (0.35 / 0.60)
+  const wSlope = hasRelKick ? 0.10 : 0.10 + 0.35 * (0.10 / 0.60)
+  const wRelKick = hasRelKick ? 0.35 : 0
   const wVolShock = 0.05
 
   const rawScore =
