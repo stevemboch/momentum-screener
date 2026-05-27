@@ -43,6 +43,7 @@ export interface Instrument {
   volumes?: number[]
   timestamps?: number[]
   r1m?: number | null
+  r1w?: number | null
   r3m?: number | null
   r6m?: number | null
   vola?: number | null
@@ -301,6 +302,7 @@ export interface Instrument {
 // ─── App State ──────────────────────────────────────────────────────────────
 
 export interface MomentumWeights {
+  w1w: number
   w1m: number
   w3m: number
   w6m: number
@@ -335,7 +337,7 @@ export interface RegimeResult {
 export type SortColumn =
   | 'momentumScore'
   | 'riskAdjustedScore'
-  | 'r1m' | 'r3m' | 'r6m'
+  | 'r1w' | 'r1m' | 'r3m' | 'r6m'
   | 'vola'
   | 'aum' | 'ter'
   | 'marketCap'

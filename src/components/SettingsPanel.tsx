@@ -14,18 +14,23 @@ export function SettingsPanel() {
   const { showDeduped, filterBelowRiskFree } = state.tableState
 
   const raw = {
+    w1w: weights.w1w * 10,
     w1m: weights.w1m * 10,
     w3m: weights.w3m * 10,
     w6m: weights.w6m * 10,
   }
-  const total = raw.w1m + raw.w3m + raw.w6m
-  const norm = (v: number) => (total > 0 ? v / total : 1 / 3)
-  const fmtW = (v: number) => `${(norm(v) * 100).toFixed(0)}%`
+  const total = raw.w1w + raw.w1m + raw.w3m + raw.w6m
+  const norm = (v: number, key: keyof MomentumWeights) => {
+    if (total > 0) return v / total
+    return key === 'w1w' ? 0 : 1 / 3
+  }
+  const fmtW = (v: number, key: keyof MomentumWeights) => `${(norm(v, key) * 100).toFixed(0)}%`
 
   const updateWeight = (key: keyof MomentumWeights, value: number) => {
     const next = { ...raw, [key]: value }
-    const nextTotal = next.w1m + next.w3m + next.w6m
+    const nextTotal = next.w1w + next.w1m + next.w3m + next.w6m
     const normalized = {
+      w1w: nextTotal > 0 ? next.w1w / nextTotal : 0,
       w1m: nextTotal > 0 ? next.w1m / nextTotal : 1 / 3,
       w3m: nextTotal > 0 ? next.w3m / nextTotal : 1 / 3,
       w6m: nextTotal > 0 ? next.w6m / nextTotal : 1 / 3,
@@ -34,7 +39,7 @@ export function SettingsPanel() {
   }
 
   const resetDefaults = () => {
-    dispatch({ type: 'SET_WEIGHTS', weights: { w1m: 1 / 3, w3m: 1 / 3, w6m: 1 / 3 } })
+    dispatch({ type: 'SET_WEIGHTS', weights: { w1w: 0, w1m: 1 / 3, w3m: 1 / 3, w6m: 1 / 3 } })
     dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: 4 })
     dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
     dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })
@@ -94,25 +99,31 @@ export function SettingsPanel() {
         >
           <FieldRow label="Momentum Weights" hint="Auto-normalized">
             <WeightSlider
+              label="1W"
+              value={raw.w1w}
+              effective={fmtW(raw.w1w, 'w1w')}
+              onChange={(v) => updateWeight('w1w', v)}
+            />
+            <WeightSlider
               label="1M"
               value={raw.w1m}
-              effective={fmtW(raw.w1m)}
+              effective={fmtW(raw.w1m, 'w1m')}
               onChange={(v) => updateWeight('w1m', v)}
             />
             <WeightSlider
               label="3M"
               value={raw.w3m}
-              effective={fmtW(raw.w3m)}
+              effective={fmtW(raw.w3m, 'w3m')}
               onChange={(v) => updateWeight('w3m', v)}
             />
             <WeightSlider
               label="6M"
               value={raw.w6m}
-              effective={fmtW(raw.w6m)}
+              effective={fmtW(raw.w6m, 'w6m')}
               onChange={(v) => updateWeight('w6m', v)}
             />
             <div className="mt-1 text-ui-xs font-mono text-muted">
-              Effective: {fmtW(raw.w1m)} / {fmtW(raw.w3m)} / {fmtW(raw.w6m)}
+              Effective: {fmtW(raw.w1w, 'w1w')} / {fmtW(raw.w1m, 'w1m')} / {fmtW(raw.w3m, 'w3m')} / {fmtW(raw.w6m, 'w6m')}
             </div>
           </FieldRow>
 
