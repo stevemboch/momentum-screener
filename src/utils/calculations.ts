@@ -4,12 +4,6 @@ import { calculateBreakout } from './breakoutUtils'
 const TRADING_DAYS = { r1w: 5, r1m: 21, r3m: 63, r6m: 126 }
 export const BOTSI_TOP_N = 10
 export const BOTSI_FILTER_N = 250
-export const BOTSI_SCORE_WEIGHTS = {
-  gd200: 1 / 3,
-  gd130: 0,
-  mom260: 1 / 3,
-  momjt: 1 / 3,
-} as const
 
 // ─── Returns ─────────────────────────────────────────────────────────────────
 
@@ -298,28 +292,17 @@ export function calculateBotsiIndicators(closes: number[]): {
 }
 
 export function calculateBotsiScore(
-  gd200Pct: number | null | undefined,
-  gd130Pct: number | null | undefined,
-  mom260Pct: number | null | undefined,
-  momjtPct: number | null | undefined,
+  gd200Rank: number | null | undefined,
+  mom260Rank: number | null | undefined,
+  momjtRank: number | null | undefined,
 ): number | null {
-  // BOTSI setzt sich aus GD200 + MOM260 + MOMJT zusammen. Fehlt einer der beiden
-  // essentiellen Momentum-Komponenten (MOM260/MOMJT) wegen zu kurzer Kurshistorie,
-  // ist der Score nicht aussagekräftig -> null, damit das Instrument nicht fälschlich
-  // in die BOTSI-Top-10 einsteigt oder vom Advisor als kaufbar markiert wird.
-  if (mom260Pct == null || momjtPct == null) return null
-
-  const entries = [
-    [BOTSI_SCORE_WEIGHTS.gd200, gd200Pct],
-    [BOTSI_SCORE_WEIGHTS.gd130, gd130Pct],
-    [BOTSI_SCORE_WEIGHTS.mom260, mom260Pct],
-    [BOTSI_SCORE_WEIGHTS.momjt, momjtPct],
-  ] as Array<[number, number | null | undefined]>
-  const filtered = entries.filter(([, value]) => value != null) as Array<[number, number]>
-  if (filtered.length === 0) return null
-  const weightSum = filtered.reduce((sum, [weight]) => sum + weight, 0)
-  if (weightSum <= 0) return null
-  return filtered.reduce((sum, [weight, value]) => sum + (weight * value), 0) / weightSum
+  // BOTSI-Gesamtscore nach BOTSI-Whitepaper: Summe der Einzel-Rankings
+  // (Peergroup-Vergleich innerhalb der Aktien) von GD200, MOM260 und MOMJT.
+  // GD130 ist im BOTSI-Score nicht enthalten. Niedrigere Summe = besser.
+  // Fehlt einer der drei Indikator-Ranks (z.B. wegen zu kurzer Kurshistorie),
+  // ist der Score nicht aussagekräftig -> null.
+  if (gd200Rank == null || mom260Rank == null || momjtRank == null) return null
+  return gd200Rank + mom260Rank + momjtRank
 }
 
 // ─── Weekly Vola Ratio (3M / 1Y) ────────────────────────────────────────────
@@ -1437,26 +1420,65 @@ export function recalculateAll(
 
   const momentumPct = buildPercentileMap(withScores, 'momentumScore')
   const riskAdjustedPct = buildPercentileMap(withScores, 'riskAdjustedScore')
-  const gd200Pct = buildPercentileMap(withScores, 'gd200')
-  const gd130Pct = buildPercentileMap(withScores, 'gd130')
-  const mom260Pct = buildPercentileMap(withScores, 'mom260')
-  const momjtPct = buildPercentileMap(withScores, 'momjt')
   const withCombined = withScores.map((inst) => {
     const combinedScore = calculateCombinedScore(
       momentumPct.get(inst.isin),
       riskAdjustedPct.get(inst.isin)
     )
-    const botsiScore = calculateBotsiScore(
-      gd200Pct.get(inst.isin),
-      gd130Pct.get(inst.isin),
-      mom260Pct.get(inst.isin),
-      momjtPct.get(inst.isin),
-    )
-    return { ...inst, combinedScore, botsiScore }
+    return { ...inst, combinedScore, botsiScore: null as number | null }
   })
 
   const withValue = calculateValueScores(withCombined)
   const withRanks = applyRanks(withValue)
+
+  // BOTSI-Whitepaper: Ranglisten nur innerhalb der Peergroup "Aktien" bilden
+  // und daraus den Gesamt-Score (Summe der Ranks) berechnen.
+  const stockRanks = withRanks
+    .map((inst, i) => ({ inst, i }))
+    .filter(({ inst }) => inst.type === 'Stock')
+  const stockGd200Rank  = buildRankMap(stockRanks.map(({ inst }) => inst), 'gd200')
+  const stockMom260Rank = buildRankMap(stockRanks.map(({ inst }) => inst), 'mom260')
+  const stockMomjtRank  = buildRankMap(stockRanks.map(({ inst }) => inst), 'momjt')
+  // Ranks nur für Aktien in die Instruments zurückschreiben
+  stockRanks.forEach(({ i }) => {
+    const inst = withRanks[i]
+    withRanks[i] = {
+      ...inst,
+      gd200Rank:  stockGd200Rank.get(inst.isin),
+      mom260Rank: stockMom260Rank.get(inst.isin),
+      momjtRank:  stockMomjtRank.get(inst.isin),
+    }
+  })
+  // BOTSI-Score = Summe der drei Indikator-Ranks (nur Aktien)
+  for (let i = 0; i < withRanks.length; i++) {
+    const inst = withRanks[i]
+    if (inst.type !== 'Stock') {
+      withRanks[i] = { ...inst, botsiScore: null }
+      continue
+    }
+    withRanks[i] = {
+      ...inst,
+      botsiScore: calculateBotsiScore(inst.gd200Rank, inst.mom260Rank, inst.momjtRank),
+    }
+  }
+  // BOTSI-Gesamtrank: aufsteigend (niedrigere Summe = besser), nur Aktien.
+  // Wir nutzen buildRankMap direkt, da sie Ties mit Average-Rank fair behandelt.
+  const stockScores = withRanks
+    .map((inst, i) => ({ inst, i }))
+    .filter(({ inst }) => inst.type === 'Stock' && inst.botsiScore != null)
+  const botsiRankMap = buildRankMap(stockScores.map(({ inst }) => inst), 'botsiScore')
+  // In-place zurückschreiben (Index-Map erneut nutzen, um Index->isin zu mappen)
+  const isinToIdx = new Map(withRanks.map((inst, i) => [inst.isin, i]))
+  botsiRankMap.forEach((rank, isin) => {
+    const idx = isinToIdx.get(isin)
+    if (idx !== undefined) (withRanks[idx] as any).botsiRank = rank
+  })
+  // Für alle anderen (nicht-Stocks oder ohne botsiScore): botsiRank explizit löschen
+  withRanks.forEach((inst, i) => {
+    if (inst.type !== 'Stock' || inst.botsiScore == null) {
+      ;(withRanks[i] as any).botsiRank = undefined
+    }
+  })
 
   // Zweiter Pass: BOTSI Advisor und Pullback-Score benötigen die Ranks aus applyRanks
   const withAdvisor = withRanks.map((inst) => {
