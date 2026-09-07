@@ -3,6 +3,7 @@ import { calculateBreakout } from './breakoutUtils'
 
 const TRADING_DAYS = { r1w: 5, r1m: 21, r3m: 63, r6m: 126 }
 export const BOTSI_TOP_N = 10
+export const BOTSI_FILTER_N = 250
 export const BOTSI_SCORE_WEIGHTS = {
   gd200: 1 / 3,
   gd130: 0,
@@ -302,6 +303,12 @@ export function calculateBotsiScore(
   mom260Pct: number | null | undefined,
   momjtPct: number | null | undefined,
 ): number | null {
+  // BOTSI setzt sich aus GD200 + MOM260 + MOMJT zusammen. Fehlt einer der beiden
+  // essentiellen Momentum-Komponenten (MOM260/MOMJT) wegen zu kurzer Kurshistorie,
+  // ist der Score nicht aussagekräftig -> null, damit das Instrument nicht fälschlich
+  // in die BOTSI-Top-10 einsteigt oder vom Advisor als kaufbar markiert wird.
+  if (mom260Pct == null || momjtPct == null) return null
+
   const entries = [
     [BOTSI_SCORE_WEIGHTS.gd200, gd200Pct],
     [BOTSI_SCORE_WEIGHTS.gd130, gd130Pct],
@@ -1456,21 +1463,21 @@ export function recalculateAll(
     if (inst.type !== 'Stock') return inst
     const updated = { ...inst }
     const price = inst.closes && inst.closes.length > 0 ? inst.closes[inst.closes.length - 1] : null
-    const top10 = inst.botsiRank != null && inst.botsiRank <= BOTSI_TOP_N
-    const filterPassed = top10 && inst.gd200 != null ? inst.gd200 >= botsiSafetyMargin : false
-    const qualified = top10 && filterPassed
+    const inFilter = inst.botsiRank != null && inst.botsiRank <= BOTSI_FILTER_N
+    const filterPassed = inFilter && inst.gd200 != null ? inst.gd200 >= botsiSafetyMargin : false
+    const qualified = inFilter && filterPassed
     const targetWeight = qualified ? 1 / BOTSI_TOP_N : 0
 
-    updated.botsiTop10 = top10
+    updated.botsiTop10 = inFilter
     updated.botsiFilterPassed = filterPassed
     updated.botsiQualified = qualified
     updated.botsiTargetWeight = targetWeight
-    updated.botsiAdvisorAction = top10
+    updated.botsiAdvisorAction = inFilter
       ? (filterPassed
           ? (inst.inPortfolio ? 'hold' : 'buy')
           : (inst.inPortfolio ? 'sell' : 'cash'))
       : (inst.inPortfolio ? 'sell' : null)
-    if (!top10 && price == null) {
+    if (!inFilter && price == null) {
       updated.botsiAdvisorAction = inst.inPortfolio ? 'sell' : null
     }
     return updated

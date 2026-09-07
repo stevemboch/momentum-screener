@@ -461,7 +461,7 @@ function BotsiActionBadge({
   return (
     <span
       className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${tone}`}
-      title={`${top10 ? 'Top 10' : 'Outside Top 10'}${qualified ? ' | qualifiziert' : ''}`}
+      title={`${top10 ? 'Im BOTSI-Filter' : 'Außerhalb BOTSI-Filter'}${qualified ? ' | qualifiziert' : ''}`}
     >
       {label}
     </span>
