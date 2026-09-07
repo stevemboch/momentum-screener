@@ -2411,25 +2411,25 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
                   {!hiddenKeys.has('gd200') && (
                     <td className="px-2 py-1.5 text-right">
-                      <ScoreCell score={inst.gd200} rank={inst.gd200Rank} colorFn={scoreColor} />
+                      <MetricCell value={inst.gd200} rank={inst.gd200Rank} fmt={(v) => fmtPct(v)} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('gd130') && (
                     <td className="px-2 py-1.5 text-right">
-                      <ScoreCell score={inst.gd130} rank={inst.gd130Rank} colorFn={scoreColor} />
+                      <MetricCell value={inst.gd130} rank={inst.gd130Rank} fmt={(v) => fmtPct(v)} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('mom260') && (
                     <td className="px-2 py-1.5 text-right">
-                      <ScoreCell score={inst.mom260} rank={inst.mom260Rank} colorFn={scoreColor} />
+                      <MetricCell value={inst.mom260} rank={inst.mom260Rank} fmt={(v) => fmtPct(v)} />
                     </td>
                   )}
 
                   {!hiddenKeys.has('momjt') && (
                     <td className="px-2 py-1.5 text-right">
-                      <ScoreCell score={inst.momjt} rank={inst.momjtRank} colorFn={scoreColor} />
+                      <MetricCell value={inst.momjt} rank={inst.momjtRank} fmt={(v) => fmtPct(v)} />
                     </td>
                   )}
 

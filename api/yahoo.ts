@@ -214,7 +214,7 @@ async function fetchOneTicker(
   try {
     const [chartRes, quoteRes, weeklyRes] = await Promise.all([
       fetchWithTimeout(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d&includePrePost=false`,
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${profile === 'stock' ? '2y' : '1y'}&interval=1d&includePrePost=false`,
         { headers: YAHOO_API_HEADERS }
       ),
       fetchQuoteSummary(ticker, quoteModules),
