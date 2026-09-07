@@ -287,7 +287,13 @@ export function calculateBotsiIndicators(closes: number[]): {
     gd200: gd200 != null && gd200 > 0 ? (price - gd200) / gd200 : null,
     gd130: gd130 != null && gd130 > 0 ? (price - gd130) / gd130 : null,
     mom260: calculateLookbackReturn(closes, 260, 0),
-    momjt: calculateLookbackReturn(closes, 252, 21),
+    // BOTSI-Whitepaper: MOMJT = MOM260-Berechnung, aber "aktueller Schlusskurs"
+    // wird durch "Schlusskurs von vor einem Monat" ersetzt. Konkret:
+    //   Endpunkt = closes[n-23]  (= heute minus 22 Handelstage ≈ 1 Kalendermonat)
+    //   Start    = closes[n-261] (= heute minus 260 Handelstage, wie MOM260)
+    // -> Lookback = 260 Tage vom 'heute', aber Endpunkt einen Monat frueher.
+    //    (closes[n-23] - closes[n-261]) / closes[n-261]
+    momjt: calculateLookbackReturn(closes, 238, 22),
   }
 }
 
