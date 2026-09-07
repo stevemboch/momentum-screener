@@ -2,6 +2,13 @@ import type { Instrument, MomentumWeights } from '../types'
 import { calculateBreakout } from './breakoutUtils'
 
 const TRADING_DAYS = { r1w: 5, r1m: 21, r3m: 63, r6m: 126 }
+export const BOTSI_TOP_N = 10
+export const BOTSI_SCORE_WEIGHTS = {
+  gd200: 1 / 3,
+  gd130: 0,
+  mom260: 1 / 3,
+  momjt: 1 / 3,
+} as const
 
 // ─── Returns ─────────────────────────────────────────────────────────────────
 
@@ -256,6 +263,56 @@ export function calculateLevyRS(closes: number[], period = 130): number | null {
   const ma = calculateMA(closes, period)
   if (ma === null || ma === 0) return null
   return closes[closes.length - 1] / ma
+}
+
+function calculateLookbackReturn(closes: number[], lookbackDays: number, skipDays = 0): number | null {
+  const n = closes.length
+  const target = n - 1 - (lookbackDays + skipDays)
+  const ref = n - 1 - skipDays
+  if (target < 0 || ref < 0) return null
+  const base = closes[target]
+  const last = closes[ref]
+  if (!base || base === 0 || !last) return null
+  return (last - base) / base
+}
+
+export function calculateBotsiIndicators(closes: number[]): {
+  gd200: number | null
+  gd130: number | null
+  mom260: number | null
+  momjt: number | null
+} {
+  if (!closes || closes.length < 2) {
+    return { gd200: null, gd130: null, mom260: null, momjt: null }
+  }
+  const price = closes[closes.length - 1]
+  const gd200 = calculateMA(closes, 200)
+  const gd130 = calculateMA(closes, 130)
+  return {
+    gd200: gd200 != null && gd200 > 0 ? (price - gd200) / gd200 : null,
+    gd130: gd130 != null && gd130 > 0 ? (price - gd130) / gd130 : null,
+    mom260: calculateLookbackReturn(closes, 260, 0),
+    momjt: calculateLookbackReturn(closes, 252, 21),
+  }
+}
+
+export function calculateBotsiScore(
+  gd200Pct: number | null | undefined,
+  gd130Pct: number | null | undefined,
+  mom260Pct: number | null | undefined,
+  momjtPct: number | null | undefined,
+): number | null {
+  const entries = [
+    [BOTSI_SCORE_WEIGHTS.gd200, gd200Pct],
+    [BOTSI_SCORE_WEIGHTS.gd130, gd130Pct],
+    [BOTSI_SCORE_WEIGHTS.mom260, mom260Pct],
+    [BOTSI_SCORE_WEIGHTS.momjt, momjtPct],
+  ] as Array<[number, number | null | undefined]>
+  const filtered = entries.filter(([, value]) => value != null) as Array<[number, number]>
+  if (filtered.length === 0) return null
+  const weightSum = filtered.reduce((sum, [weight]) => sum + weight, 0)
+  if (weightSum <= 0) return null
+  return filtered.reduce((sum, [weight, value]) => sum + (weight * value), 0) / weightSum
 }
 
 // ─── Weekly Vola Ratio (3M / 1Y) ────────────────────────────────────────────
@@ -955,6 +1012,27 @@ export function calculateCombinedScore(
   return null
 }
 
+function buildRankMap(
+  instruments: Instrument[],
+  field: keyof Instrument
+): Map<string, number> {
+  const items = instruments
+    .map((inst) => ({ isin: inst.isin, value: inst[field] as number | null | undefined }))
+    .filter((x) => x.value != null) as { isin: string; value: number }[]
+  if (items.length === 0) return new Map()
+  items.sort((a, b) => b.value - a.value)
+  const map = new Map<string, number>()
+  let i = 0
+  while (i < items.length) {
+    let j = i + 1
+    while (j < items.length && items[j].value === items[i].value) j++
+    const rank = Math.round((i + 1 + j) / 2)
+    for (let k = i; k < j; k++) map.set(items[k].isin, rank)
+    i = j
+  }
+  return map
+}
+
 function buildPercentileMap(
   instruments: Instrument[],
   field: keyof Instrument
@@ -991,6 +1069,11 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
     riskAdjustedScore: 'riskAdjustedRank',
     combinedScore: 'combinedRank',
     accelerationScore: 'accelerationRank',
+    gd200: 'gd200Rank',
+    gd130: 'gd130Rank',
+    mom260: 'mom260Rank',
+    momjt: 'momjtRank',
+    botsiScore: 'botsiRank',
     earningsYield: 'earningsYieldRank',
     returnOnAssets: 'returnOnAssetsRank',
   }
@@ -1024,6 +1107,11 @@ export function applyRanks(instruments: Instrument[]): Instrument[] {
   rank(indexed, 'riskAdjustedScore', true)
   rank(indexed, 'combinedScore', true)
   rank(indexed, 'accelerationScore', true)
+  rank(indexed, 'gd200', true)
+  rank(indexed, 'gd130', true)
+  rank(indexed, 'mom260', true)
+  rank(indexed, 'momjt', true)
+  rank(indexed, 'botsiScore', true)
   rank(indexed, 'earningsYield', true)
   rank(indexed, 'returnOnAssets', true)
   rank(indexed, 'valueScore', false) // lower = better
@@ -1093,7 +1181,8 @@ export function recalculateAll(
   atrMultiplier = 4,
   referenceR3m?: number | null,
   referenceR5d?: number | null,
-  accelKVol = 0.5
+  accelKVol = 0.5,
+  botsiSafetyMargin = 0.03
 ): Instrument[] {
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
@@ -1164,6 +1253,19 @@ export function recalculateAll(
       } else {
         updated.maCrossover = null
         updated.tfaCrossoverDaysAgo = null
+      }
+
+      if (inst.type === 'Stock') {
+        const botsi = calculateBotsiIndicators(inst.closes)
+        updated.gd200 = botsi.gd200
+        updated.gd130 = botsi.gd130
+        updated.mom260 = botsi.mom260
+        updated.momjt = botsi.momjt
+      } else {
+        updated.gd200 = null
+        updated.gd130 = null
+        updated.mom260 = null
+        updated.momjt = null
       }
 
       // TFA technical inputs
@@ -1328,19 +1430,54 @@ export function recalculateAll(
 
   const momentumPct = buildPercentileMap(withScores, 'momentumScore')
   const riskAdjustedPct = buildPercentileMap(withScores, 'riskAdjustedScore')
+  const gd200Pct = buildPercentileMap(withScores, 'gd200')
+  const gd130Pct = buildPercentileMap(withScores, 'gd130')
+  const mom260Pct = buildPercentileMap(withScores, 'mom260')
+  const momjtPct = buildPercentileMap(withScores, 'momjt')
   const withCombined = withScores.map((inst) => {
     const combinedScore = calculateCombinedScore(
       momentumPct.get(inst.isin),
       riskAdjustedPct.get(inst.isin)
     )
-    return { ...inst, combinedScore }
+    const botsiScore = calculateBotsiScore(
+      gd200Pct.get(inst.isin),
+      gd130Pct.get(inst.isin),
+      mom260Pct.get(inst.isin),
+      momjtPct.get(inst.isin),
+    )
+    return { ...inst, combinedScore, botsiScore }
   })
 
   const withValue = calculateValueScores(withCombined)
   const withRanks = applyRanks(withValue)
 
-  // Zweiter Pass: Pullback-Score benötigt momentumRank aus applyRanks
-  const withPullback = withRanks.map((inst) => {
+  // Zweiter Pass: BOTSI Advisor und Pullback-Score benötigen die Ranks aus applyRanks
+  const withAdvisor = withRanks.map((inst) => {
+    if (inst.type !== 'Stock') return inst
+    const updated = { ...inst }
+    const price = inst.closes && inst.closes.length > 0 ? inst.closes[inst.closes.length - 1] : null
+    const top10 = inst.botsiRank != null && inst.botsiRank <= BOTSI_TOP_N
+    const filterPassed = top10 && inst.gd200 != null ? inst.gd200 >= botsiSafetyMargin : false
+    const qualified = top10 && filterPassed
+    const targetWeight = qualified ? 1 / BOTSI_TOP_N : 0
+
+    updated.botsiTop10 = top10
+    updated.botsiFilterPassed = filterPassed
+    updated.botsiQualified = qualified
+    updated.botsiTargetWeight = targetWeight
+    updated.botsiAdvisorAction = top10
+      ? (filterPassed
+          ? (inst.inPortfolio ? 'hold' : 'buy')
+          : (inst.inPortfolio ? 'sell' : 'cash'))
+      : (inst.inPortfolio ? 'sell' : null)
+    if (!top10 && price == null) {
+      updated.botsiAdvisorAction = inst.inPortfolio ? 'sell' : null
+    }
+    return updated
+  })
+
+  // Dritter Pass: Pullback-Score benötigt momentumRank aus applyRanks
+  const withPullback = withAdvisor.map((inst) => {
     if (inst.type !== 'Stock' || !inst.closes || inst.closes.length === 0) return inst
     const updated = { ...inst }
 

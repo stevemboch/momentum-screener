@@ -1093,6 +1093,7 @@ export function usePipeline() {
             refs.r3m ?? state.referenceR3m,
             refs.r5d ?? state.referenceR5d,
             state.settings.accelKVol,
+            state.settings.botsiSafetyMargin,
           ),
         })
       }
@@ -1100,7 +1101,7 @@ export function usePipeline() {
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceReturns, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.referenceR3m, state.referenceR5d])
+  }, [enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceReturns, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
 
   const loadXetraBackground = useCallback(async () => {
     dispatch({ type: 'SET_XETRA_LOADING', loading: true })
@@ -1220,13 +1221,14 @@ export function usePipeline() {
           refs.r3m ?? state.referenceR3m,
           refs.r5d ?? state.referenceR5d,
           state.settings.accelKVol,
+          state.settings.botsiSafetyMargin,
         ),
       })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: finalCombined.length, total: finalCombined.length } })
     } catch (err: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
-  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.referenceR3m, state.referenceR5d, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceReturns])
+  }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceReturns])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)

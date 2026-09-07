@@ -145,7 +145,7 @@ function loadHiddenColumnGroups(): ColumnGroup[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    const allowed: ColumnGroup[] = ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback']
+    const allowed: ColumnGroup[] = ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback', 'botsi']
     return parsed.filter((v) => allowed.includes(v))
   } catch {
     return []
@@ -172,6 +172,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   atrMultiplier: 4,
   riskFreeRate: 0.035,
   accelKVol: 0.5,
+  botsiSafetyMargin: 0.03,
   isinDoubleClickAction: 'claude',
 }
 
@@ -189,10 +190,11 @@ const DEFAULT_STATE: AppState = {
     filterBelowAllMAs: false,
     tfaMode: false,
     pullbackMode: false,
+    botsiMode: false,
     aiFilterPlan: null,
     aiFilterQuery: null,
     aiFilterActive: false,
-    hiddenColumnGroups: persistedHiddenColumns,
+    hiddenColumnGroups: persistedHiddenColumns.length > 0 ? persistedHiddenColumns : ['botsi'],
   },
   referenceR3m: null,
   referenceR5d: null,
@@ -242,6 +244,7 @@ type Action =
   | { type: 'SET_ATR_MULTIPLIER'; multiplier: number }
   | { type: 'SET_RISK_FREE_RATE'; rate: number }
   | { type: 'SET_ACCEL_KVOL'; kVol: number }
+  | { type: 'SET_BOTSI_SAFETY_MARGIN'; margin: number }
   | { type: 'SET_REFERENCE_RETURNS'; r3m: number | null; r5d: number | null }
   | { type: 'SET_ISIN_DOUBLE_CLICK_ACTION'; action: 'google' | 'claude' }
   | { type: 'SET_TABLE_STATE'; updates: Partial<TableState> }
@@ -272,7 +275,7 @@ function reducer(state: AppState, action: Action): AppState {
         })
         .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
       const merged = [...state.instruments, ...newInst]
-      return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol) }
+      return { ...state, instruments: recalculateAll(merged, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin) }
     }
     case 'SET_INSTRUMENTS':
       {
@@ -285,7 +288,7 @@ function reducer(state: AppState, action: Action): AppState {
             return true
           })
           .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
-        return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol) }
+        return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin) }
       }
     case 'UPDATE_INSTRUMENT': {
       const instruments = state.instruments.map((inst) =>
@@ -294,7 +297,7 @@ function reducer(state: AppState, action: Action): AppState {
       if (!updatesAffectScores(action.updates)) {
         return { ...state, instruments }
       }
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol) }
+      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin) }
     }
     case 'UPDATE_INSTRUMENTS': {
       const needsRecalc = Array.from(action.updates.values()).some((u) => updatesAffectScores(u))
@@ -305,7 +308,7 @@ function reducer(state: AppState, action: Action): AppState {
       if (!needsRecalc) {
         return { ...state, instruments }
       }
-      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol) }
+      return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin) }
     }
     case 'SET_FETCH_STATUS': {
       const nextFetchStatus = { ...state.fetchStatus, ...action.status }
@@ -320,26 +323,50 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, fetchStatus: nextFetchStatus }
     }
     case 'SET_WEIGHTS': {
-      const instruments = recalculateAll(state.instruments, action.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol)
-      return { ...state, settings: { ...state.settings, weights: action.weights }, instruments }
+      const instruments = recalculateAll(state.instruments, action.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin)
+      const nextSettings = { ...state.settings, weights: action.weights }
+      saveSettings(nextSettings)
+      return { ...state, settings: nextSettings, instruments }
     }
     case 'SET_AUM_FLOOR':
-      return {
-        ...state,
-        settings: { ...state.settings, aumFloor: action.floor },
+      {
+        const nextSettings = { ...state.settings, aumFloor: action.floor }
+        saveSettings(nextSettings)
+        return { ...state, settings: nextSettings }
       }
     case 'SET_ATR_MULTIPLIER': {
-      const instruments = recalculateAll(state.instruments, state.settings.weights, action.multiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol)
-      return { ...state, settings: { ...state.settings, atrMultiplier: action.multiplier }, instruments }
+      const instruments = recalculateAll(state.instruments, state.settings.weights, action.multiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin)
+      const nextSettings = { ...state.settings, atrMultiplier: action.multiplier }
+      saveSettings(nextSettings)
+      return { ...state, settings: nextSettings, instruments }
     }
-    case 'SET_RISK_FREE_RATE':
-      return { ...state, settings: { ...state.settings, riskFreeRate: action.rate } }
+    case 'SET_RISK_FREE_RATE': {
+      const nextSettings = { ...state.settings, riskFreeRate: action.rate }
+      saveSettings(nextSettings)
+      return { ...state, settings: nextSettings }
+    }
     case 'SET_ACCEL_KVOL': {
-      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, action.kVol)
-      return { ...state, settings: { ...state.settings, accelKVol: action.kVol }, instruments }
+      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, action.kVol, state.settings.botsiSafetyMargin)
+      const nextSettings = { ...state.settings, accelKVol: action.kVol }
+      saveSettings(nextSettings)
+      return { ...state, settings: nextSettings, instruments }
+    }
+    case 'SET_BOTSI_SAFETY_MARGIN': {
+      const instruments = recalculateAll(
+        state.instruments,
+        state.settings.weights,
+        state.settings.atrMultiplier,
+        state.referenceR3m,
+        state.referenceR5d,
+        state.settings.accelKVol,
+        action.margin,
+      )
+      const nextSettings = { ...state.settings, botsiSafetyMargin: action.margin }
+      saveSettings(nextSettings)
+      return { ...state, settings: nextSettings, instruments }
     }
     case 'SET_REFERENCE_RETURNS': {
-      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, action.r3m, action.r5d, state.settings.accelKVol)
+      const instruments = recalculateAll(state.instruments, state.settings.weights, state.settings.atrMultiplier, action.r3m, action.r5d, state.settings.accelKVol, state.settings.botsiSafetyMargin)
       return { ...state, referenceR3m: action.r3m, referenceR5d: action.r5d, instruments }
     }
     case 'SET_ISIN_DOUBLE_CLICK_ACTION':
@@ -349,8 +376,18 @@ function reducer(state: AppState, action: Action): AppState {
     case 'SET_TABLE_STATE': {
       const updates = action.updates
       // Mutual Exclusion: TFA und Pullback-Modus schließen sich aus
-      if (updates.tfaMode === true) updates.pullbackMode = false
-      if (updates.pullbackMode === true) updates.tfaMode = false
+      if (updates.tfaMode === true) {
+        updates.pullbackMode = false
+        updates.botsiMode = false
+      }
+      if (updates.pullbackMode === true) {
+        updates.tfaMode = false
+        updates.botsiMode = false
+      }
+      if (updates.botsiMode === true) {
+        updates.tfaMode = false
+        updates.pullbackMode = false
+      }
       return { ...state, tableState: { ...state.tableState, ...updates } }
     }
     case 'SET_ETF_GROUP':
@@ -391,8 +428,16 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         portfolioIsins: nextIsins,
-        instruments: state.instruments.map((inst) =>
-          inst.isin === action.isin ? { ...inst, inPortfolio: !exists } : inst
+        instruments: recalculateAll(
+          state.instruments.map((inst) =>
+            inst.isin === action.isin ? { ...inst, inPortfolio: !exists } : inst
+          ),
+          state.settings.weights,
+          state.settings.atrMultiplier,
+          state.referenceR3m,
+          state.referenceR5d,
+          state.settings.accelKVol,
+          state.settings.botsiSafetyMargin,
         ),
       }
     }
@@ -476,6 +521,12 @@ export function useDisplayedInstruments() {
       // Nur Titel die Gate bestanden haben (pullbackScore !== null = alle Gates erfüllt)
     }
 
+    // BOTSI mode — existing investor view: show top-10 candidates plus held positions
+    if (tableState.botsiMode) {
+      filtered = filtered.filter((i) => i.type === 'Stock')
+      filtered = filtered.filter((i) => (i.botsiTop10 === true || i.inPortfolio === true) && i.botsiRank != null)
+    }
+
     // Dedup filter — hides non-winners when enabled
     if (tableState.showDeduped) {
       filtered = filtered.filter((i) => {
@@ -534,6 +585,12 @@ export function useDisplayedInstruments() {
         if (col === 'pullbackScore' && tableState.pullbackMode) {
           return (inst as any).pullbackScore ?? null
         }
+        if (col === 'botsiScore' && tableState.botsiMode) {
+          return (inst as any).botsiScore ?? null
+        }
+        if (col === 'botsiRank' && tableState.botsiMode) {
+          return (inst as any).botsiRank ?? null
+        }
         return (inst as any)[col] ?? null
       }
       const avRaw = getVal(a)
@@ -557,6 +614,7 @@ export function useDisplayedInstruments() {
     tableState.typeFilter,
     tableState.tfaMode,
     tableState.pullbackMode,
+    tableState.botsiMode,
     tableState.showDeduped,
     tableState.filterBelowRiskFree,
     tableState.filterBelowAllMAs,

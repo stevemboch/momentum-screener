@@ -55,6 +55,21 @@ export interface Instrument {
   combinedRank?: number
   accelerationScore?: number | null
   accelerationRank?: number
+  gd200?: number | null
+  gd200Rank?: number
+  gd130?: number | null
+  gd130Rank?: number
+  mom260?: number | null
+  mom260Rank?: number
+  momjt?: number | null
+  momjtRank?: number
+  botsiScore?: number | null
+  botsiRank?: number
+  botsiQualified?: boolean | null
+  botsiAdvisorAction?: 'buy' | 'hold' | 'sell' | 'cash' | null
+  botsiTargetWeight?: number | null
+  botsiFilterPassed?: boolean | null
+  botsiTop10?: boolean | null
   impulse5d?: number | null
   relativeKick5d?: number | null
   accelAgeDays?: number | null
@@ -314,6 +329,7 @@ export interface AppSettings {
   atrMultiplier: number   // 3–5, default 4
   riskFreeRate: number    // annualised, default 0.035 (3.5%)
   accelKVol: number       // acceleration hysteresis = kVol * 5d volatility width
+  botsiSafetyMargin: number
   isinDoubleClickAction: 'google' | 'claude'
 }
 
@@ -344,6 +360,8 @@ export type SortColumn =
   | 'pe' | 'pb' | 'earningsYield' | 'returnOnAssets'
   | 'combinedScore'
   | 'accelerationScore'
+  | 'gd200' | 'gd130' | 'mom260' | 'momjt'
+  | 'botsiScore' | 'botsiRank' | 'botsiTargetWeight'
   | 'breakoutScore'
   | 'sellingThreshold'
   | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS' | 'tfaTScore' | 'tfaFScore'
@@ -356,7 +374,7 @@ export type SortDirection = 'asc' | 'desc'
 export type TypeFilter = 'all' | 'etf' | 'stock'
 
 export type ColumnGroup =
-  'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout' | 'tfa' | 'pullback'
+  'scores' | 'returns' | 'technical' | 'fundamentals' | 'breakout' | 'tfa' | 'pullback' | 'botsi'
 
 export type TfaPhase =
   | 'none'
@@ -392,6 +410,7 @@ export interface TableState {
   filterBelowAllMAs: boolean
   tfaMode: boolean
   pullbackMode: boolean
+  botsiMode: boolean
   aiFilterPlan: AiFilterPlan | null
   aiFilterQuery: string | null
   aiFilterActive: boolean

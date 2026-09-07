@@ -10,7 +10,7 @@ import {
 import { generateTfaSummary } from '../utils/tfaSummary'
 
 type Col = { key: string; label: string; title?: string; align?: 'right' | 'left' }
-type ViewPreset = 'scan' | 'early' | 'detail' | 'risk'
+type ViewPreset = 'scan' | 'early' | 'detail' | 'risk' | 'botsi'
 type StickyColumnKey = 'displayName' | 'combinedScore' | 'tfaPhase'
 
 const CORE_STICKY_COLUMNS: StickyColumnKey[] = ['displayName', 'combinedScore', 'tfaPhase']
@@ -51,6 +51,12 @@ const VIEW_PRESET_CONFIG: Record<ViewPreset, { label: string; sortColumn: SortCo
     sortDirection: 'asc',
     hiddenGroups: ['breakout', 'pullback'],
   },
+  botsi: {
+    label: 'BOTSI',
+    sortColumn: 'botsiScore',
+    sortDirection: 'desc',
+    hiddenGroups: ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback'],
+  },
 }
 
 const COLUMNS: Col[] = [
@@ -59,6 +65,12 @@ const COLUMNS: Col[] = [
   { key: 'momentumScore', label: 'Momentum', title: 'Weighted return score (rank)' },
   { key: 'combinedScore', label: 'Combined', title: 'Average of Momentum + Sharpe score (rank)' },
   { key: 'accelerationScore', label: 'Accel', title: 'Early momentum acceleration score (0–1) incl. 5D relative kick vs URTH' },
+  { key: 'gd200',         label: 'GD200',    title: 'GD200 distance = (price - MA200) / MA200' },
+  { key: 'gd130',         label: 'GD130',    title: 'GD130 distance = (price - MA130) / MA130, ignored in overall BOTSI score' },
+  { key: 'mom260',        label: 'MOM260',   title: '260 trading day momentum' },
+  { key: 'momjt',         label: 'MOMJT',    title: 'Jegadeesh-Titman momentum (12M ex. last month)' },
+  { key: 'botsiScore',    label: 'BOTSI',    title: 'Weighted percentile across GD200, MOM260, MOMJT (GD130 ignored)' },
+  { key: 'botsiRank',     label: 'B-Rank',   title: 'BOTSI overall rank' },
   { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
   { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'r1w',           label: '1W',       title: '1-week return' },
@@ -95,6 +107,7 @@ const COLUMNS: Col[] = [
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore', 'accelerationScore'],
+  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'botsiScore', 'botsiRank'],
   returns:      ['r1w', 'r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
@@ -416,6 +429,43 @@ function TfaPhaseBadge({
     default:
       return <span className="text-muted" title={tooltip}>—</span>
   }
+}
+
+function BotsiActionBadge({
+  action,
+  top10,
+  qualified,
+}: {
+  action: Instrument['botsiAdvisorAction']
+  top10?: boolean | null
+  qualified?: boolean | null
+}) {
+  if (!action) {
+    return <span className="text-muted">—</span>
+  }
+
+  const tone = action === 'buy' || action === 'hold'
+    ? 'bg-green-400/10 text-green-400 border-green-400/20'
+    : action === 'sell'
+      ? 'bg-red-400/10 text-red-400 border-red-400/20'
+      : 'bg-gray-400/10 text-gray-400 border-gray-400/20'
+
+  const label = action === 'buy'
+    ? 'Kaufen'
+    : action === 'hold'
+      ? 'Halten'
+      : action === 'sell'
+        ? 'Verkaufen'
+        : 'Cash'
+
+  return (
+    <span
+      className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${tone}`}
+      title={`${top10 ? 'Top 10' : 'Outside Top 10'}${qualified ? ' | qualifiziert' : ''}`}
+    >
+      {label}
+    </span>
+  )
 }
 
 function fmtPrice(v: number | null | undefined): string {
@@ -1865,14 +1915,24 @@ function TableToolbar({
   onPresetChange: (preset: ViewPreset) => void
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-3 py-2">
+    <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2 ${
+      activePreset === 'botsi'
+        ? 'border-cyan-400/30 bg-gradient-to-r from-cyan-400/10 via-surface to-surface'
+        : 'border-border bg-surface'
+    }`}>
       <div className="flex items-center gap-2 text-ui-sm font-mono text-muted">
         <span>Showing {shown.toLocaleString()} / {total.toLocaleString()} instruments</span>
         <span className="hidden xl:inline">|</span>
         <span className="hidden xl:inline">Sort: {sortColumn} {sortDirection === 'desc' ? '↓' : '↑'}</span>
+        {activePreset === 'botsi' && (
+          <>
+            <span className="hidden xl:inline">|</span>
+            <span className="text-cyan-300">BOTSI Advisor</span>
+          </>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5 text-ui-xs font-mono">
-        {(['scan', 'early', 'detail', 'risk'] as const).map((preset) => {
+        {(['scan', 'early', 'detail', 'risk', 'botsi'] as const).map((preset) => {
           const active = activePreset === preset
           return (
             <button
@@ -1881,7 +1941,9 @@ function TableToolbar({
               onClick={() => onPresetChange(preset)}
               className={`focus-ring rounded border px-2 py-1 transition-colors ${
                 active
-                  ? 'border-accent/40 bg-accent/15 text-accent'
+                  ? preset === 'botsi'
+                    ? 'border-cyan-400/40 bg-cyan-400/15 text-cyan-200 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]'
+                    : 'border-accent/40 bg-accent/15 text-accent'
                   : 'border-border text-muted hover:text-gray-300'
               }`}
               aria-label={`Switch to ${VIEW_PRESET_CONFIG[preset].label} preset`}
@@ -1903,12 +1965,14 @@ function MobileInstrumentCard({
   onToggleExpanded,
   onTogglePortfolio,
   onRemove,
+  botsiMode,
 }: {
   inst: Instrument
   expanded: boolean
   onToggleExpanded: () => void
   onTogglePortfolio: () => void
   onRemove: () => void
+  botsiMode: boolean
 }) {
   return (
     <article className="rounded border border-border bg-surface px-3 py-2">
@@ -1984,6 +2048,12 @@ function MobileInstrumentCard({
       {expanded && (
         <div className="mt-2 border-t border-border/50 pt-2 font-mono text-ui-sm text-muted">
           <div>Momentum rank: #{inst.momentumRank ?? '—'}</div>
+          <div>BOTSI: <BotsiActionBadge action={inst.botsiAdvisorAction} top10={inst.botsiTop10} qualified={inst.botsiQualified} /></div>
+          {botsiMode && (
+            <div className="text-[10px] text-muted">
+              Rank #{inst.botsiRank ?? '—'} | Quote {((inst.botsiTargetWeight ?? 0) * 100).toFixed(0)}%
+            </div>
+          )}
           <div>TFA: <TfaPhaseBadge phase={inst.tfaPhase} reason={inst.tfaRejectReason} summary={generateTfaSummary(inst)} inst={inst} /></div>
           <div>Breakout: <BreakoutBadge score={inst.breakoutScore} flags={inst.breakoutFlags} /></div>
         </div>
@@ -2002,6 +2072,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const isPriceUpdating = state.fetchStatus.phase === 'prices'
   const allInstruments = state.instruments   // full list incl. non-winners
   const { sortColumn, sortDirection } = state.tableState
+  const isBotsiMode = state.tableState.botsiMode
   const isMomentumMode = !state.tableState.tfaMode && !state.tableState.pullbackMode
   const [viewPreset, setViewPreset] = useState<ViewPreset>('detail')
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
@@ -2016,6 +2087,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     state.tableState.filterBelowAllMAs ? '1' : '0',
     state.tableState.tfaMode ? '1' : '0',
     state.tableState.pullbackMode ? '1' : '0',
+    state.tableState.botsiMode ? '1' : '0',
     state.tableState.aiFilterActive ? '1' : '0',
     state.tableState.aiFilterQuery ?? '',
     state.settings.aumFloor.toString(),
@@ -2058,7 +2130,11 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     })
   }
 
-  const forcedVisible = new Set<string>(CORE_STICKY_COLUMNS)
+  const forcedVisible = new Set<string>(
+    isBotsiMode
+      ? ['displayName', 'tfaPhase']
+      : CORE_STICKY_COLUMNS
+  )
   const hiddenKeys = new Set(
     state.tableState.hiddenColumnGroups.flatMap((g) => COLUMN_GROUPS[g])
       .filter((key) => !forcedVisible.has(key))
@@ -2113,7 +2189,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         sortColumn={sortColumn}
         sortDirection={sortDirection}
         isUpdating={isPriceUpdating}
-        activePreset={viewPreset}
+        activePreset={isBotsiMode ? 'botsi' : viewPreset}
         onPresetChange={handlePresetChange}
       />
 
@@ -2145,6 +2221,34 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             })}
           </div>
         )}
+        {isBotsiMode && (
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {([
+              { key: 'botsiScore', label: 'BOTSI' },
+              { key: 'botsiRank', label: 'Rank' },
+              { key: 'gd200', label: 'GD200' },
+              { key: 'mom260', label: 'MOM260' },
+            ] as const).map((opt) => {
+              const active = sortColumn === opt.key
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => handleSort(opt.key)}
+                  className={`focus-ring rounded border px-2 py-1 font-mono text-ui-xs transition-colors ${
+                    active
+                      ? 'border-accent/40 bg-accent/15 text-accent'
+                      : 'border-border text-muted hover:text-gray-300'
+                  }`}
+                  aria-label={`Sort by ${opt.label}`}
+                >
+                  {opt.label}
+                  {active ? ` ${sortDirection === 'desc' ? '↓' : '↑'}` : ''}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {visibleInstruments.map((inst) => (
           <MobileInstrumentCard
@@ -2154,6 +2258,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             onToggleExpanded={() => setExpandedISIN(expandedISIN === inst.isin ? null : inst.isin)}
             onTogglePortfolio={() => dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin })}
             onRemove={() => dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin })}
+            botsiMode={isBotsiMode}
           />
         ))}
       </div>
@@ -2181,7 +2286,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     className="focus-ring inline-flex items-center hover:text-gray-300"
                     aria-label={`Sort by ${col.label}`}
                   >
-                    {col.label}
+                    {col.key === 'tfaPhase' && isBotsiMode ? 'Advisor' : col.label}
                     {sortIcon(col.key)}
                   </button>
                 )}
@@ -2301,6 +2406,42 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('accelerationScore') && (
                     <td className="px-2 py-1.5 text-right">
                       <AccelerationCell inst={inst} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('gd200') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <ScoreCell score={inst.gd200} rank={inst.gd200Rank} colorFn={scoreColor} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('gd130') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <ScoreCell score={inst.gd130} rank={inst.gd130Rank} colorFn={scoreColor} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('mom260') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <ScoreCell score={inst.mom260} rank={inst.mom260Rank} colorFn={scoreColor} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('momjt') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <ScoreCell score={inst.momjt} rank={inst.momjtRank} colorFn={scoreColor} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('botsiScore') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <ScoreCell score={inst.botsiScore} rank={inst.botsiRank} colorFn={scoreColor} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('botsiRank') && (
+                    <td className="px-2 py-1.5 text-right text-gray-300">
+                      {inst.botsiRank != null ? `#${inst.botsiRank}` : '—'}
                     </td>
                   )}
 
@@ -2447,12 +2588,16 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                       className={`px-2 py-1.5 text-right sticky z-[4] border-r border-border/50 ${stickyBgClass} ${stickyWidthClass('tfaPhase')}`}
                       style={stickyColumnStyle('tfaPhase')}
                     >
-                      <TfaPhaseBadge
-                        phase={inst.tfaPhase}
-                        reason={inst.tfaRejectReason}
-                        summary={generateTfaSummary(inst)}
-                        inst={inst}
-                      />
+                      {isBotsiMode ? (
+                        <BotsiActionBadge action={inst.botsiAdvisorAction} top10={inst.botsiTop10} qualified={inst.botsiQualified} />
+                      ) : (
+                        <TfaPhaseBadge
+                          phase={inst.tfaPhase}
+                          reason={inst.tfaRejectReason}
+                          summary={generateTfaSummary(inst)}
+                          inst={inst}
+                        />
+                      )}
                     </td>
                   )}
 

@@ -15,6 +15,8 @@ const ALLOWED_FIELDS = new Set<string>([
   'ma50', 'ma100', 'ma200', 'aboveMa10', 'aboveMa50', 'aboveMa100', 'aboveMa200',
   'momentumRank', 'riskAdjustedRank', 'combinedRank',
   'momentumScore', 'riskAdjustedScore', 'combinedScore', 'pullbackScore', 'breakoutScore',
+  'gd200', 'gd130', 'mom260', 'momjt', 'botsiScore', 'botsiRank', 'botsiTargetWeight',
+  'botsiQualified', 'botsiFilterPassed', 'botsiTop10', 'botsiAdvisorAction',
   'pe', 'pb', 'returnOnAssets', 'ebitda', 'enterpriseValue', 'earningsYield',
   'analystRating', 'analystRatingKey', 'analystOpinions', 'marketCap',
   'targetPrice', 'targetPriceAdj', 'analystCurrentPrice', 'analystTarget',

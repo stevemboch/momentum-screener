@@ -9,8 +9,9 @@ import { ToggleRow } from './ui/ToggleRow'
 export function SettingsPanel() {
   const [open, setOpen] = useState(false)
   const [kVolDraft, setKVolDraft] = useState('')
+  const [botsiMarginDraft, setBotsiMarginDraft] = useState('')
   const { state, dispatch } = useAppState()
-  const { weights, aumFloor, atrMultiplier, riskFreeRate, accelKVol, isinDoubleClickAction } = state.settings
+  const { weights, aumFloor, atrMultiplier, riskFreeRate, accelKVol, botsiSafetyMargin, isinDoubleClickAction } = state.settings
   const { showDeduped, filterBelowRiskFree } = state.tableState
 
   const raw = {
@@ -44,7 +45,9 @@ export function SettingsPanel() {
     dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
     dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })
     dispatch({ type: 'SET_ACCEL_KVOL', kVol: 0.5 })
+    dispatch({ type: 'SET_BOTSI_SAFETY_MARGIN', margin: 0.03 })
     setKVolDraft('0.50')
+    setBotsiMarginDraft('3.0')
   }
 
   const commitKVolDraft = (): number => {
@@ -58,10 +61,26 @@ export function SettingsPanel() {
     return clamped
   }
 
+  const commitBotsiMarginDraft = (): number => {
+    const parsed = Number(botsiMarginDraft)
+    if (!Number.isFinite(parsed)) {
+      setBotsiMarginDraft((botsiSafetyMargin * 100).toFixed(1))
+      return botsiSafetyMargin
+    }
+    const clamped = Math.max(0, Math.min(20, parsed))
+    const next = clamped / 100
+    setBotsiMarginDraft(clamped.toFixed(1))
+    return next
+  }
+
   const closeWithCommit = () => {
     const next = commitKVolDraft()
     if (Math.abs(next - accelKVol) > 1e-9) {
       dispatch({ type: 'SET_ACCEL_KVOL', kVol: next })
+    }
+    const nextMargin = commitBotsiMarginDraft()
+    if (Math.abs(nextMargin - botsiSafetyMargin) > 1e-9) {
+      dispatch({ type: 'SET_BOTSI_SAFETY_MARGIN', margin: nextMargin })
     }
     setOpen(false)
   }
@@ -72,6 +91,7 @@ export function SettingsPanel() {
         type="button"
         onClick={() => {
           setKVolDraft(accelKVol.toFixed(2))
+          setBotsiMarginDraft((botsiSafetyMargin * 100).toFixed(1))
           setOpen(true)
         }}
         className="btn btn-sm btn-secondary focus-ring"
@@ -145,6 +165,25 @@ export function SettingsPanel() {
             </div>
             <div className="mt-1 text-ui-xs font-mono text-muted">
               3 = tighter stop · 5 = wider stop · current: {atrMultiplier}× ATR(20)
+            </div>
+          </FieldRow>
+
+          <FieldRow label="BOTSI Safety Margin" hint="Minimum distance above GD200 for qualification">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={botsiMarginDraft}
+                onChange={(e) => setBotsiMarginDraft(e.target.value)}
+                className="focus-ring w-24 rounded border border-border bg-bg px-2 py-1 text-ui-sm font-mono text-gray-300"
+                min={0}
+                max={20}
+                step={0.1}
+                aria-label="BOTSI safety margin in percent"
+              />
+              <span className="text-ui-sm font-mono text-muted">% above GD200</span>
+            </div>
+            <div className="mt-1 text-ui-xs font-mono text-muted">
+              Current: {(botsiSafetyMargin * 100).toFixed(1)}% buffer before a title counts as qualified
             </div>
           </FieldRow>
 

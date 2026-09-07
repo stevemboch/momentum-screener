@@ -15,6 +15,7 @@ const COL_GROUP_LABELS: Record<ColumnGroup, string> = {
   breakout: 'Breakout',
   tfa: 'TFA',
   pullback: 'Pullback',
+  botsi: 'BOTSI',
 }
 
 export function FilterBar() {
@@ -25,6 +26,7 @@ export function FilterBar() {
     hiddenColumnGroups,
     tfaMode,
     pullbackMode,
+    botsiMode,
     aiFilterQuery,
     aiFilterActive,
   } = state.tableState
@@ -48,6 +50,18 @@ export function FilterBar() {
       i.pullbackScore !== null &&
       i.pullbackScore !== undefined
   ).length
+  const botsiTop10Qualified = useMemo(
+    () => state.instruments.filter((i) => i.botsiTop10 === true && i.botsiFilterPassed === true).length,
+    [state.instruments]
+  )
+  const botsiQuotePct = useMemo(
+    () => state.instruments.reduce((sum, i) => sum + (i.botsiTargetWeight ?? 0), 0),
+    [state.instruments]
+  )
+  const botsiActionable = useMemo(
+    () => state.instruments.filter((i) => i.botsiAdvisorAction != null).length,
+    [state.instruments]
+  )
   const { topNTarget, topNLoaded } = useMemo(() => {
     const topNStocks = selectTopAnalystStocks(state.instruments, ANALYST_AUTO_TOP_N)
     return {
@@ -58,8 +72,8 @@ export function FilterBar() {
   const topNProgressPct = topNTarget > 0 ? Math.min(100, (topNLoaded / topNTarget) * 100) : 0
   const showTopNProgress = topNTarget > 0 && topNLoaded < topNTarget
 
-  type PrimaryFilter = TypeFilter | 'tfa' | 'pullback'
-  const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : typeFilter
+  type PrimaryFilter = TypeFilter | 'tfa' | 'pullback' | 'botsi'
+  const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : botsiMode ? 'botsi' : typeFilter
   const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
 
   const setPrimaryFilter = (f: PrimaryFilter) => {
@@ -83,8 +97,24 @@ export function FilterBar() {
         updates: {
           pullbackMode: true,
           tfaMode: false,
+          botsiMode: false,
           typeFilter: 'stock',
           sortColumn: 'pullbackScore',
+          sortDirection: 'desc',
+        },
+      })
+      return
+    }
+
+    if (f === 'botsi') {
+      dispatch({
+        type: 'SET_TABLE_STATE',
+        updates: {
+          botsiMode: true,
+          tfaMode: false,
+          pullbackMode: false,
+          typeFilter: 'stock',
+          sortColumn: 'botsiScore',
           sortDirection: 'desc',
         },
       })
@@ -97,6 +127,7 @@ export function FilterBar() {
         typeFilter: f,
         tfaMode: false,
         pullbackMode: false,
+        botsiMode: false,
         ...(tfaMode || pullbackMode ? { sortColumn: 'combinedScore', sortDirection: 'desc' } : {}),
       },
     })
@@ -172,7 +203,7 @@ export function FilterBar() {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="flex items-center gap-0.5 rounded border border-border bg-surface2 p-0.5">
-        {(['all', 'etf', 'stock', 'tfa', 'pullback'] as PrimaryFilter[]).map((f) => (
+        {(['all', 'etf', 'stock', 'tfa', 'pullback', 'botsi'] as PrimaryFilter[]).map((f) => (
           <button
             key={f}
             type="button"
@@ -200,6 +231,7 @@ export function FilterBar() {
                   : ''
               }`}
             {f === 'pullback' && `Pullback ${pullbackMode ? `(${pullbackCount})` : ''}`}
+            {f === 'botsi' && `BOTSI ${botsiMode ? `(${botsiTop10Qualified}/10)` : ''}`}
           </button>
         ))}
       </div>
@@ -287,6 +319,19 @@ export function FilterBar() {
               style={{ width: `${topNProgressPct}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {botsiMode && (
+        <div className="ml-1 flex flex-wrap items-center gap-2 font-mono text-ui-sm text-muted">
+          <StatusBadge tone="info">BOTSI</StatusBadge>
+          <span>{botsiTop10Qualified}/10 qualifiziert</span>
+          <span className="text-muted">|</span>
+          <span>Aktienquote: {(botsiQuotePct * 100).toFixed(0)}%</span>
+          <span className="text-muted">|</span>
+          <span>Aktionen: {botsiActionable}</span>
+          <span className="text-muted">|</span>
+          <span>GD130 0%</span>
         </div>
       )}
 
