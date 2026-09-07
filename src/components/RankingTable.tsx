@@ -53,8 +53,8 @@ const VIEW_PRESET_CONFIG: Record<ViewPreset, { label: string; sortColumn: SortCo
   },
   botsi: {
     label: 'BOTSI',
-    sortColumn: 'botsiScore',
-    sortDirection: 'desc',
+    sortColumn: 'botsiRank',
+    sortDirection: 'asc',
     hiddenGroups: ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback'],
   },
 }
@@ -69,7 +69,7 @@ const COLUMNS: Col[] = [
   { key: 'gd130',         label: 'GD130',    title: 'GD130 distance = (price - MA130) / MA130, ignored in overall BOTSI score' },
   { key: 'mom260',        label: 'MOM260',   title: '260 trading day momentum' },
   { key: 'momjt',         label: 'MOMJT',    title: 'MOM260 mit Endpunkt 1 Monat frueher: (close[t-1M] - close[t-260T]) / close[t-260T]' },
-  { key: 'botsiScore',    label: 'BOTSI',    title: 'Sum of indicator ranks (GD200 + MOM260 + MOMJT); GD130 ignored' },
+  { key: 'botsiScore',    label: 'BOTSI',    title: 'BOTSI: #Rank (1=best) und Summe der GD200/MOM260/MOMJT-Indikator-Ranks unter Aktien. Niedrigere Summe = besser.' },
   { key: 'botsiRank',     label: 'B-Rank',   title: 'BOTSI overall rank' },
   { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
   { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
@@ -238,6 +238,31 @@ function ScoreCell({ score, rank, colorFn }: { score: number | null | undefined;
       {rank !== undefined && (
         <span className="text-gray-400 text-[10px] ml-1">#{rank}</span>
       )}
+    </span>
+  )
+}
+
+/**
+ * Spezielle Zelle fuer den BOTSI-Score: der Wert ist eine Rang-Summe
+ * (gd200Rank + mom260Rank + momjtRank). Niedrigere Summe = besser.
+ * Daher NICHT scoreColor() (das ist perzentil-orientiert und wuerde
+ * grosse Summen faelschlich gruen einfärben).
+ * Anzeige: Rang #N prominent (gruen fuer Top, rot fuer Bottom), Summe klein/muted.
+ */
+function BotsiScoreCell({ score, rank }: { score: number | null | undefined; rank: number | undefined }) {
+  if (score == null && rank == null) return <span className="text-muted">—</span>
+  let rankColor = 'text-gray-300'
+  if (rank != null) {
+    if (rank <= 10) rankColor = 'text-green-400 font-semibold'
+    else if (rank <= 50) rankColor = 'text-green-300'
+    else if (rank <= 100) rankColor = 'text-amber-300'
+    else rankColor = 'text-gray-400'
+  }
+  return (
+    <span>
+      {rank != null && <span className={rankColor}>#{rank}</span>}
+      {score != null && rank != null && <span className="text-muted mx-1">·</span>}
+      {score != null && <span className="text-gray-500 text-[10px]">sum {score}</span>}
     </span>
   )
 }
@@ -2435,7 +2460,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
                   {!hiddenKeys.has('botsiScore') && (
                     <td className="px-2 py-1.5 text-right">
-                      <ScoreCell score={inst.botsiScore} rank={inst.botsiRank} colorFn={scoreColor} />
+                      <BotsiScoreCell score={inst.botsiScore} rank={inst.botsiRank} />
                     </td>
                   )}
 

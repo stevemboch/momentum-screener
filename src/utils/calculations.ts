@@ -1029,6 +1029,31 @@ function buildRankMap(
   return map
 }
 
+/**
+ * Wie buildRankMap, aber sortiert aufsteigend (kleinster Wert = Rang 1).
+ * Wird fuer botsiScore verwendet, da dort 'niedrigere Summe = besser'.
+ */
+function buildRankMapAsc(
+  instruments: Instrument[],
+  field: keyof Instrument
+): Map<string, number> {
+  const items = instruments
+    .map((inst) => ({ isin: inst.isin, value: inst[field] as number | null | undefined }))
+    .filter((x) => x.value != null) as { isin: string; value: number }[]
+  if (items.length === 0) return new Map()
+  items.sort((a, b) => a.value - b.value)
+  const map = new Map<string, number>()
+  let i = 0
+  while (i < items.length) {
+    let j = i + 1
+    while (j < items.length && items[j].value === items[i].value) j++
+    const rank = Math.round((i + 1 + j) / 2)
+    for (let k = i; k < j; k++) map.set(items[k].isin, rank)
+    i = j
+  }
+  return map
+}
+
 function buildPercentileMap(
   instruments: Instrument[],
   field: keyof Instrument
@@ -1468,11 +1493,11 @@ export function recalculateAll(
     }
   }
   // BOTSI-Gesamtrank: aufsteigend (niedrigere Summe = besser), nur Aktien.
-  // Wir nutzen buildRankMap direkt, da sie Ties mit Average-Rank fair behandelt.
+  // buildRankMapAsc statt buildRankMap, weil niedrigere Werte besser sind.
   const stockScores = withRanks
     .map((inst, i) => ({ inst, i }))
     .filter(({ inst }) => inst.type === 'Stock' && inst.botsiScore != null)
-  const botsiRankMap = buildRankMap(stockScores.map(({ inst }) => inst), 'botsiScore')
+  const botsiRankMap = buildRankMapAsc(stockScores.map(({ inst }) => inst), 'botsiScore')
   // In-place zurückschreiben (Index-Map erneut nutzen, um Index->isin zu mappen)
   const isinToIdx = new Map(withRanks.map((inst, i) => [inst.isin, i]))
   botsiRankMap.forEach((rank, isin) => {
