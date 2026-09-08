@@ -2,13 +2,13 @@ import { useEffect } from 'react'
 import { Database, Loader, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
-import { useState } from 'react'
 import { StatusBadge } from './ui/StatusBadge'
 
 export function XetraPanel() {
   const { state, dispatch } = useAppState()
-  const { loadXetraBackground, activateXetra } = usePipeline()
+  const { loadXetraBackground, activateXetra, loadFrankfurtBackground, activateFrankfurt } = usePipeline()
   const [showGroups, setShowGroups] = useState(false)
+  const [showFrankfurtGroups, setShowFrankfurtGroups] = useState(false)
 
   const isLoading = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(state.fetchStatus.phase)
 
@@ -27,83 +27,152 @@ export function XetraPanel() {
     .filter((g) => g.enabled)
     .reduce((s, g) => s + g.count, 0)
 
+  const enabledFrankfurtCount = state.frankfurtGroups
+    .filter((g) => g.enabled)
+    .reduce((s, g) => s + g.count, 0)
+
   return (
     <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={() => setShowGroups(!showGroups)}
-        className="focus-ring flex w-full items-center justify-between py-1 font-mono text-ui-sm text-muted hover:text-gray-300"
-        aria-expanded={showGroups}
-        aria-label={showGroups ? 'Hide group filters' : 'Show group filters'}
-      >
-        <span>
-          {state.xetraReady ? (
-            <>
-              <span className="text-green-500 mr-1" aria-hidden>●</span>
-              {enabledETFCount.toLocaleString()} ETFs · {enabledStockCount.toLocaleString()} stocks selected
-            </>
-          ) : state.xetraLoading ? (
-            <><span className="text-amber-400 mr-1" aria-hidden>◌</span> Loading universe...</>
-          ) : (
-            <><span className="text-muted mr-1" aria-hidden>○</span> Xetra universe</>
-          )}
-        </span>
-        {showGroups ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-      </button>
-
-      {showGroups && state.xetraReady && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 pb-2 border-b border-border">
-          <div>
-            <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">ETF groups</div>
-            {state.etfGroups.map((g) => (
-              <GroupCheckbox
-                key={g.groupKey}
-                label={g.label}
-                count={g.count}
-                enabled={g.enabled}
-                onChange={(v) => dispatch({ type: 'SET_ETF_GROUP', groupKey: g.groupKey, enabled: v })}
-              />
-            ))}
-          </div>
-          <div>
-            <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Stock groups</div>
-            {state.stockGroups.map((g) => (
-              <GroupCheckbox
-                key={g.groupKey}
-                label={g.label}
-                count={g.count}
-                enabled={g.enabled}
-                onChange={(v) => dispatch({ type: 'SET_STOCK_GROUP', groupKey: g.groupKey, enabled: v })}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={activateXetra}
-        disabled={!state.xetraReady || isLoading}
-        className="btn btn-md btn-secondary focus-ring w-full font-semibold"
-      >
-        {isLoading ? (
-          <><Loader size={12} className="animate-spin" /> Processing...</>
-        ) : (
-          <><Database size={12} /> Load Xetra Universe</>
-        )}
-      </button>
-
-      {state.xetraActive && !isLoading && (
+      <div className="border-b border-border pb-2">
         <button
           type="button"
-          onClick={() => dispatch({ type: 'CLEAR_XETRA' })}
-          className="btn btn-sm btn-ghost focus-ring"
+          onClick={() => setShowGroups(!showGroups)}
+          className="focus-ring flex w-full items-center justify-between py-1 font-mono text-ui-sm text-muted hover:text-gray-300"
+          aria-expanded={showGroups}
+          aria-label={showGroups ? 'Hide Xetra group filters' : 'Show Xetra group filters'}
         >
-          Clear loaded Xetra data
+          <span>
+            {state.xetraReady ? (
+              <>
+                <span className="text-green-500 mr-1" aria-hidden>●</span>
+                {enabledETFCount.toLocaleString()} ETFs · {enabledStockCount.toLocaleString()} stocks selected
+              </>
+            ) : state.xetraLoading ? (
+              <><span className="text-amber-400 mr-1" aria-hidden>◌</span> Loading universe...</>
+            ) : (
+              <><span className="text-muted mr-1" aria-hidden>○</span> Xetra universe</>
+            )}
+          </span>
+          {showGroups ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
-      )}
+
+        {showGroups && state.xetraReady && (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 pb-2">
+            <div>
+              <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">ETF groups</div>
+              {state.etfGroups.map((g) => (
+                <GroupCheckbox
+                  key={g.groupKey}
+                  label={g.label}
+                  count={g.count}
+                  enabled={g.enabled}
+                  onChange={(v) => dispatch({ type: 'SET_ETF_GROUP', groupKey: g.groupKey, enabled: v })}
+                />
+              ))}
+            </div>
+            <div>
+              <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Stock groups</div>
+              {state.stockGroups.map((g) => (
+                <GroupCheckbox
+                  key={g.groupKey}
+                  label={g.label}
+                  count={g.count}
+                  enabled={g.enabled}
+                  onChange={(v) => dispatch({ type: 'SET_STOCK_GROUP', groupKey: g.groupKey, enabled: v })}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={activateXetra}
+          disabled={!state.xetraReady || isLoading}
+          className="btn btn-md btn-secondary focus-ring w-full font-semibold"
+        >
+          {isLoading ? (
+            <><Loader size={12} className="animate-spin" /> Processing...</>
+          ) : (
+            <><Database size={12} /> Load Xetra Universe</>
+          )}
+        </button>
+
+        {state.xetraActive && !isLoading && (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'CLEAR_XETRA' })}
+            className="btn btn-sm btn-ghost focus-ring w-full mt-1"
+          >
+            Clear loaded Xetra data
+          </button>
+        )}
+      </div>
+
+      <div className="border-t border-border pt-2">
+        <button
+          type="button"
+          onClick={() => setShowFrankfurtGroups(!showFrankfurtGroups)}
+          className="focus-ring flex w-full items-center justify-between py-1 font-mono text-ui-sm text-muted hover:text-gray-300"
+          aria-expanded={showFrankfurtGroups}
+          aria-label={showFrankfurtGroups ? 'Hide Frankfurt group filters' : 'Show Frankfurt group filters'}
+        >
+          <span>
+            {state.frankfurtReady ? (
+              <>
+                <span className="text-green-500 mr-1" aria-hidden>●</span>
+                {enabledFrankfurtCount.toLocaleString()} Frankfurt shares selected
+              </>
+            ) : state.frankfurtLoading ? (
+              <><span className="text-amber-400 mr-1" aria-hidden>◌</span> Loading Frankfurt...</>
+            ) : (
+              <><span className="text-muted mr-1" aria-hidden>○</span> Frankfurt universe</>
+            )}
+          </span>
+          {showFrankfurtGroups ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+
+        {showFrankfurtGroups && state.frankfurtReady && (
+          <div className="pb-2">
+            <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Frankfurt groups</div>
+            {state.frankfurtGroups.map((g) => (
+              <GroupCheckbox
+                key={g.groupKey}
+                label={g.label}
+                count={g.count}
+                enabled={g.enabled}
+                onChange={(v) => dispatch({ type: 'SET_FRANKFURT_GROUP', groupKey: g.groupKey, enabled: v })}
+              />
+            ))}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={activateFrankfurt}
+          disabled={!state.frankfurtReady || isLoading}
+          className="btn btn-md btn-secondary focus-ring w-full font-semibold"
+        >
+          {isLoading ? (
+            <><Loader size={12} className="animate-spin" /> Processing...</>
+          ) : (
+            <><Database size={12} /> Load Frankfurt Equities</>
+          )}
+        </button>
+
+        {state.frankfurtActive && !isLoading && (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'CLEAR_FRANKFURT' })}
+            className="btn btn-sm btn-ghost focus-ring w-full mt-1"
+          >
+            Clear loaded data
+          </button>
+        )}
+      </div>
 
       {state.xetraLoading && <StatusBadge tone="info">Universe parsing in background</StatusBadge>}
+      {state.frankfurtLoading && <StatusBadge tone="info">Frankfurt parsing in background</StatusBadge>}
     </div>
   )
 }

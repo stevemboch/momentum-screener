@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from './auth/AuthProvider'
+import { useAppState } from './store'
 import { ManualInput } from './components/ManualInput'
 import { PortfolioPanel } from './components/PortfolioPanel'
 import { XetraPanel } from './components/XetraPanel'
@@ -14,6 +15,7 @@ import { StatusBadge } from './components/ui/StatusBadge'
 
 export default function App() {
   const { status, logout } = useAuth()
+  const { state } = useAppState()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [portfolioOpen, setPortfolioOpen] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
@@ -22,6 +24,12 @@ export default function App() {
     return <AuthGate />
   }
 
+  const sources: string[] = []
+  if (state.xetraActive) sources.push('XETRA')
+  if (state.frankfurtActive) sources.push('FRANKFURT')
+  sources.push('MANUAL')
+  const badgeLabel = sources.join(' + ')
+
   return (
     <div className="h-screen flex flex-col bg-bg text-gray-200 font-sans overflow-hidden">
       <header className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-surface shrink-0">
@@ -29,7 +37,7 @@ export default function App() {
           <span className="font-mono text-sm font-semibold tracking-wider text-gray-100">
             MOMENTUM<span className="text-accent">_</span>SCREENER
           </span>
-          <StatusBadge tone="muted">XETRA + MANUAL</StatusBadge>
+          <StatusBadge tone="muted">{badgeLabel}</StatusBadge>
         </div>
         <div className="flex items-center gap-2">
           <button

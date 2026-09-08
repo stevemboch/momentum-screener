@@ -1,7 +1,7 @@
 // ─── Instrument Types ────────────────────────────────────────────────────────
 
 export type InstrumentType = 'ETF' | 'ETC' | 'ETN' | 'Stock' | 'Unknown'
-export type InputSource = 'manual' | 'xetra'
+export type InputSource = 'manual' | 'xetra' | 'frankfurt'
 
 export interface Instrument {
   // Identity
@@ -479,3 +479,11 @@ export const STOCK_GROUPS: Omit<ETFGroup, 'count' | 'enabled'>[] = [
 
 export const DEFAULT_ETF_GROUPS = ['EXCHANGE TRADED FUNDS - PASSIV', 'EXCHANGE TRADED COMMODITIES']
 export const DEFAULT_STOCK_GROUPS = ['DAX', 'MDAX', 'SDAX']
+
+export const FRANKFURT_GROUPS: Omit<ETFGroup, 'count' | 'enabled'>[] = [
+  { label: 'Regulated Market', groupKey: 'Frankfurt - Regulated Market' },
+  { label: 'Open Market',      groupKey: 'Frankfurt - Open Market' },
+  { label: 'Other',            groupKey: 'Frankfurt - Other' },
+]
+
+export const DEFAULT_FRANKFURT_GROUPS = ['Frankfurt - Regulated Market', 'Frankfurt - Open Market', 'Frankfurt - Other']

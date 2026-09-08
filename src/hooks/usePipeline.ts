@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import type { Instrument } from '../types'
-import { parseXetraCSV, xetraRowToInstrument, parseManualInput, parseCSVFileDetailed, resolveInstrumentType, toDisplayName } from '../utils/parsers'
+import { parseXetraCSV, xetraRowToInstrument, parseFrankfurtCSV, frankfurtRowToInstrument, parseManualInput, parseCSVFileDetailed, resolveInstrumentType, toDisplayName } from '../utils/parsers'
 import { buildDedupGroups, applyDedupToInstruments, isUnclassifiedInstrument } from '../utils/dedup'
 import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaPhase2Gate, calculateTfaTDetails, calculateTfaFDetails, calculateTfaFDetails5Y } from '../utils/calculations'
 import { apiFetchJson, apiFetchText } from '../api/client'
@@ -395,6 +395,14 @@ async function apiXetra() {
   return text
 }
 
+async function apiFrankfurt() {
+  const cached = cacheGet<string>('cache:frankfurt', XETRA_TTL_MS)
+  if (cached) return cached
+  const text = await apiFetchText('/api/frankfurt')
+  cacheSet('cache:frankfurt', text, XETRA_TTL_MS)
+  return text
+}
+
 async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number, onProgress?: (done: number, total: number) => void): Promise<T[]> {
   const results: T[] = new Array(tasks.length)
   let nextIdx = 0, done = 0
@@ -435,6 +443,7 @@ export function usePipeline() {
   const displayedInstruments = useDisplayedInstruments()
   const abortRef = useRef(false)
   const xetraBuffer = useRef<Instrument[]>([])
+  const frankfurtBuffer = useRef<Instrument[]>([])
   const tfaInFlight = useRef<Set<string>>(new Set())
   const tfaFundInFlight = useRef<Set<string>>(new Set())
   const analystInFlight = useRef<Set<string>>(new Set())
@@ -1121,7 +1130,7 @@ export function usePipeline() {
         if (inst.type === 'Stock') stockCounts[g] = (stockCounts[g] || 0) + 1
         else etfCounts[g] = (etfCounts[g] || 0) + 1
       })
-      dispatch({ type: 'SET_GROUP_COUNTS', etf: etfCounts, stock: stockCounts })
+      dispatch({ type: 'SET_GROUP_COUNTS', etf: etfCounts, stock: stockCounts, frankfurt: {} })
       xetraBuffer.current = dedupedInstruments
       dispatch({ type: 'SET_XETRA_READY', ready: true })
       dispatch({ type: 'SET_XETRA_LOADING', loading: false })
@@ -1132,6 +1141,40 @@ export function usePipeline() {
         status: {
           phase: 'error',
           message: `Xetra CSV konnte nicht geladen werden: ${err.message}`,
+          current: 0,
+          total: 0,
+        },
+      })
+    }
+  }, [])
+
+  const loadFrankfurtBackground = useCallback(async () => {
+    dispatch({ type: 'SET_FRANKFURT_LOADING', loading: true })
+    try {
+      const csvText = await apiFrankfurt()
+      const rows = parseFrankfurtCSV(csvText)
+      const instruments = rows.map(frankfurtRowToInstrument)
+      const uniqueByIsin = new Map<string, Instrument>()
+      instruments.forEach((inst) => {
+        if (!uniqueByIsin.has(inst.isin)) uniqueByIsin.set(inst.isin, inst)
+      })
+      const dedupedInstruments = Array.from(uniqueByIsin.values())
+      const frankfurtCounts: Record<string, number> = {}
+      dedupedInstruments.forEach((inst) => {
+        const g = inst.xetraGroup || ''
+        frankfurtCounts[g] = (frankfurtCounts[g] || 0) + 1
+      })
+      dispatch({ type: 'SET_GROUP_COUNTS', etf: {}, stock: {}, frankfurt: frankfurtCounts })
+      frankfurtBuffer.current = dedupedInstruments
+      dispatch({ type: 'SET_FRANKFURT_READY', ready: true })
+      dispatch({ type: 'SET_FRANKFURT_LOADING', loading: false })
+    } catch (err: any) {
+      dispatch({ type: 'SET_FRANKFURT_LOADING', loading: false })
+      dispatch({
+        type: 'SET_FETCH_STATUS',
+        status: {
+          phase: 'error',
+          message: `Frankfurt CSV konnte nicht geladen werden: ${err.message}`,
           current: 0,
           total: 0,
         },
@@ -1229,6 +1272,45 @@ export function usePipeline() {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
   }, [state.etfGroups, state.stockGroups, state.settings.aumFloor, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d, enrichWithOpenFIGI, fetchPrices, fetchStats, ensureReferenceReturns])
+
+  const activateFrankfurt = useCallback(async () => {
+    abortRef.current = false
+    const enabledFrankfurtGroups = state.frankfurtGroups.filter((g) => g.enabled).map((g) => g.groupKey)
+    const candidates = frankfurtBuffer.current.filter((inst) => {
+      return enabledFrankfurtGroups.includes(inst.xetraGroup || '')
+    })
+
+    // Dedup against existing instruments: keep existing (Xetra) version if ISIN matches
+    const existingIsins = new Set(state.instruments.map((i) => i.isin))
+    const newInstruments = candidates.filter((inst) => !existingIsins.has(inst.isin))
+
+    dispatch({ type: 'SET_FRANKFURT_ACTIVE', active: true })
+    dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: '', current: 0, total: newInstruments.length } })
+    try {
+      setStatus(`Enriching Frankfurt names...`, 0, newInstruments.length)
+      const enriched = await enrichWithOpenFIGI(newInstruments)
+
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: '', current: 0, total: enriched.length } })
+      const withPrices = await fetchPrices(enriched)
+      const refs = await ensureReferenceReturns()
+
+      dispatch({
+        type: 'ADD_INSTRUMENTS',
+        instruments: recalculateAll(
+          withPrices,
+          state.settings.weights,
+          state.settings.atrMultiplier,
+          refs.r3m ?? state.referenceR3m,
+          refs.r5d ?? state.referenceR5d,
+          state.settings.accelKVol,
+          state.settings.botsiSafetyMargin,
+        ),
+      })
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${withPrices.length} Frankfurt shares`, current: withPrices.length, total: withPrices.length } })
+    } catch (err: any) {
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
+    }
+  }, [state.frankfurtGroups, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d, enrichWithOpenFIGI, fetchPrices, ensureReferenceReturns])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
@@ -1860,7 +1942,10 @@ export function usePipeline() {
     processManualInput,
     loadXetraBackground,
     activateXetra,
+    loadFrankfurtBackground,
+    activateFrankfurt,
     xetraBuffer,
+    frankfurtBuffer,
     fetchSingleInstrumentPrices,
     fetchSingleInstrumentAnalyst,
     fetchSingleInstrumentTfaCatalyst,

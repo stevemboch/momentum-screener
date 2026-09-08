@@ -95,6 +95,103 @@ export function xetraRowToInstrument(row: XetraRow): Instrument {
   }
 }
 
+// ─── Frankfurt CSV Parser ──────────────────────────────────────────────────────
+
+export interface FrankfurtRow {
+  instrument: string
+  isin: string
+  wkn: string
+  mnemonic: string
+  instrumentType: string
+  group: string
+  currency: string
+  firstTradingDate: string
+}
+
+export function parseFrankfurtCSV(csvText: string): FrankfurtRow[] {
+  const parsed = Papa.parse<string[]>(csvText, {
+    delimiter: ';',
+    quoteChar: '"',
+    escapeChar: '"',
+    skipEmptyLines: false,
+    dynamicTyping: false,
+  })
+  const rows = parsed.data.map((row) => (Array.isArray(row) ? row.map(normalizeCell) : []))
+
+  if (rows.length < 4) return []
+
+  const headers = rows[2]
+  const colIdx = (name: string) => headers.findIndex((h) => h === name)
+  const isinIdx = colIdx('ISIN')
+  const instIdx = colIdx('Instrument')
+  const wknIdx = colIdx('WKN')
+  const mnemonicIdx = colIdx('Mnemonic')
+  const typeIdx = colIdx('Instrument Type')
+  const groupIdx = colIdx('Product Assignment Group Description')
+  const currencyIdx = colIdx('Currency')
+  const dateIdx = colIdx('First Trading Date')
+
+  if (isinIdx < 0 || typeIdx < 0) return []
+
+  const results: FrankfurtRow[] = []
+  for (let i = 3; i < rows.length; i++) {
+    const cells = rows[i]
+    if (!cells || isEmptyRow(cells)) continue
+
+    const instrumentType = cells[typeIdx] || ''
+    const currency = cells[currencyIdx] || ''
+
+    // Keep only Shares, EUR/USD
+    if (instrumentType !== 'Shares') continue
+    if (!['EUR', 'USD'].includes(currency)) continue
+
+    results.push({
+      instrument: cells[instIdx] || '',
+      isin: cells[isinIdx] || '',
+      wkn: cells[wknIdx] || '',
+      mnemonic: cells[mnemonicIdx] || '',
+      instrumentType,
+      group: cells[groupIdx] || '',
+      currency,
+      firstTradingDate: cells[dateIdx] || '',
+    })
+  }
+
+  return results
+}
+
+export function frankfurtRowToInstrument(row: FrankfurtRow): Instrument {
+  const mnemonic = row.mnemonic || ''
+  const yahooTicker = mnemonic ? `${mnemonic}.DE` : ''
+
+  const type: Instrument['type'] = 'Stock'
+
+  return {
+    isin: row.isin,
+    wkn: row.wkn || undefined,
+    mnemonic: mnemonic || undefined,
+    yahooTicker,
+    type,
+    source: 'frankfurt',
+    currency: row.currency,
+    firstTradingDate: row.firstTradingDate || undefined,
+    xetraGroup: frankfurtGroupToLabel(row.group),
+    xetraName: row.instrument,
+    displayName: row.instrument || row.isin,
+  }
+}
+
+function frankfurtGroupToLabel(group: string): string {
+  const g = group.toLowerCase()
+  if (g.includes('prime standard') || g.includes('general standard') || g.includes('regulated')) {
+    return 'Frankfurt - Regulated Market'
+  }
+  if (g.includes('open market') || g.includes('scale')) {
+    return 'Frankfurt - Open Market'
+  }
+  return 'Frankfurt - Other'
+}
+
 // ─── Manual Input Parser ──────────────────────────────────────────────────────
 
 const ISIN_REGEX = /^[A-Z]{2}[A-Z0-9]{10}$/i

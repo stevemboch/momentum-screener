@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useReducer } from
 import type {
   Instrument, AppSettings, FetchStatus, ETFGroup, TableState, MomentumWeights, RegimeResult, ColumnGroup,
 } from './types'
-import { ETF_GROUPS, STOCK_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS } from './types'
+import { ETF_GROUPS, STOCK_GROUPS, FRANKFURT_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS, DEFAULT_FRANKFURT_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
 import { applyAiFilterPlan } from './utils/aiFilter'
 
@@ -16,6 +16,10 @@ interface AppState {
   referenceR5d: number | null
   etfGroups: ETFGroup[]
   stockGroups: ETFGroup[]
+  frankfurtReady: boolean
+  frankfurtLoading: boolean
+  frankfurtActive: boolean
+  frankfurtGroups: ETFGroup[]
   fetchStatus: FetchStatus
   xetraActive: boolean
   portfolioIsins: string[]
@@ -29,7 +33,7 @@ const PORTFOLIO_STORAGE_KEY = 'portfolio:isins'
 const SETTINGS_STORAGE_KEY = 'app:settings'
 const HIDDEN_COLUMNS_KEY = 'ui:hiddenColumnGroups'
 
-function loadGroupPrefs(): { etf: string[]; stock: string[] } | null {
+function loadGroupPrefs(): { etf: string[]; stock: string[]; frankfurt: string[] } | null {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null
   try {
     const raw = localStorage.getItem(GROUPS_STORAGE_KEY)
@@ -39,18 +43,20 @@ function loadGroupPrefs(): { etf: string[]; stock: string[] } | null {
     return {
       etf: Array.isArray(parsed.etf) ? parsed.etf : [],
       stock: Array.isArray(parsed.stock) ? parsed.stock : [],
+      frankfurt: Array.isArray(parsed.frankfurt) ? parsed.frankfurt : [],
     }
   } catch {
     return null
   }
 }
 
-function saveGroupPrefs(etfGroups: ETFGroup[], stockGroups: ETFGroup[]) {
+function saveGroupPrefs(etfGroups: ETFGroup[], stockGroups: ETFGroup[], frankfurtGroups: ETFGroup[]) {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
   try {
     const etf = etfGroups.filter((g) => g.enabled).map((g) => g.groupKey)
     const stock = stockGroups.filter((g) => g.enabled).map((g) => g.groupKey)
-    localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify({ etf, stock }))
+    const frankfurt = frankfurtGroups.filter((g) => g.enabled).map((g) => g.groupKey)
+    localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify({ etf, stock, frankfurt }))
   } catch {
     // ignore storage errors
   }
@@ -208,8 +214,16 @@ const DEFAULT_STATE: AppState = {
     count: 0,
     enabled: persistedGroups ? persistedGroups.stock.includes(g.groupKey) : DEFAULT_STOCK_GROUPS.includes(g.groupKey),
   })),
+  frankfurtGroups: FRANKFURT_GROUPS.map((g) => ({
+    ...g,
+    count: 0,
+    enabled: persistedGroups ? persistedGroups.frankfurt.includes(g.groupKey) : DEFAULT_FRANKFURT_GROUPS.includes(g.groupKey),
+  })),
   fetchStatus: { phase: 'idle', message: '', current: 0, total: 0 },
   xetraActive: false,
+  frankfurtReady: false,
+  frankfurtLoading: false,
+  frankfurtActive: false,
   portfolioIsins: persistedPortfolio,
   marketRegime: null,
 }
@@ -250,12 +264,17 @@ type Action =
   | { type: 'SET_TABLE_STATE'; updates: Partial<TableState> }
   | { type: 'SET_ETF_GROUP'; groupKey: string; enabled: boolean }
   | { type: 'SET_STOCK_GROUP'; groupKey: string; enabled: boolean }
-  | { type: 'SET_GROUP_COUNTS'; etf: Record<string, number>; stock: Record<string, number> }
+  | { type: 'SET_FRANKFURT_GROUP'; groupKey: string; enabled: boolean }
+  | { type: 'SET_GROUP_COUNTS'; etf: Record<string, number>; stock: Record<string, number>; frankfurt: Record<string, number> }
   | { type: 'SET_XETRA_READY'; ready: boolean }
   | { type: 'SET_XETRA_LOADING'; loading: boolean }
   | { type: 'SET_XETRA_ACTIVE'; active: boolean }
+  | { type: 'SET_FRANKFURT_READY'; ready: boolean }
+  | { type: 'SET_FRANKFURT_LOADING'; loading: boolean }
+  | { type: 'SET_FRANKFURT_ACTIVE'; active: boolean }
   | { type: 'REMOVE_INSTRUMENT'; isin: string }
   | { type: 'CLEAR_XETRA' }
+  | { type: 'CLEAR_FRANKFURT' }
   | { type: 'TOGGLE_PORTFOLIO'; isin: string }
   | { type: 'SET_MARKET_REGIME'; regime: RegimeResult | null }
   | { type: 'TOGGLE_COLUMN_GROUP'; group: ColumnGroup }
@@ -395,7 +414,7 @@ function reducer(state: AppState, action: Action): AppState {
         const etfGroups = state.etfGroups.map((g) =>
           g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
         )
-        saveGroupPrefs(etfGroups, state.stockGroups)
+        saveGroupPrefs(etfGroups, state.stockGroups, state.frankfurtGroups)
         return { ...state, etfGroups }
       }
     case 'SET_STOCK_GROUP':
@@ -403,22 +422,36 @@ function reducer(state: AppState, action: Action): AppState {
         const stockGroups = state.stockGroups.map((g) =>
           g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
         )
-        saveGroupPrefs(state.etfGroups, stockGroups)
+        saveGroupPrefs(state.etfGroups, stockGroups, state.frankfurtGroups)
         return { ...state, stockGroups }
+      }
+    case 'SET_FRANKFURT_GROUP':
+      {
+        const frankfurtGroups = state.frankfurtGroups.map((g) =>
+          g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
+        )
+        saveGroupPrefs(state.etfGroups, state.stockGroups, frankfurtGroups)
+        return { ...state, frankfurtGroups }
       }
     case 'SET_GROUP_COUNTS':
       return {
         ...state,
-        etfGroups: state.etfGroups.map((g) => ({ ...g, count: action.etf[g.groupKey] || 0 })),
-        stockGroups: state.stockGroups.map((g) => ({ ...g, count: action.stock[g.groupKey] || 0 })),
+        etfGroups: state.etfGroups.map((g) => ({ ...g, count: action.etf[g.groupKey] ?? g.count })),
+        stockGroups: state.stockGroups.map((g) => ({ ...g, count: action.stock[g.groupKey] ?? g.count })),
+        frankfurtGroups: state.frankfurtGroups.map((g) => ({ ...g, count: action.frankfurt[g.groupKey] ?? g.count })),
       }
     case 'SET_XETRA_READY':    return { ...state, xetraReady: action.ready }
     case 'SET_XETRA_LOADING':  return { ...state, xetraLoading: action.loading }
     case 'SET_XETRA_ACTIVE':   return { ...state, xetraActive: action.active }
+    case 'SET_FRANKFURT_READY':   return { ...state, frankfurtReady: action.ready }
+    case 'SET_FRANKFURT_LOADING': return { ...state, frankfurtLoading: action.loading }
+    case 'SET_FRANKFURT_ACTIVE':  return { ...state, frankfurtActive: action.active }
     case 'REMOVE_INSTRUMENT':
       return { ...state, instruments: state.instruments.filter((i) => i.isin !== action.isin) }
     case 'CLEAR_XETRA':
-      return { ...state, instruments: state.instruments.filter((i) => i.source !== 'xetra'), xetraActive: false }
+      return { ...state, instruments: state.instruments.filter((i) => i.source !== 'xetra' && i.source !== 'frankfurt'), xetraActive: false, frankfurtActive: false }
+    case 'CLEAR_FRANKFURT':
+      return { ...state, instruments: state.instruments.filter((i) => i.source !== 'frankfurt'), frankfurtActive: false }
     case 'TOGGLE_PORTFOLIO': {
       const exists = state.portfolioIsins.includes(action.isin)
       const nextIsins = exists
@@ -465,6 +498,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!prefs) return
     const etfSet = new Set(prefs.etf)
     const stockSet = new Set(prefs.stock)
+    const frankfurtSet = new Set(prefs.frankfurt)
     state.etfGroups.forEach((g) => {
       const shouldEnable = etfSet.has(g.groupKey)
       if (g.enabled !== shouldEnable) {
@@ -475,6 +509,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const shouldEnable = stockSet.has(g.groupKey)
       if (g.enabled !== shouldEnable) {
         dispatch({ type: 'SET_STOCK_GROUP', groupKey: g.groupKey, enabled: shouldEnable })
+      }
+    })
+    state.frankfurtGroups.forEach((g) => {
+      const shouldEnable = frankfurtSet.has(g.groupKey)
+      if (g.enabled !== shouldEnable) {
+        dispatch({ type: 'SET_FRANKFURT_GROUP', groupKey: g.groupKey, enabled: shouldEnable })
       }
     })
   }, [])
