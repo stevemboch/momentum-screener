@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Database, Loader, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
