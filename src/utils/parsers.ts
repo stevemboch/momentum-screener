@@ -104,6 +104,7 @@ export interface FrankfurtRow {
   mnemonic: string
   instrumentType: string
   group: string
+  reportingMarket: string
   currency: string
   firstTradingDate: string
 }
@@ -128,6 +129,7 @@ export function parseFrankfurtCSV(csvText: string): FrankfurtRow[] {
   const mnemonicIdx = colIdx('Mnemonic')
   const typeIdx = colIdx('Instrument Type')
   const groupIdx = colIdx('Product Assignment Group Description')
+  const reportingMarketIdx = colIdx('Reporting Market')
   const currencyIdx = colIdx('Currency')
   const dateIdx = colIdx('First Trading Date')
 
@@ -141,8 +143,9 @@ export function parseFrankfurtCSV(csvText: string): FrankfurtRow[] {
     const instrumentType = cells[typeIdx] || ''
     const currency = cells[currencyIdx] || ''
 
-    // Keep only Shares, EUR/USD
-    if (instrumentType !== 'Shares') continue
+    // Keep only equities. On XFRA the Instrument Type for stocks is "CS"
+    // (Common Stock) in this file — using "Shares" rejects every row.
+    if (instrumentType !== 'CS') continue
     if (!['EUR', 'USD'].includes(currency)) continue
 
     results.push({
@@ -152,6 +155,7 @@ export function parseFrankfurtCSV(csvText: string): FrankfurtRow[] {
       mnemonic: cells[mnemonicIdx] || '',
       instrumentType,
       group: cells[groupIdx] || '',
+      reportingMarket: cells[reportingMarketIdx] || '',
       currency,
       firstTradingDate: cells[dateIdx] || '',
     })
@@ -175,13 +179,24 @@ export function frankfurtRowToInstrument(row: FrankfurtRow): Instrument {
     source: 'frankfurt',
     currency: row.currency,
     firstTradingDate: row.firstTradingDate || undefined,
-    xetraGroup: frankfurtGroupToLabel(row.group),
+    xetraGroup: frankfurtGroupToLabel(row.reportingMarket, row.group),
     xetraName: row.instrument,
     displayName: row.instrument || row.isin,
   }
 }
 
-function frankfurtGroupToLabel(group: string): string {
+function frankfurtGroupToLabel(reportingMarket: string, group: string): string {
+  // The authoritative classifier is the Reporting Market MIC code (Deutsche
+  // Börse reference data, column "Reporting Market"):
+  //   FRAA / FRAU -> Regulated Market (Regulierter Markt)
+  //   FRAB / FRAV -> Open Market (Freiverkehr)
+  //   FRAS        -> Open Market (Scale, a sub-segment of the Open Market)
+  const rm = (reportingMarket || '').toUpperCase()
+  if (rm === 'FRAA' || rm === 'FRAU') return 'Frankfurt - Regulated Market'
+  if (rm === 'FRAB' || rm === 'FRAV' || rm === 'FRAS') return 'Frankfurt - Open Market'
+
+  // Fallback: derive from the Product Assignment Group Description text when
+  // the reporting market code is absent or unexpected.
   const g = group.toLowerCase()
   if (g.includes('prime standard') || g.includes('general standard') || g.includes('regulated')) {
     return 'Frankfurt - Regulated Market'
