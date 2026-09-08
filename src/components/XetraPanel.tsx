@@ -19,6 +19,13 @@ export function XetraPanel() {
     }
   }, [])
 
+  // Load Frankfurt CSV in background on mount
+  useEffect(() => {
+    if (!state.frankfurtReady && !state.frankfurtLoading) {
+      loadFrankfurtBackground()
+    }
+  }, [])
+
   const enabledETFCount = state.etfGroups
     .filter((g) => g.enabled)
     .reduce((s, g) => s + g.count, 0)
