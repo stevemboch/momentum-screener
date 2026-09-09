@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppState, useDisplayedInstruments } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { useInstrumentContext } from '../hooks/useInstrumentContext'
@@ -25,6 +25,9 @@ const STICKY_COLUMN_WIDTH_CLASS: Record<StickyColumnKey, string> = {
   tfaPhase: 'min-w-[140px]',
 }
 const ROW_CONTEXT_TTL = 6 * 60 * 60 * 1000
+
+const VIRTUAL_OVERSCAN = 8
+const VIRTUAL_ROW_HEIGHT = 38
 
 const VIEW_PRESET_CONFIG: Record<ViewPreset, { label: string; sortColumn: SortColumn; sortDirection: 'asc' | 'desc'; hiddenGroups: ColumnGroup[] }> = {
   scan: {
@@ -2087,6 +2090,69 @@ function MobileInstrumentCard({
   )
 }
 
+// ─── Virtualization Hook ──────────────────────────────────────────────────────
+
+interface VirtualizationResult<T> {
+  visibleItems: T[]
+  startIndex: number
+  endIndex: number
+  topPadding: number
+  bottomPadding: number
+}
+
+function useTableVirtualization<T>(
+  items: T[],
+  containerRef: React.RefObject<HTMLDivElement>,
+  rowHeight: number = VIRTUAL_ROW_HEIGHT,
+  overscan: number = VIRTUAL_OVERSCAN
+): VirtualizationResult<T> {
+  const [scrollTop, setScrollTop] = useState(0)
+  const [containerHeight, setContainerHeight] = useState(0)
+  const rafRef = useRef<number | null>(null)
+
+  const updateMetrics = useCallback(() => {
+    if (containerRef.current) {
+      setScrollTop(containerRef.current.scrollTop)
+      setContainerHeight(containerRef.current.clientHeight)
+    }
+  }, [containerRef])
+
+  const handleScroll = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(updateMetrics)
+  }, [updateMetrics])
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    updateMetrics()
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    const resizeObserver = new ResizeObserver(updateMetrics)
+    resizeObserver.observe(el)
+    return () => {
+      el.removeEventListener('scroll', handleScroll)
+      resizeObserver.disconnect()
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [handleScroll, updateMetrics])
+
+  if (containerHeight === 0 || items.length === 0) {
+    return { visibleItems: [], startIndex: 0, endIndex: 0, topPadding: 0, bottomPadding: 0 }
+  }
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
+  const endIndex = Math.min(
+    items.length,
+    Math.ceil((scrollTop + containerHeight) / rowHeight) + overscan
+  )
+
+  const visibleItems = items.slice(startIndex, endIndex)
+  const topPadding = startIndex * rowHeight
+  const bottomPadding = (items.length - endIndex) * rowHeight
+
+  return { visibleItems, startIndex, endIndex, topPadding, bottomPadding }
+}
+
 // ─── Main Table ───────────────────────────────────────────────────────────────
 
 export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
@@ -2101,6 +2167,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const isMomentumMode = !state.tableState.tfaMode && !state.tableState.pullbackMode
   const [viewPreset, setViewPreset] = useState<ViewPreset>('detail')
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
+  const tableContainerRef = useRef<HTMLDivElement>(null)
   const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
   const [contextPreviewTick, setContextPreviewTick] = useState(0)
   const interactionKey = [
@@ -2130,17 +2197,20 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   const visibleInstruments = isPriceUpdating ? renderSnapshot : instruments
 
+  const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding } =
+    useTableVirtualization(visibleInstruments, tableContainerRef)
+
   const refreshContextPreview = () => {
     setContextPreviewTick((prev) => prev + 1)
   }
 
   const contextPreviewByIsin = useMemo(() => {
     const map = new Map<string, RowContextPreview | null>()
-    visibleInstruments.forEach((inst) => {
+    renderedInstruments.forEach((inst) => {
       map.set(inst.isin, readRowContextPreview(inst.isin))
     })
     return map
-  }, [visibleInstruments, contextPreviewTick])
+  }, [renderedInstruments, contextPreviewTick])
 
   const handlePresetChange = (preset: ViewPreset) => {
     setViewPreset(preset)
@@ -2206,7 +2276,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto">
+    <div ref={tableContainerRef} className="flex-1 min-h-0 overflow-auto">
       <TableToolbar
         total={state.instruments.length}
         shown={visibleInstruments.length}
@@ -2275,7 +2345,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           </div>
         )}
 
-        {visibleInstruments.map((inst) => (
+        {renderedInstruments.map((inst) => (
           <MobileInstrumentCard
             key={inst.isin}
             inst={inst}
@@ -2319,10 +2389,15 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             ))}
           </tr>
         </thead>
-        <tbody key={`${sortColumn}:${sortDirection}:${state.tableState.typeFilter}:${state.tableState.showDeduped}:${state.tableState.tfaMode}:${state.tableState.pullbackMode}`}>
-          {visibleInstruments.map((inst, idx) => {
+        <tbody>
+          {topPadding > 0 && (
+            <tr aria-hidden="true" style={{ height: topPadding }}>
+              <td colSpan={visibleColumns.length} />
+            </tr>
+          )}
+          {renderedInstruments.map((inst, idx) => {
             const isExpanded = expandedISIN === inst.isin
-            const rowBg = idx % 2 === 0 ? 'bg-bg' : 'bg-surface'
+            const rowBg = (startIndex + idx) % 2 === 0 ? 'bg-bg' : 'bg-surface'
             const portfolioClass = inst.inPortfolio ? 'bg-accent/5' : ''
             const stickyBgClass = inst.inPortfolio ? 'bg-accent/5' : rowBg
             const hasGroup = inst.dedupCandidates && inst.dedupCandidates.length > 0
@@ -2680,10 +2755,15 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                     colSpan={visibleColumns.length}
                     hiddenKeys={hiddenKeys}
                   />
-                )}
-              </React.Fragment>
-            )
-          })}
+              )}
+            </React.Fragment>
+          )
+        })}
+          {bottomPadding > 0 && (
+            <tr aria-hidden="true" style={{ height: bottomPadding }}>
+              <td colSpan={visibleColumns.length} />
+            </tr>
+          )}
         </tbody>
       </table>
       </div>
