@@ -2148,11 +2148,6 @@ function useTableVirtualization<T>(
   const topPadding = startIndex * rowHeight
   const bottomPadding = (items.length - endIndex) * rowHeight
 
-  if (topPadding > 0 || bottomPadding > 0) {
-    // eslint-disable-next-line no-console
-    console.debug('[virtualization]', { itemsLength: items.length, scrollTop, containerHeight, effectiveContainerHeight, rowHeight, startIndex, endIndex, topPadding, bottomPadding })
-  }
-
   return { visibleItems, startIndex, endIndex, topPadding, bottomPadding }
 }
 
@@ -2755,11 +2750,19 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   />
               )}
             </React.Fragment>
-          ))
+          )
         })}
         </tbody>
+        {bottomPadding > 0 && (
+          <tfoot>
+            <tr>
+              <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none', height: bottomPadding, lineHeight: 0, fontSize: 0 }}>
+                <div style={{ height: bottomPadding }} />
+              </td>
+            </tr>
+          </tfoot>
+        )}
       </table>
-      <div aria-hidden="true" style={{ height: bottomPadding }} />
       </div>
     </div>
   )
