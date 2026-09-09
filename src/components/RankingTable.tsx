@@ -2148,6 +2148,11 @@ function useTableVirtualization<T>(
   const topPadding = startIndex * rowHeight
   const bottomPadding = (items.length - endIndex) * rowHeight
 
+  if (topPadding > 0 || bottomPadding > 0) {
+    // eslint-disable-next-line no-console
+    console.debug('[virtualization]', { itemsLength: items.length, scrollTop, containerHeight, effectiveContainerHeight, rowHeight, startIndex, endIndex, topPadding, bottomPadding })
+  }
+
   return { visibleItems, startIndex, endIndex, topPadding, bottomPadding }
 }
 
@@ -2389,8 +2394,10 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         </thead>
         <tbody>
           {topPadding > 0 && (
-            <tr aria-hidden="true" style={{ height: topPadding }}>
-              <td colSpan={visibleColumns.length} />
+            <tr aria-hidden="true">
+              <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none', margin: 0, lineHeight: 0, fontSize: 0 }}>
+                <div style={{ height: topPadding, margin: 0, padding: 0, lineHeight: 0 }} />
+              </td>
             </tr>
           )}
           {renderedInstruments.map((inst, idx) => {
@@ -2758,8 +2765,10 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           )
         })}
           {bottomPadding > 0 && (
-            <tr aria-hidden="true" style={{ height: bottomPadding }}>
-              <td colSpan={visibleColumns.length} />
+            <tr aria-hidden="true">
+              <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none', margin: 0, lineHeight: 0, fontSize: 0 }}>
+                <div style={{ height: bottomPadding, margin: 0, padding: 0, lineHeight: 0 }} />
+              </td>
             </tr>
           )}
         </tbody>
