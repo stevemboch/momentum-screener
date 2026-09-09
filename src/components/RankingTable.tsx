@@ -2136,14 +2136,12 @@ function useTableVirtualization<T>(
     }
   }, [handleScroll, updateMetrics])
 
-  if (containerHeight === 0 || items.length === 0) {
-    return { visibleItems: [], startIndex: 0, endIndex: 0, topPadding: 0, bottomPadding: 0 }
-  }
+  const effectiveContainerHeight = containerHeight || window.innerHeight || 800
 
   const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
   const endIndex = Math.min(
     items.length,
-    Math.ceil((scrollTop + containerHeight) / rowHeight) + overscan
+    Math.ceil((scrollTop + effectiveContainerHeight) / rowHeight) + overscan
   )
 
   const visibleItems = items.slice(startIndex, endIndex)
