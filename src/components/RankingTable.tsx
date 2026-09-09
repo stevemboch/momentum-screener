@@ -2166,6 +2166,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const [viewPreset, setViewPreset] = useState<ViewPreset>('detail')
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
   const tableContainerRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
   const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
   const [contextPreviewTick, setContextPreviewTick] = useState(0)
   const interactionKey = [
@@ -2197,6 +2198,16 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding } =
     useTableVirtualization(visibleInstruments, tableContainerRef)
+
+  // Explicitly set table height to virtual content height to ensure scrollbar appears.
+  // This works because the actual rows are shorter than VIRTUAL_ROW_HEIGHT (~27px vs 38px),
+  // so the table's natural height alone may not exceed the container height.
+  useEffect(() => {
+    if (tableRef.current && renderedInstruments.length > 0) {
+      const tableHeight = renderedInstruments.length * VIRTUAL_ROW_HEIGHT
+      tableRef.current.style.height = `${tableHeight}px`
+    }
+  }, [renderedInstruments.length])
 
   const refreshContextPreview = () => {
     setContextPreviewTick((prev) => prev + 1)
@@ -2357,7 +2368,8 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
       </div>
 
       <div className="hidden lg:block">
-      <table className={`w-full text-xs font-mono border-collapse ${tableMinWidthClass}`}>
+        {topPadding > 0 && <div style={{ height: topPadding, width: '100%' }} />}
+        <table ref={tableRef} className={`w-full text-xs font-mono border-collapse ${tableMinWidthClass}`}>
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {visibleColumns.map((col) => (
@@ -2753,16 +2765,8 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           )
         })}
         </tbody>
-        {bottomPadding > 0 && (
-          <tfoot>
-            <tr>
-              <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none', height: bottomPadding, lineHeight: 0, fontSize: 0 }}>
-                <div style={{ height: bottomPadding }} />
-              </td>
-            </tr>
-          </tfoot>
-        )}
       </table>
+        {bottomPadding > 0 && <div style={{ height: bottomPadding, width: '100%' }} />}
       </div>
     </div>
   )
