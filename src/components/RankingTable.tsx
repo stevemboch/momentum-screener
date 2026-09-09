@@ -2393,13 +2393,6 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           </tr>
         </thead>
         <tbody>
-          {topPadding > 0 && (
-            <tr aria-hidden="true">
-              <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none', margin: 0, lineHeight: 0, fontSize: 0 }}>
-                <div style={{ height: topPadding, margin: 0, padding: 0, lineHeight: 0 }} />
-              </td>
-            </tr>
-          )}
           {renderedInstruments.map((inst, idx) => {
             const isExpanded = expandedISIN === inst.isin
             const rowBg = (startIndex + idx) % 2 === 0 ? 'bg-bg' : 'bg-surface'
@@ -2762,17 +2755,11 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   />
               )}
             </React.Fragment>
-          )
+          ))
         })}
-          {bottomPadding > 0 && (
-            <tr aria-hidden="true">
-              <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none', margin: 0, lineHeight: 0, fontSize: 0 }}>
-                <div style={{ height: bottomPadding, margin: 0, padding: 0, lineHeight: 0 }} />
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
+      <div aria-hidden="true" style={{ height: bottomPadding }} />
       </div>
     </div>
   )
