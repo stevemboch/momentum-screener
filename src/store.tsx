@@ -5,6 +5,7 @@ import type {
 import { ETF_GROUPS, STOCK_GROUPS, FRANKFURT_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS, DEFAULT_FRANKFURT_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
 import { applyAiFilterPlan } from './utils/aiFilter'
+import type { UniverseCode, UniverseSnapshot } from './universe'
 
 interface AppState {
   instruments: Instrument[]
@@ -24,6 +25,8 @@ interface AppState {
   xetraActive: boolean
   portfolioIsins: string[]
   marketRegime: RegimeResult | null
+  activeUniverse: UniverseCode | null
+  universeSnapshot: UniverseSnapshot | null
 }
 
 const DEFAULT_WEIGHTS: MomentumWeights = { w1w: 0, w1m: 1/3, w3m: 1/3, w6m: 1/3 }
@@ -201,6 +204,9 @@ const DEFAULT_STATE: AppState = {
     aiFilterQuery: null,
     aiFilterActive: false,
     hiddenColumnGroups: persistedHiddenColumns.length > 0 ? persistedHiddenColumns : ['botsi'],
+    regionFilter: '',
+    primaryListingCountryFilter: '',
+    sectorFilter: '',
   },
   referenceR3m: null,
   referenceR5d: null,
@@ -225,6 +231,8 @@ const DEFAULT_STATE: AppState = {
   frankfurtLoading: false,
   frankfurtActive: false,
   portfolioIsins: persistedPortfolio,
+  activeUniverse: null,
+  universeSnapshot: null,
   marketRegime: null,
 }
 
@@ -275,6 +283,8 @@ type Action =
   | { type: 'REMOVE_INSTRUMENT'; isin: string }
   | { type: 'CLEAR_XETRA' }
   | { type: 'CLEAR_FRANKFURT' }
+  | { type: 'SET_ACTIVE_UNIVERSE'; universe: UniverseCode | null; snapshot: UniverseSnapshot | null }
+  | { type: 'CLEAR_INDEX_UNIVERSE' }
   | { type: 'TOGGLE_PORTFOLIO'; isin: string }
   | { type: 'SET_MARKET_REGIME'; regime: RegimeResult | null }
   | { type: 'TOGGLE_COLUMN_GROUP'; group: ColumnGroup }
@@ -449,7 +459,14 @@ function reducer(state: AppState, action: Action): AppState {
     case 'REMOVE_INSTRUMENT':
       return { ...state, instruments: state.instruments.filter((i) => i.isin !== action.isin) }
     case 'CLEAR_XETRA':
-      return { ...state, instruments: state.instruments.filter((i) => i.source !== 'xetra' && i.source !== 'frankfurt'), xetraActive: false, frankfurtActive: false }
+      return {
+        ...state,
+        instruments: state.instruments.filter((i) => i.source !== 'xetra' && i.source !== 'frankfurt'),
+        xetraActive: false,
+        frankfurtActive: false,
+        activeUniverse: state.activeUniverse === 'legacy_xetra' ? null : state.activeUniverse,
+        universeSnapshot: state.activeUniverse === 'legacy_xetra' ? null : state.universeSnapshot,
+      }
     case 'CLEAR_FRANKFURT':
       return { ...state, instruments: state.instruments.filter((i) => i.source !== 'frankfurt'), frankfurtActive: false }
     case 'TOGGLE_PORTFOLIO': {
@@ -474,6 +491,15 @@ function reducer(state: AppState, action: Action): AppState {
         ),
       }
     }
+    case 'SET_ACTIVE_UNIVERSE':
+      return { ...state, activeUniverse: action.universe, universeSnapshot: action.snapshot }
+    case 'CLEAR_INDEX_UNIVERSE':
+      return {
+        ...state,
+        instruments: state.instruments.filter((i) => i.source !== 'index'),
+        activeUniverse: state.activeUniverse === 'index_global' ? null : state.activeUniverse,
+        universeSnapshot: state.activeUniverse === 'index_global' ? null : state.universeSnapshot,
+      }
     case 'SET_MARKET_REGIME':
       return { ...state, marketRegime: action.regime }
     case 'TOGGLE_COLUMN_GROUP': {
@@ -542,6 +568,19 @@ export function useDisplayedInstruments() {
       filtered = filtered.filter((i) =>
         i.type === 'Stock' || (i.type === 'Unknown' && i.source === 'manual')
       )
+    }
+
+    // Region comes from the selected index definition. Country is deliberately
+    // limited to an explicit primary-listing-country field, never inferred
+    // from ISIN or a generic source-country column.
+    if (tableState.regionFilter) {
+      filtered = filtered.filter((i) => i.indexRegion === tableState.regionFilter)
+    }
+    if (tableState.primaryListingCountryFilter) {
+      filtered = filtered.filter((i) => i.primaryListingCountry === tableState.primaryListingCountryFilter)
+    }
+    if (tableState.sectorFilter) {
+      filtered = filtered.filter((i) => i.sector === tableState.sectorFilter)
     }
 
     // TFA mode — only stocks in the -40%..-80% drawdown window, excluding KO

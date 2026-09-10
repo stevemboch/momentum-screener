@@ -6,7 +6,7 @@ import { StatusBadge } from './ui/StatusBadge'
 
 export function XetraPanel() {
   const { state, dispatch } = useAppState()
-  const { loadXetraBackground, activateXetra, loadFrankfurtBackground, activateFrankfurt } = usePipeline()
+  const { loadXetraBackground, activateXetra, loadFrankfurtBackground, activateFrankfurt, activateIndexUniverse } = usePipeline()
   const [showGroups, setShowGroups] = useState(false)
   const [showFrankfurtGroups, setShowFrankfurtGroups] = useState(false)
 
@@ -40,7 +40,28 @@ export function XetraPanel() {
 
   return (
     <div className="flex flex-col gap-2">
+      <div className="border-b border-border pb-3">
+        <div className="mb-1 font-mono text-ui-sm text-gray-200">Index Global <span className="text-accent">DEFAULT</span></div>
+        <p className="mb-2 text-ui-xs leading-relaxed text-muted">
+          STOXX Europe 600 · S&amp;P 500 · MSCI Japan · MSCI Emerging Markets
+        </p>
+        <button
+          type="button"
+          onClick={activateIndexUniverse}
+          disabled={isLoading}
+          className="btn btn-md btn-primary focus-ring w-full font-semibold"
+        >
+          {isLoading ? <><Loader size={12} className="animate-spin" /> Processing...</> : <><Database size={12} /> Load Index Universe</>}
+        </button>
+        {state.universeSnapshot && state.activeUniverse === 'index_global' && (
+          <div className={`mt-2 text-ui-xs font-mono ${state.universeSnapshot.status === 'stale' ? 'text-amber-400' : 'text-green-500'}`}>
+            {state.universeSnapshot.status === 'stale' ? '● STALE fallback' : '● Snapshot'} · {state.universeSnapshot.asOfDate} · v{state.universeSnapshot.version}
+          </div>
+        )}
+      </div>
+
       <div className="border-b border-border pb-2">
+        <div className="mb-1 font-mono text-ui-xs uppercase tracking-wider text-muted">Legacy: Xetra listings</div>
         <button
           type="button"
           onClick={() => setShowGroups(!showGroups)}
@@ -111,7 +132,7 @@ export function XetraPanel() {
             onClick={() => dispatch({ type: 'CLEAR_XETRA' })}
             className="btn btn-sm btn-ghost focus-ring w-full mt-1"
           >
-            Clear loaded Xetra data
+            Clear legacy Xetra data
           </button>
         )}
       </div>

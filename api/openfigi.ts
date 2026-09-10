@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAuth } from '../server/auth'
 
-interface FigiJob {
+export interface FigiJob {
   idType: string
   idValue: string
   exchCode?: string
@@ -35,7 +35,12 @@ function withBatchLength<T>(arr: T[], expectedLength: number, fill: T): T[] {
   return out
 }
 
-async function fetchOpenFigiBatch(batch: FigiJob[], apiKey: string): Promise<any[]> {
+/**
+ * Shared low-level mapper for server-side imports. Selection is deliberately
+ * left to the caller: interactive lookups may use a best-effort result, while
+ * universe ingestion must reject ambiguous mappings.
+ */
+export async function fetchOpenFigiBatch(batch: FigiJob[], apiKey: string): Promise<any[]> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)

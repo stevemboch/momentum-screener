@@ -25,7 +25,9 @@ export default function App() {
   }
 
   const sources: string[] = []
-  if (state.xetraActive) sources.push('XETRA')
+  if (state.activeUniverse === 'index_global') sources.push('INDEX GLOBAL')
+  else if (state.activeUniverse === 'legacy_xetra') sources.push('LEGACY XETRA')
+  else if (state.xetraActive) sources.push('XETRA')
   if (state.frankfurtActive) sources.push('FRANKFURT')
   sources.push('MANUAL')
   const badgeLabel = sources.join(' + ')
@@ -57,7 +59,7 @@ export default function App() {
           }`}
         >
           <div className="flex flex-col gap-4 p-4 overflow-y-auto flex-1 min-w-[256px]">
-            <PanelShell title="Xetra Universe">
+            <PanelShell title="Universe">
               <XetraPanel />
             </PanelShell>
 

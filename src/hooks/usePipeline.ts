@@ -7,6 +7,7 @@ import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaP
 import { apiFetchJson, apiFetchText } from '../api/client'
 import { ANALYST_AUTO_CONCURRENCY, ANALYST_AUTO_EXTENDED_N, ANALYST_AUTO_TOP_N } from '../constants/analyst'
 import { selectTopAnalystStocks } from '../utils/analystTopN'
+import { cacheSnapshot, constituentToInstrument, readCachedSnapshot, type UniverseSnapshot } from '../universe'
 
 /**
  * Leitet die Financial Currency (Berichtswährung) aus dem ISIN-Prefix ab.
@@ -403,6 +404,10 @@ async function apiFrankfurt() {
   return text
 }
 
+async function apiIndexUniverse(): Promise<UniverseSnapshot> {
+  return apiFetchJson<UniverseSnapshot>('/api/universe?universe=index_global', { timeoutMs: 60_000 })
+}
+
 async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number, onProgress?: (done: number, total: number) => void): Promise<T[]> {
   const results: T[] = new Array(tasks.length)
   let nextIdx = 0, done = 0
@@ -639,7 +644,10 @@ export function usePipeline() {
       const ticker = figi.ticker || undefined
       let yahooTicker = inst.yahooTicker
       if (!yahooTicker && ticker) {
-        yahooTicker = ticker.includes('.') ? ticker : `${ticker}.DE`
+        // OpenFIGI tickers are not universally Xetra tickers. The legacy paths
+        // retain their .DE convention, while index constituents keep their
+        // provider/native ticker unless an explicit Yahoo ticker was supplied.
+        yahooTicker = ticker.includes('.') || inst.source === 'index' ? ticker : `${ticker}.DE`
       }
       const mappedIsin = figi.isin && figi.isin.length === 12 ? figi.isin : undefined
       return {
@@ -1255,10 +1263,13 @@ export function usePipeline() {
       }
 
       const winners = finalEtfsAfter.filter((i) => i.isDedupWinner)
+      // Legacy Xetra is a self-contained universe profile. Do not merge it with
+      // index constituents from a prior run; manual entries remain intentionally.
+      const manual = state.instruments.filter((instrument) => instrument.source === 'manual')
       dispatch({
-        type: 'ADD_INSTRUMENTS',
+        type: 'SET_INSTRUMENTS',
         instruments: recalculateAll(
-          finalCombined,
+          [...manual, ...finalCombined],
           state.settings.weights,
           state.settings.atrMultiplier,
           refs.r3m ?? state.referenceR3m,
@@ -1266,6 +1277,14 @@ export function usePipeline() {
           state.settings.accelKVol,
           state.settings.botsiSafetyMargin,
         ),
+      })
+      dispatch({
+        type: 'SET_ACTIVE_UNIVERSE',
+        universe: 'legacy_xetra',
+        snapshot: {
+          universeCode: 'legacy_xetra', status: 'fresh', asOfDate: new Date().toISOString().slice(0, 10),
+          retrievedAt: new Date().toISOString(), version: 'live-t7-xetra', sources: [], constituents: [],
+        },
       })
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'done', message: `Loaded ${winners.length} ETF groups + ${stocks.length} stocks`, current: finalCombined.length, total: finalCombined.length } })
     } catch (err: any) {
@@ -1311,6 +1330,51 @@ export function usePipeline() {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: err.message, current: 0, total: 0 } })
     }
   }, [state.frankfurtGroups, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d, enrichWithOpenFIGI, fetchPrices, ensureReferenceReturns])
+
+  const activateIndexUniverse = useCallback(async () => {
+    abortRef.current = false
+    dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'parsing', message: 'Loading index universe...', current: 0, total: 0 } })
+    let snapshot: UniverseSnapshot
+    try {
+      snapshot = await apiIndexUniverse()
+      cacheSnapshot(snapshot)
+    } catch (error: any) {
+      const cached = readCachedSnapshot()
+      if (!cached) {
+        dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: error?.message ?? 'Index universe unavailable', current: 0, total: 0 } })
+        return
+      }
+      snapshot = cached
+    }
+
+    const raw = snapshot.constituents.map(constituentToInstrument)
+    dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: `Resolving ${raw.length} index constituents...`, current: 0, total: raw.length } })
+    try {
+      const enriched = await enrichWithOpenFIGI(raw)
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: `Fetching prices for ${enriched.length} constituents...`, current: 0, total: enriched.length } })
+      const withPrices = await fetchPrices(enriched)
+      const refs = await ensureReferenceReturns()
+      // A universe switch replaces only prior universe members; manual entries persist.
+      const manual = state.instruments.filter((instrument) => instrument.source === 'manual')
+      dispatch({
+        type: 'SET_INSTRUMENTS',
+        instruments: recalculateAll(
+          [...manual, ...withPrices], state.settings.weights, state.settings.atrMultiplier,
+          refs.r3m ?? state.referenceR3m, refs.r5d ?? state.referenceR5d,
+          state.settings.accelKVol, state.settings.botsiSafetyMargin,
+        ),
+      })
+      dispatch({ type: 'SET_ACTIVE_UNIVERSE', universe: 'index_global', snapshot })
+      dispatch({ type: 'SET_FETCH_STATUS', status: {
+        phase: 'done',
+        message: `${snapshot.status === 'stale' ? 'Stale fallback: ' : ''}${withPrices.length} index constituents loaded (snapshot ${snapshot.asOfDate})`,
+        current: withPrices.length,
+        total: withPrices.length,
+      } })
+    } catch (error: any) {
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: error?.message ?? 'Index processing failed', current: 0, total: 0 } })
+    }
+  }, [enrichWithOpenFIGI, fetchPrices, ensureReferenceReturns, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
@@ -1944,6 +2008,7 @@ export function usePipeline() {
     activateXetra,
     loadFrankfurtBackground,
     activateFrankfurt,
+    activateIndexUniverse,
     xetraBuffer,
     frankfurtBuffer,
     fetchSingleInstrumentPrices,

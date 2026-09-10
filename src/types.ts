@@ -1,7 +1,7 @@
 // ─── Instrument Types ────────────────────────────────────────────────────────
 
 export type InstrumentType = 'ETF' | 'ETC' | 'ETN' | 'Stock' | 'Unknown'
-export type InputSource = 'manual' | 'xetra' | 'frankfurt'
+export type InputSource = 'manual' | 'xetra' | 'frankfurt' | 'index'
 
 export interface Instrument {
   // Identity
@@ -16,7 +16,17 @@ export interface Instrument {
   firstTradingDate?: string
   xetraGroup?: string
   sector?: string | null
+  /** Provider label retained alongside the normalised GICS sector. */
+  sourceSector?: string | null
   industry?: string | null
+  /** Country of the primary listing when supplied by the universe provider. */
+  primaryListingCountry?: string | null
+  /** Raw country/location from a source; never treated as primary-listing country. */
+  sourceCountry?: string | null
+  /** Region assigned by the index universe definition. */
+  indexRegion?: string | null
+  /** All benchmarks that caused inclusion in the active index universe. */
+  universeMemberships?: string[]
 
   // Names
   xetraName?: string
@@ -415,6 +425,12 @@ export interface TableState {
   aiFilterQuery: string | null
   aiFilterActive: boolean
   hiddenColumnGroups: ColumnGroup[]
+  /** Index-region filter, independent from listing country. */
+  regionFilter: string
+  /** Uses the explicit primary-listing-country field only. */
+  primaryListingCountryFilter: string
+  /** Canonical GICS sector filter. */
+  sectorFilter: string
 }
 
 // ─── Xetra CSV Row ──────────────────────────────────────────────────────────

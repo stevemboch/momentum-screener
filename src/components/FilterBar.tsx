@@ -31,6 +31,7 @@ export function FilterBar() {
     aiFilterActive,
   } = state.tableState
   const { fetchStatus } = state
+  const { regionFilter, primaryListingCountryFilter, sectorFilter } = state.tableState
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
   const [aiInput, setAiInput] = useState('')
@@ -71,6 +72,15 @@ export function FilterBar() {
   }, [state.instruments])
   const topNProgressPct = topNTarget > 0 ? Math.min(100, (topNLoaded / topNTarget) * 100) : 0
   const showTopNProgress = topNTarget > 0 && topNLoaded < topNTarget
+  const classificationOptions = useMemo(() => {
+    const unique = (values: Array<string | null | undefined>) =>
+      [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b))
+    return {
+      regions: unique(state.instruments.map((i) => i.indexRegion)),
+      countries: unique(state.instruments.map((i) => i.primaryListingCountry)),
+      sectors: unique(state.instruments.map((i) => i.sector)),
+    }
+  }, [state.instruments])
 
   type PrimaryFilter = TypeFilter | 'tfa' | 'pullback' | 'botsi'
   const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : botsiMode ? 'botsi' : typeFilter
@@ -240,6 +250,36 @@ export function FilterBar() {
           </button>
         ))}
       </div>
+
+      <select
+        value={regionFilter}
+        onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { regionFilter: event.target.value } })}
+        className="focus-ring rounded border border-border bg-bg px-2 py-1 font-mono text-ui-sm text-gray-300"
+        aria-label="Filter by index region"
+      >
+        <option value="">All regions</option>
+        {classificationOptions.regions.map((value) => <option key={value} value={value}>{value}</option>)}
+      </select>
+
+      <select
+        value={primaryListingCountryFilter}
+        onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { primaryListingCountryFilter: event.target.value } })}
+        className="focus-ring rounded border border-border bg-bg px-2 py-1 font-mono text-ui-sm text-gray-300"
+        aria-label="Filter by primary listing country"
+      >
+        <option value="">All listing countries</option>
+        {classificationOptions.countries.map((value) => <option key={value} value={value}>{value}</option>)}
+      </select>
+
+      <select
+        value={sectorFilter}
+        onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { sectorFilter: event.target.value } })}
+        className="focus-ring rounded border border-border bg-bg px-2 py-1 font-mono text-ui-sm text-gray-300"
+        aria-label="Filter by GICS sector"
+      >
+        <option value="">All GICS sectors</option>
+        {classificationOptions.sectors.map((value) => <option key={value} value={value}>{value}</option>)}
+      </select>
 
       <div className="flex max-w-[430px] min-w-[220px] flex-1 items-center gap-1.5">
         {aiFilterActive && aiFilterQuery ? (
