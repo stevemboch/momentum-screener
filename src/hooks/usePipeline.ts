@@ -405,7 +405,7 @@ async function apiFrankfurt() {
 }
 
 async function apiIndexUniverse(): Promise<UniverseSnapshot> {
-  return apiFetchJson<UniverseSnapshot>('/api/universe?universe=index_global', { timeoutMs: 60_000 })
+  return apiFetchJson<UniverseSnapshot>('/api/xetra?universe=index_global', { timeoutMs: 60_000 })
 }
 
 async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number, onProgress?: (done: number, total: number) => void): Promise<T[]> {

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAuth } from '../server/auth'
+import { getIndexGlobalSnapshot } from '../server/universe'
 
 async function findXetraCSVUrl(): Promise<string | null> {
   try {
@@ -39,6 +40,17 @@ async function findXetraCSVUrl(): Promise<string | null> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
   if (!requireAuth(req, res)) return
+
+  // Keep the public Xetra endpoint and the global index universe in one
+  // serverless function so the Hobby plan's 12-function limit is respected.
+  if (req.query.universe === 'index_global') {
+    try {
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400')
+      return res.status(200).json(await getIndexGlobalSnapshot())
+    } catch (error: any) {
+      return res.status(502).json({ error: `Index universe import failed: ${error?.message ?? 'unknown error'}` })
+    }
+  }
 
   // Try to find the current CSV URL from the downloads page
   let csvUrl = await findXetraCSVUrl()
