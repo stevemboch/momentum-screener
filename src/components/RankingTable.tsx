@@ -2098,7 +2098,7 @@ interface VirtualizationResult<T> {
   endIndex: number
   topPadding: number
   bottomPadding: number
-  measureRow: (isin: string, element: HTMLTableRowElement | null) => void
+  getRowRef: (isin: string) => (element: HTMLTableRowElement | null) => void
 }
 
 function useMediaQuery(query: string) {
@@ -2143,6 +2143,8 @@ function useTableVirtualization<T extends { isin: string }>(
   const [rowHeights, setRowHeights] = useState<Map<string, number>>(() => new Map())
   const rafRef = useRef<number | null>(null)
   const rowObserversRef = useRef(new Map<string, ResizeObserver>())
+  const measureRowRef = useRef<(isin: string, element: HTMLTableRowElement | null) => void>(() => {})
+  const rowRefCallbacks = useRef(new Map<string, (element: HTMLTableRowElement | null) => void>())
 
   const updateMetrics = useCallback(() => {
     if (containerEl && enabled) {
@@ -2173,6 +2175,7 @@ function useTableVirtualization<T extends { isin: string }>(
   useEffect(() => () => {
     rowObserversRef.current.forEach((observer) => observer.disconnect())
     rowObserversRef.current.clear()
+    rowRefCallbacks.current.clear()
   }, [])
 
   const measureRow = useCallback((isin: string, element: HTMLTableRowElement | null) => {
@@ -2207,8 +2210,17 @@ function useTableVirtualization<T extends { isin: string }>(
     const observer = new ResizeObserver(updateHeight)
     observer.observe(element)
     rowObserversRef.current.set(isin, observer)
-    updateHeight()
   }, [containerEl, contentEl, enabled, estimatedRowHeight, items])
+
+  measureRowRef.current = measureRow
+  const getRowRef = useCallback((isin: string) => {
+    let callback = rowRefCallbacks.current.get(isin)
+    if (!callback) {
+      callback = (element) => measureRowRef.current(isin, element)
+      rowRefCallbacks.current.set(isin, callback)
+    }
+    return callback
+  }, [])
 
   const offsets = useMemo(() => {
     const next = [0]
@@ -2217,7 +2229,7 @@ function useTableVirtualization<T extends { isin: string }>(
   }, [estimatedRowHeight, items, rowHeights])
 
   if (!enabled) {
-    return { visibleItems: items, startIndex: 0, endIndex: items.length, topPadding: 0, bottomPadding: 0, measureRow }
+    return { visibleItems: items, startIndex: 0, endIndex: items.length, topPadding: 0, bottomPadding: 0, getRowRef }
   }
 
   const effectiveContainerHeight = containerHeight || window.innerHeight || 800
@@ -2235,7 +2247,7 @@ function useTableVirtualization<T extends { isin: string }>(
     endIndex,
     topPadding: offsets[startIndex],
     bottomPadding: offsets[items.length] - offsets[endIndex],
-    measureRow,
+    getRowRef,
   }
 }
 
@@ -2287,7 +2299,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   // Detail panels may add multiple rows, so render the complete desktop table while one is open.
   const virtualizeTable = isDesktop && expandedISIN === null
 
-  const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding, measureRow } =
+  const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding, getRowRef } =
     useTableVirtualization(visibleInstruments, tableContainerEl, tableWrapperEl, virtualizeTable)
 
   const refreshContextPreview = () => {
@@ -2494,7 +2506,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                 <tr
                   id={`row-${inst.isin}`}
                   data-isin={inst.isin}
-                  ref={virtualizeTable ? (element) => measureRow(inst.isin, element) : undefined}
+                  ref={virtualizeTable ? getRowRef(inst.isin) : undefined}
                   className={`${rowBg} ${portfolioClass} hover:bg-surface2 border-b border-border/30 cursor-pointer group`}
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                   onKeyDown={(e) => {
