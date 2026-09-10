@@ -115,7 +115,12 @@ export function FilterBar() {
           pullbackMode: false,
           typeFilter: 'stock',
           sortColumn: 'botsiScore',
-          sortDirection: 'desc',
+          // BOTSI is the sum of indicator ranks, so a lower score is better.
+          sortDirection: 'asc',
+          // BOTSI mode has its own focused table view. Explicitly unhide the
+          // indicator group so a user's persisted column preference cannot
+          // hide GD200, GD130, MOM260, MOMJT, score, and rank.
+          hiddenColumnGroups: ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback'],
         },
       })
       return
