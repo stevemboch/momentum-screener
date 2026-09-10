@@ -2102,7 +2102,7 @@ interface VirtualizationResult<T> {
 
 function useTableVirtualization<T>(
   items: T[],
-  containerRef: React.RefObject<HTMLDivElement>,
+  containerEl: HTMLDivElement | null,
   rowHeight: number = VIRTUAL_ROW_HEIGHT,
   overscan: number = VIRTUAL_OVERSCAN
 ): VirtualizationResult<T> {
@@ -2111,11 +2111,11 @@ function useTableVirtualization<T>(
   const rafRef = useRef<number | null>(null)
 
   const updateMetrics = useCallback(() => {
-    if (containerRef.current) {
-      setScrollTop(containerRef.current.scrollTop)
-      setContainerHeight(containerRef.current.clientHeight)
+    if (containerEl) {
+      setScrollTop(containerEl.scrollTop)
+      setContainerHeight(containerEl.clientHeight)
     }
-  }, [containerRef])
+  }, [containerEl])
 
   const handleScroll = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -2123,18 +2123,17 @@ function useTableVirtualization<T>(
   }, [updateMetrics])
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
+    if (!containerEl) return
     updateMetrics()
-    el.addEventListener('scroll', handleScroll, { passive: true })
+    containerEl.addEventListener('scroll', handleScroll, { passive: true })
     const resizeObserver = new ResizeObserver(updateMetrics)
-    resizeObserver.observe(el)
+    resizeObserver.observe(containerEl)
     return () => {
-      el.removeEventListener('scroll', handleScroll)
+      containerEl.removeEventListener('scroll', handleScroll)
       resizeObserver.disconnect()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [handleScroll, updateMetrics])
+  }, [containerEl, handleScroll, updateMetrics])
 
   const effectiveContainerHeight = containerHeight || window.innerHeight || 800
 
@@ -2165,7 +2164,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const isMomentumMode = !state.tableState.tfaMode && !state.tableState.pullbackMode
   const [viewPreset, setViewPreset] = useState<ViewPreset>('detail')
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
-  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const [tableContainerEl, setTableContainerEl] = useState<HTMLDivElement | null>(null)
   const tableWrapperRef = useRef<HTMLDivElement>(null)
   const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
   const [contextPreviewTick, setContextPreviewTick] = useState(0)
@@ -2197,7 +2196,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const visibleInstruments = isPriceUpdating ? renderSnapshot : instruments
 
   const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding } =
-    useTableVirtualization(visibleInstruments, tableContainerRef)
+    useTableVirtualization(visibleInstruments, tableContainerEl)
 
   // Ensure the table wrapper has minimum height equal to the virtual content height.
   // This guarantees the scrollbar appears even when few instruments are loaded,
@@ -2285,7 +2284,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   }
 
   return (
-    <div ref={tableContainerRef} className="flex-1 min-h-0 overflow-auto">
+    <div ref={setTableContainerEl} className="flex-1 min-h-0 overflow-auto">
       <TableToolbar
         total={state.instruments.length}
         shown={visibleInstruments.length}
