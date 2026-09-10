@@ -27,7 +27,7 @@ const STICKY_COLUMN_WIDTH_CLASS: Record<StickyColumnKey, string> = {
 const ROW_CONTEXT_TTL = 6 * 60 * 60 * 1000
 
 const VIRTUAL_OVERSCAN = 8
-const VIRTUAL_ROW_HEIGHT = 38
+const VIRTUAL_ESTIMATED_ROW_HEIGHT = 56
 
 const VIEW_PRESET_CONFIG: Record<ViewPreset, { label: string; sortColumn: SortColumn; sortDirection: 'asc' | 'desc'; hiddenGroups: ColumnGroup[] }> = {
   scan: {
@@ -2098,24 +2098,58 @@ interface VirtualizationResult<T> {
   endIndex: number
   topPadding: number
   bottomPadding: number
+  measureRow: (isin: string, element: HTMLTableRowElement | null) => void
 }
 
-function useTableVirtualization<T>(
+function useMediaQuery(query: string) {
+  const getMatches = () => typeof window !== 'undefined' && window.matchMedia(query).matches
+  const [matches, setMatches] = useState(getMatches)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(query)
+    const updateMatches = () => setMatches(mediaQuery.matches)
+    updateMatches()
+    mediaQuery.addEventListener('change', updateMatches)
+    return () => mediaQuery.removeEventListener('change', updateMatches)
+  }, [query])
+
+  return matches
+}
+
+function findItemIndex(offsets: number[], position: number) {
+  let low = 0
+  let high = offsets.length - 2
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    if (offsets[middle + 1] <= position) low = middle + 1
+    else if (offsets[middle] > position) high = middle - 1
+    else return middle
+  }
+
+  return Math.max(0, Math.min(offsets.length - 2, low))
+}
+
+function useTableVirtualization<T extends { isin: string }>(
   items: T[],
   containerEl: HTMLDivElement | null,
-  rowHeight: number = VIRTUAL_ROW_HEIGHT,
-  overscan: number = VIRTUAL_OVERSCAN
+  contentEl: HTMLDivElement | null,
+  enabled: boolean,
+  estimatedRowHeight: number = VIRTUAL_ESTIMATED_ROW_HEIGHT,
+  overscan: number = VIRTUAL_OVERSCAN,
 ): VirtualizationResult<T> {
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(0)
+  const [rowHeights, setRowHeights] = useState<Map<string, number>>(() => new Map())
   const rafRef = useRef<number | null>(null)
+  const rowObserversRef = useRef(new Map<string, ResizeObserver>())
 
   const updateMetrics = useCallback(() => {
-    if (containerEl) {
+    if (containerEl && enabled) {
       setScrollTop(containerEl.scrollTop)
       setContainerHeight(containerEl.clientHeight)
     }
-  }, [containerEl])
+  }, [containerEl, enabled])
 
   const handleScroll = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -2123,31 +2157,86 @@ function useTableVirtualization<T>(
   }, [updateMetrics])
 
   useEffect(() => {
-    if (!containerEl) return
+    if (!containerEl || !enabled) return
     updateMetrics()
     containerEl.addEventListener('scroll', handleScroll, { passive: true })
     const resizeObserver = new ResizeObserver(updateMetrics)
     resizeObserver.observe(containerEl)
+    if (contentEl) resizeObserver.observe(contentEl)
     return () => {
       containerEl.removeEventListener('scroll', handleScroll)
       resizeObserver.disconnect()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [containerEl, handleScroll, updateMetrics])
+  }, [containerEl, contentEl, enabled, handleScroll, updateMetrics])
+
+  useEffect(() => () => {
+    rowObserversRef.current.forEach((observer) => observer.disconnect())
+    rowObserversRef.current.clear()
+  }, [])
+
+  const measureRow = useCallback((isin: string, element: HTMLTableRowElement | null) => {
+    rowObserversRef.current.get(isin)?.disconnect()
+    rowObserversRef.current.delete(isin)
+    if (!element || !enabled) return
+
+    const updateHeight = () => {
+      const height = Math.ceil(element.getBoundingClientRect().height)
+      setRowHeights((previous) => {
+        const previousHeight = previous.get(isin) ?? estimatedRowHeight
+        if (previousHeight === height) return previous
+
+        const rowIndex = items.findIndex((item) => item.isin === isin)
+        if (containerEl && contentEl && rowIndex > 0) {
+          const rowTop = items.slice(0, rowIndex).reduce(
+            (total, item) => total + (previous.get(item.isin) ?? estimatedRowHeight),
+            0,
+          )
+          const contentOffset = contentEl.getBoundingClientRect().top - containerEl.getBoundingClientRect().top + containerEl.scrollTop
+          const headerHeight = contentEl.querySelector('thead')?.getBoundingClientRect().height ?? 0
+          if (rowTop < containerEl.scrollTop - contentOffset - headerHeight) {
+            containerEl.scrollTop += height - previousHeight
+          }
+        }
+
+        const next = new Map(previous)
+        next.set(isin, height)
+        return next
+      })
+    }
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(element)
+    rowObserversRef.current.set(isin, observer)
+    updateHeight()
+  }, [containerEl, contentEl, enabled, estimatedRowHeight, items])
+
+  const offsets = useMemo(() => {
+    const next = [0]
+    items.forEach((item) => next.push(next[next.length - 1] + (rowHeights.get(item.isin) ?? estimatedRowHeight)))
+    return next
+  }, [estimatedRowHeight, items, rowHeights])
+
+  if (!enabled) {
+    return { visibleItems: items, startIndex: 0, endIndex: items.length, topPadding: 0, bottomPadding: 0, measureRow }
+  }
 
   const effectiveContainerHeight = containerHeight || window.innerHeight || 800
+  const contentOffset = contentEl ? contentEl.getBoundingClientRect().top - containerEl!.getBoundingClientRect().top + scrollTop : 0
+  const headerHeight = contentEl?.querySelector('thead')?.getBoundingClientRect().height ?? 0
+  const contentScrollTop = Math.max(0, scrollTop - contentOffset - headerHeight)
+  const visibleStart = findItemIndex(offsets, contentScrollTop)
+  const visibleEnd = findItemIndex(offsets, contentScrollTop + effectiveContainerHeight) + 1
+  const startIndex = Math.max(0, visibleStart - overscan)
+  const endIndex = Math.min(items.length, visibleEnd + overscan)
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
-  const endIndex = Math.min(
-    items.length,
-    Math.ceil((scrollTop + effectiveContainerHeight) / rowHeight) + overscan
-  )
-
-  const visibleItems = items.slice(startIndex, endIndex)
-  const topPadding = startIndex * rowHeight
-  const bottomPadding = (items.length - endIndex) * rowHeight
-
-  return { visibleItems, startIndex, endIndex, topPadding, bottomPadding }
+  return {
+    visibleItems: items.slice(startIndex, endIndex),
+    startIndex,
+    endIndex,
+    topPadding: offsets[startIndex],
+    bottomPadding: offsets[items.length] - offsets[endIndex],
+    measureRow,
+  }
 }
 
 // ─── Main Table ───────────────────────────────────────────────────────────────
@@ -2165,7 +2254,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const [viewPreset, setViewPreset] = useState<ViewPreset>('detail')
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
   const [tableContainerEl, setTableContainerEl] = useState<HTMLDivElement | null>(null)
-  const tableWrapperRef = useRef<HTMLDivElement>(null)
+  const [tableWrapperEl, setTableWrapperEl] = useState<HTMLDivElement | null>(null)
   const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
   const [contextPreviewTick, setContextPreviewTick] = useState(0)
   const interactionKey = [
@@ -2194,19 +2283,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   }, [instruments, interactionKey, isPriceUpdating])
 
   const visibleInstruments = isPriceUpdating ? renderSnapshot : instruments
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
+  // Detail panels may add multiple rows, so render the complete desktop table while one is open.
+  const virtualizeTable = isDesktop && expandedISIN === null
 
-  const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding } =
-    useTableVirtualization(visibleInstruments, tableContainerEl)
-
-  // Ensure the table wrapper has minimum height equal to the virtual content height.
-  // This guarantees the scrollbar appears even when few instruments are loaded,
-  // because the table's natural height (with ~27px rows) is shorter than virtual height (38px).
-  useEffect(() => {
-    if (tableWrapperRef.current && renderedInstruments.length > 0) {
-      const totalVirtualHeight = topPadding + renderedInstruments.length * VIRTUAL_ROW_HEIGHT + bottomPadding
-      tableWrapperRef.current.style.minHeight = `${totalVirtualHeight}px`
-    }
-  }, [topPadding, renderedInstruments.length, bottomPadding])
+  const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding, measureRow } =
+    useTableVirtualization(visibleInstruments, tableContainerEl, tableWrapperEl, virtualizeTable)
 
   const refreshContextPreview = () => {
     setContextPreviewTick((prev) => prev + 1)
@@ -2353,7 +2435,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           </div>
         )}
 
-        {renderedInstruments.map((inst) => (
+        {!isDesktop && visibleInstruments.map((inst) => (
           <MobileInstrumentCard
             key={inst.isin}
             inst={inst}
@@ -2366,7 +2448,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         ))}
       </div>
 
-      <div ref={tableWrapperRef} className="hidden lg:block">
+      <div ref={setTableWrapperEl} className="hidden lg:block">
         {topPadding > 0 && <div style={{ height: topPadding, width: '100%' }} className="bg-bg" />}
         <table className={`w-full text-xs font-mono border-collapse ${tableMinWidthClass}`}>
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
@@ -2412,6 +2494,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                 <tr
                   id={`row-${inst.isin}`}
                   data-isin={inst.isin}
+                  ref={virtualizeTable ? (element) => measureRow(inst.isin, element) : undefined}
                   className={`${rowBg} ${portfolioClass} hover:bg-surface2 border-b border-border/30 cursor-pointer group`}
                   onClick={() => setExpandedISIN(isExpanded ? null : inst.isin)}
                   onKeyDown={(e) => {
