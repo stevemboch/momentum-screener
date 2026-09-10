@@ -131,18 +131,18 @@ select {
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #0e1117;
+  background: #1a1f2d;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1c2030;
-  border-radius: 2px;
+  background: #3a4255;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a3045;
+  background: #5a6478;
 }
 
 /* Table improvements */

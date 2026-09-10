@@ -2166,7 +2166,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const [viewPreset, setViewPreset] = useState<ViewPreset>('detail')
   const [expandedISIN, setExpandedISIN] = useState<string | null>(null)
   const tableContainerRef = useRef<HTMLDivElement>(null)
-  const tableRef = useRef<HTMLTableElement>(null)
+  const tableWrapperRef = useRef<HTMLDivElement>(null)
   const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
   const [contextPreviewTick, setContextPreviewTick] = useState(0)
   const interactionKey = [
@@ -2199,15 +2199,15 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding } =
     useTableVirtualization(visibleInstruments, tableContainerRef)
 
-  // Explicitly set table height to virtual content height to ensure scrollbar appears.
-  // This works because the actual rows are shorter than VIRTUAL_ROW_HEIGHT (~27px vs 38px),
-  // so the table's natural height alone may not exceed the container height.
+  // Ensure the table wrapper has minimum height equal to the virtual content height.
+  // This guarantees the scrollbar appears even when few instruments are loaded,
+  // because the table's natural height (with ~27px rows) is shorter than virtual height (38px).
   useEffect(() => {
-    if (tableRef.current && renderedInstruments.length > 0) {
-      const tableHeight = renderedInstruments.length * VIRTUAL_ROW_HEIGHT
-      tableRef.current.style.height = `${tableHeight}px`
+    if (tableWrapperRef.current && renderedInstruments.length > 0) {
+      const totalVirtualHeight = topPadding + renderedInstruments.length * VIRTUAL_ROW_HEIGHT + bottomPadding
+      tableWrapperRef.current.style.minHeight = `${totalVirtualHeight}px`
     }
-  }, [renderedInstruments.length])
+  }, [topPadding, renderedInstruments.length, bottomPadding])
 
   const refreshContextPreview = () => {
     setContextPreviewTick((prev) => prev + 1)
@@ -2367,9 +2367,9 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         ))}
       </div>
 
-      <div className="hidden lg:block">
-        {topPadding > 0 && <div style={{ height: topPadding, width: '100%' }} />}
-        <table ref={tableRef} className={`w-full text-xs font-mono border-collapse ${tableMinWidthClass}`}>
+      <div ref={tableWrapperRef} className="hidden lg:block">
+        {topPadding > 0 && <div style={{ height: topPadding, width: '100%' }} className="bg-bg" />}
+        <table className={`w-full text-xs font-mono border-collapse ${tableMinWidthClass}`}>
         <thead className="sticky top-0 z-10 bg-surface border-b border-border">
           <tr>
             {visibleColumns.map((col) => (
@@ -2766,7 +2766,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         })}
         </tbody>
       </table>
-        {bottomPadding > 0 && <div style={{ height: bottomPadding, width: '100%' }} />}
+        {bottomPadding > 0 && <div style={{ height: bottomPadding, width: '100%' }} className="bg-bg" />}
       </div>
     </div>
   )
