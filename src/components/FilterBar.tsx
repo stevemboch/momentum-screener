@@ -86,8 +86,8 @@ export function FilterBar() {
     }
   }, [state.instruments, state.universeSnapshot])
 
-  type PrimaryFilter = TypeFilter | 'tfa' | 'pullback' | 'botsi'
-  const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : botsiMode ? 'botsi' : typeFilter
+  type PrimaryFilter = TypeFilter | 'tfa' | 'pullback'
+  const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : typeFilter
   const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
 
   const addExcludedRegion = (region: string) => {
@@ -130,26 +130,6 @@ export function FilterBar() {
           typeFilter: 'stock',
           sortColumn: 'pullbackScore',
           sortDirection: 'desc',
-        },
-      })
-      return
-    }
-
-    if (f === 'botsi') {
-      dispatch({
-        type: 'SET_TABLE_STATE',
-        updates: {
-          botsiMode: true,
-          tfaMode: false,
-          pullbackMode: false,
-          typeFilter: 'stock',
-          sortColumn: 'botsiScore',
-          // BOTSI is the sum of indicator ranks, so a lower score is better.
-          sortDirection: 'asc',
-          // BOTSI mode has its own focused table view. Explicitly unhide the
-          // indicator group so a user's persisted column preference cannot
-          // hide GD200, GD130, MOM260, MOMJT, score, and rank.
-          hiddenColumnGroups: ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback'],
         },
       })
       return
@@ -237,7 +217,7 @@ export function FilterBar() {
   return (
     <div className="flex w-full flex-wrap items-center gap-2.5">
       <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-surface2 p-0.5" aria-label="Instrument type">
-        {(['all', 'etf', 'stock', 'tfa', 'pullback', 'botsi'] as PrimaryFilter[]).map((f) => (
+        {(['all', 'etf', 'stock', 'tfa', 'pullback'] as PrimaryFilter[]).map((f) => (
           <button
             key={f}
             type="button"
@@ -265,7 +245,6 @@ export function FilterBar() {
                   : ''
               }`}
             {f === 'pullback' && `Pullback ${pullbackMode ? `(${pullbackCount})` : ''}`}
-            {f === 'botsi' && `BOTSI ${botsiMode ? `(${botsiQualified}/10)` : ''}`}
           </button>
         ))}
       </div>

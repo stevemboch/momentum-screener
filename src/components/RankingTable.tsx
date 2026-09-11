@@ -2330,6 +2330,15 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         hiddenColumnGroups: cfg.hiddenGroups,
         sortColumn: cfg.sortColumn,
         sortDirection: cfg.sortDirection,
+        // BOTSI is a focused result view, just like Scan or Detail. Selecting
+        // it here also enables its top-10/portfolio universe; selecting any
+        // other view returns to the regular stock universe.
+        botsiMode: preset === 'botsi',
+        ...(preset === 'botsi'
+          ? { typeFilter: 'stock', tfaMode: false, pullbackMode: false }
+          : isBotsiMode
+            ? { typeFilter: 'stock' }
+            : {}),
       },
     })
   }
