@@ -5,7 +5,10 @@ export type UniverseStatus = 'fresh' | 'stale'
 
 export interface UniverseConstituent {
   isin: string
+  /** ISIN when supplied; otherwise an exchange-bound OpenFIGI identity. */
+  identifierType?: 'ISIN' | 'FIGI'
   ticker: string | null
+  yahooTicker?: string | null
   name: string
   sector: string | null
   sourceSector: string | null
@@ -45,7 +48,7 @@ export function constituentToInstrument(constituent: UniverseConstituent): Instr
   return {
     isin: constituent.isin,
     mnemonic: constituent.ticker ?? undefined,
-    yahooTicker: constituent.ticker ?? '',
+    yahooTicker: constituent.yahooTicker ?? constituent.ticker ?? '',
     type: 'Stock',
     source: 'index',
     displayName: constituent.name || constituent.isin,

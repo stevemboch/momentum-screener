@@ -62,16 +62,18 @@ OPENFIGI_API_KEY=your_key_here
 
 ### Universe profiles
 
-- **Index Global (default):** a union of STOXX Europe 600, S&P 500, MSCI Japan and MSCI Emerging Markets. Constituents are keyed by ISIN; a title in more than one benchmark is emitted once with every membership retained.
+- **Index Global (default):** a union of STOXX Europe 600, S&P 500, MSCI Japan and MSCI Emerging Markets. Constituents are keyed by source ISIN when available, otherwise by an exchange-bound OpenFIGI identity; a title in more than one benchmark is emitted once with every membership retained.
 - **Legacy Xetra:** preserves the existing T7/Xetra path as a separate listing-based universe. It is never an automatic fallback for an index screen.
 
 Index Global imports use publicly accessible, versioned CSV holdings files that are configured at deployment. This makes their use explicit: an ETF holdings file is an `ETF_HOLDINGS_PROXY`, not an assertion that it is an official index constituent file. Use a physically replicating fund that names the intended benchmark, and verify its terms before automated use.
 
 The importer ships with tested iShares Holdings endpoints for the four start
 benchmarks. They provide ticker, name, sector, location and exchange, but not
-consistently an ISIN. Missing ISINs are resolved server-side through the
-already configured OpenFIGI service using `ticker + exchange`; a candidate is
-accepted only if exactly one equity ISIN is returned for that exchange.
+consistently an ISIN. The server resolves each holding through OpenFIGI using
+`ticker + exchange`. Since that API often omits ISINs for ticker mappings, a
+candidate is accepted when it has either an ISIN or exactly one exchange-bound
+equity FIGI. The server also derives the Yahoo ticker from that same exchange
+(for example `7203.T`), so a later ticker-only lookup cannot change the listing.
 
 These environment variables are optional overrides, for example when a
 licensed or an ISIN-complete source becomes available:
@@ -83,7 +85,7 @@ UNIVERSE_MSCI_JAPAN_CSV_URL=
 UNIVERSE_MSCI_EM_CSV_URL=
 ```
 
-The importer accepts `ISIN` when provided, otherwise `Ticker`/`Emittententicker`, `Name`, `Sector`, `Exchange`/`Börse`, `Country`/`Standort`, `Weight`, and `Asset Class`/`Anlageklasse`. It rejects files whose valid equity-ISIN count is outside the expected range, or whose exact ISIN resolution rate falls below 95%, for the benchmark. The browser stores the last successful, version-hashed snapshot; if an import fails, that exact snapshot is loaded with a visible `STALE fallback` status. If no prior snapshot exists, loading fails rather than silently switching to Xetra.
+The importer accepts `ISIN` when provided, otherwise `Ticker`/`Emittententicker`, `Name`, `Sector`, `Exchange`/`Börse`, `Country`/`Standort`, `Weight`, and `Asset Class`/`Anlageklasse`. It rejects files whose exact equity identity (ISIN or exchange-bound FIGI) resolution rate falls below 95%, or whose valid member count is outside the expected range. The browser stores the last successful, version-hashed snapshot; if an import fails, that exact snapshot is loaded with a visible `STALE fallback` status. If no prior snapshot exists, loading fails rather than silently switching to Xetra.
 
 `Sector` is normalized to GICS for filtering. The original provider label is kept as `sourceSector`; generic source-country fields are never misrepresented as primary listing country. Region, primary-listing country, and GICS sector are independent filters in the UI.
 

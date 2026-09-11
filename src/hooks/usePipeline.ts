@@ -530,11 +530,12 @@ export function usePipeline() {
     // Xetra-Stocks haben ISIN, mnemonic, yahooTicker und displayName bereits
     // aus dem CSV — OpenFIGI liefert nur einen marginal besseren Namen.
     // ETFs/ETCs/Unknown brauchen OpenFIGI für Typ-Klärung und ISIN-Bestätigung.
-    const needsEnrichment = (inst: Instrument): boolean =>
-      inst.source !== 'xetra' ||
-      inst.type === 'ETF' ||
-      inst.type === 'ETC' ||
-      inst.type === 'Unknown'
+    const needsEnrichment = (inst: Instrument): boolean => {
+      // Index imports were already resolved to their primary exchange server-side.
+      // A ticker-only re-query here could lose that exchange binding.
+      if (inst.source === 'index') return false
+      return inst.source !== 'xetra' || inst.type === 'ETF' || inst.type === 'ETC' || inst.type === 'Unknown'
+    }
 
     const toEnrich = instruments.filter(needsEnrichment)
     const skipEnrich = instruments.filter((i) => !needsEnrichment(i))
