@@ -1,15 +1,19 @@
 import Papa from 'papaparse'
 
-type UniverseSourceCode = 'STOXX_EUROPE_600' | 'SP_500' | 'MSCI_JAPAN' | 'MSCI_EM'
+type UniverseSourceCode =
+  | 'STOXX_EUROPE_600' | 'SP_500' | 'SP_MIDCAP_400' | 'SP_SMALLCAP_600'
+  | 'MSCI_JAPAN' | 'MSCI_PACIFIC_EX_JAPAN' | 'MSCI_EM'
 
 interface SourceDefinition {
   code: UniverseSourceCode
-  region: 'Europe' | 'North America' | 'Japan' | 'Emerging Markets'
+  region: 'Europe' | 'North America' | 'Japan' | 'Pacific ex Japan' | 'Emerging Markets'
   benchmark: string
   urlEnv: string
   defaultUrl: string
   minRows: number
   maxRows: number
+  defaultListingCountry?: string
+  sourceType: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE'
 }
 
 interface Constituent {
@@ -38,10 +42,16 @@ interface ImportedSource {
 }
 
 const SOURCES: SourceDefinition[] = [
-  { code: 'STOXX_EUROPE_600', region: 'Europe', benchmark: 'STOXX Europe 600', urlEnv: 'UNIVERSE_STOXX_EUROPE_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251931/ishares-stoxx-europe-600-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXSA_holdings&dataType=fund', minRows: 500, maxRows: 750 },
-  { code: 'SP_500', region: 'North America', benchmark: 'S&P 500', urlEnv: 'UNIVERSE_SP_500_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/253743/ishares-sp-500-b-ucits-etf-acc-fund/1478358465952.ajax?fileType=csv&fileName=SXR8_holdings&dataType=fund', minRows: 450, maxRows: 550 },
-  { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251866/ishares-msci-japan-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IJPN_holdings&dataType=fund', minRows: 100, maxRows: 400 },
-  { code: 'MSCI_EM', region: 'Emerging Markets', benchmark: 'MSCI Emerging Markets', urlEnv: 'UNIVERSE_MSCI_EM_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251857/ishares-msci-emerging-markets-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IQQE_holdings&dataType=fund', minRows: 600, maxRows: 1_800 },
+  { code: 'STOXX_EUROPE_600', region: 'Europe', benchmark: 'STOXX Europe 600', urlEnv: 'UNIVERSE_STOXX_EUROPE_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251931/ishares-stoxx-europe-600-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXSA_holdings&dataType=fund', minRows: 500, maxRows: 750, sourceType: 'ETF_HOLDINGS_PROXY' },
+  { code: 'SP_500', region: 'North America', benchmark: 'S&P 500', urlEnv: 'UNIVERSE_SP_500_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/253743/ishares-sp-500-b-ucits-etf-acc-fund/1478358465952.ajax?fileType=csv&fileName=SXR8_holdings&dataType=fund', minRows: 450, maxRows: 550, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
+  // Equibles republishes the full daily holdings disclosure of the
+  // fully-replicating iShares Core S&P Mid-Cap ETF (IJH). The available UCITS
+  // fund is swap-based and therefore not a constituent proxy.
+  { code: 'SP_MIDCAP_400', region: 'North America', benchmark: 'S&P MidCap 400', urlEnv: 'UNIVERSE_SP_MIDCAP_400_CSV_URL', defaultUrl: 'https://equibles.com/indexes/sp-400.csv', minRows: 390, maxRows: 430, defaultListingCountry: 'United States', sourceType: 'TRACKING_FUND_DISCLOSURE' },
+  { code: 'SP_SMALLCAP_600', region: 'North America', benchmark: 'S&P SmallCap 600', urlEnv: 'UNIVERSE_SP_SMALLCAP_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251920/ishares-sp-smallcap-600-ucits-etf/1478358465952.ajax?fileType=csv&fileName=IUS3_holdings&dataType=fund', minRows: 580, maxRows: 700, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
+  { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251866/ishares-msci-japan-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IJPN_holdings&dataType=fund', minRows: 100, maxRows: 400, sourceType: 'ETF_HOLDINGS_PROXY' },
+  { code: 'MSCI_PACIFIC_EX_JAPAN', region: 'Pacific ex Japan', benchmark: 'MSCI Pacific ex Japan', urlEnv: 'UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/253735/ishares-msci-pacific-ex-japan-ucits-etf-acc-fund/1478358465952.ajax?fileType=csv&fileName=SXR1_holdings&dataType=fund', minRows: 70, maxRows: 120, sourceType: 'ETF_HOLDINGS_PROXY' },
+  { code: 'MSCI_EM', region: 'Emerging Markets', benchmark: 'MSCI Emerging Markets', urlEnv: 'UNIVERSE_MSCI_EM_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251857/ishares-msci-emerging-markets-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IQQE_holdings&dataType=fund', minRows: 600, maxRows: 1_800, sourceType: 'ETF_HOLDINGS_PROXY' },
 ]
 
 const ISIN = /^[A-Z]{2}[A-Z0-9]{10}$/
@@ -75,6 +85,8 @@ const EXCHANGE_MAP: Record<string, { country: string; yahooSuffix?: string; padT
   'nasdaq omx nordic': { country: 'Sweden', yahooSuffix: '.ST' }, 'nasdaq omx helsinki ltd.': { country: 'Finland', yahooSuffix: '.HE' }, 'omx nordic exchange copenhagen a/s': { country: 'Denmark', yahooSuffix: '.CO' },
   'cboe bzx': { country: 'United States' }, 'xbsp': { country: 'Brazil', yahooSuffix: '.SA' }, 'bolsa de valores de colombia': { country: 'Colombia', yahooSuffix: '.CL' },
   'santiago stock exchange': { country: 'Chile', yahooSuffix: '.SN' }, 'egyptian exchange': { country: 'Egypt', yahooSuffix: '.CA' }, 'kuwait stock exchange': { country: 'Kuwait', yahooSuffix: '.KW' },
+  'asx - all markets': { country: 'Australia', yahooSuffix: '.AX' }, 'australian securities exchange': { country: 'Australia', yahooSuffix: '.AX' },
+  'singapore exchange': { country: 'Singapore', yahooSuffix: '.SI' }, 'new zealand exchange': { country: 'New Zealand', yahooSuffix: '.NZ' },
 }
 
 function normalizedExchange(exchange: string): string {
@@ -144,7 +156,7 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
     if (!isEquity(value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse']))) continue
     const rawIsin = value(row, ['isin']).toUpperCase()
     candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
-      name: value(row, ['name', 'security name', 'holding name', 'instrument']), sourceSector: value(row, ['sector', 'gics sector', 'industry', 'sektor']) || null,
+      name: value(row, ['name', 'company', 'security name', 'holding name', 'instrument']), sourceSector: value(row, ['sector', 'gics sector', 'industry', 'sektor']) || null,
       sourceCountry: value(row, ['country', 'location', 'country of risk', 'standort']) || null, exchange: value(row, ['exchange', 'börse']) || null,
       weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
   }
@@ -162,7 +174,7 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
     const exchange = exchangeMeta(candidate.exchange ?? '')
     byIsin.set(identifier, { isin: identifier, identifierType: candidate.isin ? 'ISIN' : 'LISTING', ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || identifier,
       sector: candidate.sourceSector ? canonicalGicsSector(candidate.sourceSector) : null, sourceSector: candidate.sourceSector,
-      primaryListingCountry: exchange.country ?? null, sourceCountry: candidate.sourceCountry, weight: candidate.weight,
+      primaryListingCountry: exchange.country ?? source.defaultListingCountry ?? null, sourceCountry: candidate.sourceCountry, weight: candidate.weight,
       benchmark: source.benchmark, region: source.region, source: source.code, memberships: [source.benchmark] })
   }
   const constituents = [...byIsin.values()]
@@ -183,7 +195,7 @@ export async function getIndexGlobalSnapshot() {
   return {
     universeCode: 'index_global' as const, status: 'fresh' as const, asOfDate: new Date().toISOString().slice(0, 10), retrievedAt: new Date().toISOString(),
     version: stableHash(constituents.map((item) => `${item.isin}:${item.source}`).sort().join('|')),
-    sources: SOURCES.map((source, index) => ({ code: source.code, benchmark: source.benchmark, region: source.region, sourceType: 'ETF_HOLDINGS_PROXY',
+    sources: SOURCES.map((source, index) => ({ code: source.code, benchmark: source.benchmark, region: source.region, sourceType: source.sourceType,
       inputRows: imports[index].inputRows, resolvedRows: imports[index].resolvedRows, unresolvedRows: imports[index].unresolvedRows,
       isinMatchRate: imports[index].inputRows === 0 ? 0 : imports[index].resolvedRows / imports[index].inputRows, memberCount: imports[index].constituents.length, retrievedAt: imports[index].retrievedAt })),
     constituents,
