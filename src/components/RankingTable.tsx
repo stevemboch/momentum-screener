@@ -1943,13 +1943,16 @@ function TableToolbar({
   onPresetChange: (preset: ViewPreset) => void
 }) {
   return (
-    <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2 ${
+    <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 ${
       activePreset === 'botsi'
         ? 'border-cyan-400/30 bg-gradient-to-r from-cyan-400/10 via-surface to-surface'
         : 'border-border bg-surface'
     }`}>
       <div className="flex items-center gap-2 text-ui-sm font-mono text-muted">
-        <span>Showing {shown.toLocaleString()} / {total.toLocaleString()} instruments</span>
+        <div>
+          <div className="text-ui-xs uppercase tracking-widest text-muted/80">Results</div>
+          <span className="text-gray-200">{shown.toLocaleString()}</span> of {total.toLocaleString()} instruments
+        </div>
         <span className="hidden xl:inline">|</span>
         <span className="hidden xl:inline">Sort: {sortColumn} {sortDirection === 'desc' ? '↓' : '↑'}</span>
         {activePreset === 'botsi' && (
@@ -1959,7 +1962,7 @@ function TableToolbar({
           </>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 text-ui-xs font-mono">
+      <div className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-bg/50 p-0.5 text-ui-xs font-mono">
         {(['scan', 'early', 'detail', 'risk', 'botsi'] as const).map((preset) => {
           const active = activePreset === preset
           return (
@@ -1967,12 +1970,12 @@ function TableToolbar({
               key={preset}
               type="button"
               onClick={() => onPresetChange(preset)}
-              className={`focus-ring rounded border px-2 py-1 transition-colors ${
+              className={`focus-ring rounded px-2.5 py-1.5 transition-colors ${
                 active
                   ? preset === 'botsi'
                     ? 'border-cyan-400/40 bg-cyan-400/15 text-cyan-200 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]'
                     : 'border-accent/40 bg-accent/15 text-accent'
-                  : 'border-border text-muted hover:text-gray-300'
+                  : 'text-muted hover:bg-surface2 hover:text-gray-300'
               }`}
               aria-label={`Switch to ${VIEW_PRESET_CONFIG[preset].label} preset`}
             >
@@ -2279,6 +2282,10 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     state.tableState.tfaMode ? '1' : '0',
     state.tableState.pullbackMode ? '1' : '0',
     state.tableState.botsiMode ? '1' : '0',
+    state.tableState.regionFilter,
+    state.tableState.excludedRegionFilters.join(','),
+    state.tableState.primaryListingCountryFilter,
+    state.tableState.sectorFilter,
     state.tableState.aiFilterActive ? '1' : '0',
     state.tableState.aiFilterQuery ?? '',
     state.settings.aumFloor.toString(),

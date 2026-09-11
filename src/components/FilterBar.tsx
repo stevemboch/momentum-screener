@@ -37,6 +37,7 @@ export function FilterBar() {
   const [aiInput, setAiInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(() => Boolean(regionFilter || primaryListingCountryFilter || sectorFilter || excludedRegionFilters.length))
 
   const monitoring = displayed.filter((i) => i.tfaPhase === 'monitoring').length
   const aboveAllMAs = displayed.filter((i) => i.tfaPhase === 'above_all_mas').length
@@ -234,8 +235,8 @@ export function FilterBar() {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2.5">
-      <div className="flex items-center gap-0.5 rounded-md border border-border bg-surface2 p-0.5" aria-label="Instrument type">
+    <div className="flex w-full flex-wrap items-center gap-2.5">
+      <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-surface2 p-0.5" aria-label="Instrument type">
         {(['all', 'etf', 'stock', 'tfa', 'pullback', 'botsi'] as PrimaryFilter[]).map((f) => (
           <button
             key={f}
@@ -269,7 +270,22 @@ export function FilterBar() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/80 bg-surface/50 p-1">
+      <button
+        type="button"
+        onClick={() => setFiltersOpen((open) => !open)}
+        className={`btn btn-sm focus-ring shrink-0 ${filtersOpen ? 'btn-primary' : 'btn-ghost'}`}
+        aria-expanded={filtersOpen}
+        aria-controls="classification-filters"
+      >
+        Filters
+        {(regionFilter || primaryListingCountryFilter || sectorFilter || excludedRegionFilters.length > 0) && (
+          <span className="status-badge status-info !px-1 !py-0">active</span>
+        )}
+      </button>
+
+      {filtersOpen && (
+      <div id="classification-filters" className="order-4 flex w-full flex-wrap items-center gap-1.5 border-t border-border/70 pt-2.5">
+        <span className="mr-1 font-mono text-ui-xs uppercase tracking-widest text-muted">Narrow results</span>
         <select
           value={regionFilter}
           onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { regionFilter: event.target.value } })}
@@ -304,8 +320,6 @@ export function FilterBar() {
             − {region} <span aria-hidden="true">×</span>
           </button>
         ))}
-      </div>
-
       <select
         value={primaryListingCountryFilter}
         onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { primaryListingCountryFilter: event.target.value } })}
@@ -325,8 +339,10 @@ export function FilterBar() {
         <option value="">All GICS sectors</option>
         {classificationOptions.sectors.map((value) => <option key={value} value={value}>{value}</option>)}
       </select>
+      </div>
+      )}
 
-      <div className="flex max-w-[430px] min-w-[220px] flex-1 items-center gap-1.5">
+      <div className="order-2 flex min-w-[240px] flex-1 items-center gap-1.5">
         {aiFilterActive && aiFilterQuery ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-ui-sm text-accent">
             <span className="shrink-0">✦</span>
@@ -392,7 +408,7 @@ export function FilterBar() {
         )}
       </div>
 
-      <span className="ml-1 font-mono text-ui-sm text-muted">
+      <span className="order-3 ml-1 whitespace-nowrap font-mono text-ui-sm text-muted">
         {displayed.length.toLocaleString()}
         {displayed.length !== state.instruments.length && (
           <span className="text-muted"> / {state.instruments.length.toLocaleString()}</span>
