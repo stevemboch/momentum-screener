@@ -74,6 +74,7 @@ const COLUMNS: Col[] = [
   { key: 'gd130',         label: 'GD130',    title: 'GD130 distance = (price - MA130) / MA130, ignored in overall BOTSI score' },
   { key: 'mom260',        label: 'MOM260',   title: '260 trading day momentum' },
   { key: 'momjt',         label: 'MOMJT',    title: 'MOM260 mit Endpunkt 1 Monat frueher: (close[t-1M] - close[t-260T]) / close[t-260T]' },
+  { key: 'relative52wHigh', label: '52W ATH', title: 'Latest close as a percentage of the highest close in the trailing 252 trading days (100% = 52-week high)' },
   { key: 'botsiScore',    label: 'BOTSI',    title: 'BOTSI: #Rank (1=best) und Summe der GD200/MOM260/MOMJT-Indikator-Ranks unter Aktien. Niedrigere Summe = besser.' },
   { key: 'botsiRank',     label: 'B-Rank',   title: 'BOTSI overall rank' },
   { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
@@ -112,7 +113,7 @@ const COLUMNS: Col[] = [
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore', 'accelerationScore'],
-  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'botsiScore', 'botsiRank'],
+  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'relative52wHigh', 'botsiScore', 'botsiRank'],
   returns:      ['r1w', 'r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
@@ -893,12 +894,13 @@ function CandidateRow({
           <AccelerationCell inst={candidate} />
         </td>
       )}
-      {!hiddenKeys.has('ma') && (
-        <td className="px-2 py-1.5 text-right text-muted">—</td>
-      )}
-      {!hiddenKeys.has('sellingThreshold') && (
-        <td className="px-2 py-1.5 text-right text-muted">—</td>
-      )}
+      {!hiddenKeys.has('gd200') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('gd130') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('mom260') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('momjt') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('relative52wHigh') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('botsiScore') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('botsiRank') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('r1w') && (
         <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r1w)}`}>{fmtPct(candidate.r1w)}</td>
       )}
@@ -913,6 +915,12 @@ function CandidateRow({
       )}
       {!hiddenKeys.has('vola') && (
         <td className="px-2 py-1.5 text-right text-muted">{fmtVola(candidate.vola)}</td>
+      )}
+      {!hiddenKeys.has('ma') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
+      )}
+      {!hiddenKeys.has('sellingThreshold') && (
+        <td className="px-2 py-1.5 text-right text-muted">—</td>
       )}
       {!hiddenKeys.has('rsi14') && (
         <td className={`px-2 py-1.5 text-right ${rsiColor(candidate.rsi14)}`}>
@@ -2287,6 +2295,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     state.tableState.regionFilter,
     state.tableState.excludedRegionFilters.join(','),
     state.tableState.primaryListingCountryFilter,
+    state.tableState.excludedPrimaryListingCountryFilters.join(','),
     state.tableState.sectorFilter,
     state.tableState.aiFilterActive ? '1' : '0',
     state.tableState.aiFilterQuery ?? '',
@@ -2634,6 +2643,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('momjt') && (
                     <td className="px-2 py-1.5 text-right">
                       <MetricCell value={inst.momjt} rank={inst.momjtRank} fmt={(v) => fmtPct(v)} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('relative52wHigh') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <MetricCell value={inst.relative52wHigh} fmt={(v) => fmtPct(v)} />
                     </td>
                   )}
 

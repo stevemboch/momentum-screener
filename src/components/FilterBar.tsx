@@ -31,13 +31,21 @@ export function FilterBar() {
     aiFilterActive,
   } = state.tableState
   const { fetchStatus } = state
-  const { regionFilter, excludedRegionFilters, primaryListingCountryFilter, sectorFilter } = state.tableState
+  const {
+    regionFilter,
+    excludedRegionFilters,
+    primaryListingCountryFilter,
+    excludedPrimaryListingCountryFilters,
+    sectorFilter,
+  } = state.tableState
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
   const [aiInput, setAiInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
-  const [filtersOpen, setFiltersOpen] = useState(() => Boolean(regionFilter || primaryListingCountryFilter || sectorFilter || excludedRegionFilters.length))
+  const [filtersOpen, setFiltersOpen] = useState(() => Boolean(
+    regionFilter || primaryListingCountryFilter || sectorFilter || excludedRegionFilters.length || excludedPrimaryListingCountryFilters.length
+  ))
 
   const monitoring = displayed.filter((i) => i.tfaPhase === 'monitoring').length
   const aboveAllMAs = displayed.filter((i) => i.tfaPhase === 'above_all_mas').length
@@ -102,6 +110,23 @@ export function FilterBar() {
     dispatch({
       type: 'SET_TABLE_STATE',
       updates: { excludedRegionFilters: excludedRegionFilters.filter((value) => value !== region) },
+    })
+  }
+
+  const addExcludedCountry = (country: string) => {
+    if (!country || excludedPrimaryListingCountryFilters.includes(country)) return
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: { excludedPrimaryListingCountryFilters: [...excludedPrimaryListingCountryFilters, country] },
+    })
+  }
+
+  const removeExcludedCountry = (country: string) => {
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: {
+        excludedPrimaryListingCountryFilters: excludedPrimaryListingCountryFilters.filter((value) => value !== country),
+      },
     })
   }
 
@@ -277,7 +302,7 @@ export function FilterBar() {
         aria-controls="classification-filters"
       >
         Filters
-        {(regionFilter || primaryListingCountryFilter || sectorFilter || excludedRegionFilters.length > 0) && (
+        {(regionFilter || primaryListingCountryFilter || sectorFilter || excludedRegionFilters.length > 0 || excludedPrimaryListingCountryFilters.length > 0) && (
           <span className="status-badge status-info !px-1 !py-0">active</span>
         )}
       </button>
@@ -328,6 +353,31 @@ export function FilterBar() {
         <option value="">All listing countries</option>
         {classificationOptions.countries.map((value) => <option key={value} value={value}>{value}</option>)}
       </select>
+
+      <select
+        value=""
+        onChange={(event) => addExcludedCountry(event.target.value)}
+        className="filter-select text-muted"
+        aria-label="Exclude a primary listing country"
+      >
+        <option value="">Exclude country…</option>
+        {classificationOptions.countries
+          .filter((value) => !excludedPrimaryListingCountryFilters.includes(value))
+          .map((value) => <option key={value} value={value}>Exclude {value}</option>)}
+      </select>
+
+      {excludedPrimaryListingCountryFilters.map((country) => (
+        <button
+          key={country}
+          type="button"
+          onClick={() => removeExcludedCountry(country)}
+          className="focus-ring inline-flex items-center gap-1 rounded border border-red-400/30 bg-red-400/5 px-1.5 py-1 font-mono text-ui-xs text-red-300 transition-colors hover:bg-red-400/15"
+          title={`${country} aus dem Ergebnis entfernen`}
+          aria-label={`Remove excluded country ${country}`}
+        >
+          − {country} <span aria-hidden="true">×</span>
+        </button>
+      ))}
 
       <select
         value={sectorFilter}

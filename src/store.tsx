@@ -211,6 +211,7 @@ const DEFAULT_STATE: AppState = {
     regionFilter: '',
     excludedRegionFilters: [],
     primaryListingCountryFilter: '',
+    excludedPrimaryListingCountryFilters: [],
     sectorFilter: '',
   },
   referenceR3m: null,
@@ -588,6 +589,10 @@ export function useDisplayedInstruments() {
     if (tableState.primaryListingCountryFilter) {
       filtered = filtered.filter((i) => i.primaryListingCountry === tableState.primaryListingCountryFilter)
     }
+    if (tableState.excludedPrimaryListingCountryFilters.length > 0) {
+      const excludedCountries = new Set(tableState.excludedPrimaryListingCountryFilters)
+      filtered = filtered.filter((i) => !i.primaryListingCountry || !excludedCountries.has(i.primaryListingCountry))
+    }
     if (tableState.sectorFilter) {
       filtered = filtered.filter((i) => i.sector === tableState.sectorFilter)
     }
@@ -703,6 +708,7 @@ export function useDisplayedInstruments() {
     tableState.regionFilter,
     tableState.excludedRegionFilters,
     tableState.primaryListingCountryFilter,
+    tableState.excludedPrimaryListingCountryFilters,
     tableState.sectorFilter,
     tableState.tfaMode,
     tableState.pullbackMode,

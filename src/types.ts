@@ -73,6 +73,8 @@ export interface Instrument {
   mom260Rank?: number
   momjt?: number | null
   momjtRank?: number
+  /** Latest close as a share of the highest close in the trailing 252 trading days (1 = 52W high). */
+  relative52wHigh?: number | null
   botsiScore?: number | null
   botsiRank?: number
   botsiQualified?: boolean | null
@@ -370,7 +372,7 @@ export type SortColumn =
   | 'pe' | 'pb' | 'earningsYield' | 'returnOnAssets'
   | 'combinedScore'
   | 'accelerationScore'
-  | 'gd200' | 'gd130' | 'mom260' | 'momjt'
+  | 'gd200' | 'gd130' | 'mom260' | 'momjt' | 'relative52wHigh'
   | 'botsiScore' | 'botsiRank' | 'botsiTargetWeight'
   | 'breakoutScore'
   | 'sellingThreshold'
@@ -431,6 +433,8 @@ export interface TableState {
   excludedRegionFilters: string[]
   /** Uses the explicit primary-listing-country field only. */
   primaryListingCountryFilter: string
+  /** Primary-listing countries to omit, independent of the inclusion filter. */
+  excludedPrimaryListingCountryFilters: string[]
   /** Canonical GICS sector filter. */
   sectorFilter: string
 }
