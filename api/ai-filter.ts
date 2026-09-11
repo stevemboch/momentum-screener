@@ -24,6 +24,7 @@ const MAX_IN_VALUES = 30
 const ALLOWED_FIELDS = new Set([
   'type', 'isin', 'displayName', 'name', 'xetraName', 'longName', 'yahooLongName',
   'currency', 'xetraGroup', 'group', 'inPortfolio',
+  'indexRegion', 'region', 'primaryListingCountry', 'listingCountry',
   'sector', 'sektor', 'industry',
   'aum', 'ter',
   'upside', 'downside', 'upsidePct', 'downsidePct',
@@ -59,7 +60,7 @@ Wandle einen Nutzerwunsch in ein strikt valides JSON-Objekt mit diesem Schema:
 WICHTIG:
 - Gib NUR JSON zurueck. Keine Erklaerung, keine Markdown-Backticks.
 - Nur Felder aus dieser Liste: ${Array.from(ALLOWED_FIELDS).join(', ')}.
-- Feld-Mapping: Group -> group (oder xetraGroup), Sector/Sektor -> sector (oder sektor), Industry -> industry.
+- Feld-Mapping: Group -> group (oder xetraGroup), Region -> region (oder indexRegion), Land/Börsenland -> listingCountry (oder primaryListingCountry), Sector/Sektor -> sector (oder sektor), Industry -> industry.
 - Name/Titel -> name (nutze bei Namen bevorzugt "contains" fuer Teilstring-Matches).
 - Analyst target / Upside -> analystTarget (oder upside), Downside -> downside.
 - Analyst rating -> analystRating (numerisch) oder analystRatingKey (z.B. buy/hold/sell).

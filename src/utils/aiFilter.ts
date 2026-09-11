@@ -8,6 +8,7 @@ const MAX_IN_VALUES = 30
 const ALLOWED_FIELDS = new Set<string>([
   'type', 'isin', 'displayName', 'name', 'xetraName', 'longName', 'yahooLongName',
   'currency', 'xetraGroup', 'group', 'inPortfolio',
+  'indexRegion', 'region', 'primaryListingCountry', 'listingCountry',
   'sector', 'sektor', 'industry',
   'aum', 'ter',
   'upside', 'downside', 'upsidePct', 'downsidePct',
@@ -104,6 +105,8 @@ function getUpsideRatio(inst: Instrument): number | null {
 
 function getRuleFieldValue(inst: Instrument, field: string): unknown {
   if (field === 'group') return inst.xetraGroup
+  if (field === 'region') return inst.indexRegion
+  if (field === 'listingCountry') return inst.primaryListingCountry
   if (field === 'sektor') return inst.sector
   if (field === 'upside' || field === 'upsidePct' || field === 'analystTarget') return getUpsideRatio(inst)
   if (field === 'downside' || field === 'downsidePct') {
