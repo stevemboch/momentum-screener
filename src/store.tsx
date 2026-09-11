@@ -5,7 +5,7 @@ import type {
 import { ETF_GROUPS, STOCK_GROUPS, FRANKFURT_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS, DEFAULT_FRANKFURT_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
 import { applyAiFilterPlan } from './utils/aiFilter'
-import type { UniverseCode, UniverseSnapshot } from './universe'
+import { constituentToInstrument, readCachedSnapshot, type UniverseCode, type UniverseSnapshot } from './universe'
 
 interface AppState {
   instruments: Instrument[]
@@ -174,6 +174,10 @@ const persistedGroups = loadGroupPrefs()
 const persistedPortfolio = loadPortfolio()
 const persistedSettings = loadSettings()
 const persistedHiddenColumns = loadHiddenColumnGroups()
+// A cached universe already contains the classification fields used by the
+// filters. Restore it eagerly so the filter bar is useful before a fresh
+// quote/enrichment run has completed.
+const cachedUniverseSnapshot = readCachedSnapshot()
 
 const DEFAULT_SETTINGS: AppSettings = {
   weights: DEFAULT_WEIGHTS,
@@ -186,7 +190,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 }
 
 const DEFAULT_STATE: AppState = {
-  instruments: [],
+  instruments: cachedUniverseSnapshot ? cachedUniverseSnapshot.constituents.map(constituentToInstrument) : [],
   xetraReady: false,
   xetraLoading: false,
   settings: { ...DEFAULT_SETTINGS, ...persistedSettings },
@@ -231,8 +235,8 @@ const DEFAULT_STATE: AppState = {
   frankfurtLoading: false,
   frankfurtActive: false,
   portfolioIsins: persistedPortfolio,
-  activeUniverse: null,
-  universeSnapshot: null,
+  activeUniverse: cachedUniverseSnapshot ? 'index_global' : null,
+  universeSnapshot: cachedUniverseSnapshot,
   marketRegime: null,
 }
 
@@ -691,6 +695,9 @@ export function useDisplayedInstruments() {
   }, [
     instruments,
     tableState.typeFilter,
+    tableState.regionFilter,
+    tableState.primaryListingCountryFilter,
+    tableState.sectorFilter,
     tableState.tfaMode,
     tableState.pullbackMode,
     tableState.botsiMode,

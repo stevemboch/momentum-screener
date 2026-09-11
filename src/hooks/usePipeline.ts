@@ -1349,6 +1349,13 @@ export function usePipeline() {
     }
 
     const raw = snapshot.constituents.map(constituentToInstrument)
+    // Publish the constituent list before the slow enrichment and price calls.
+    // Region, listing country and GICS sector originate in the universe
+    // snapshot, so they must not be held back until those unrelated calls end.
+    // This also makes an existing selection effective while loading continues.
+    const manual = state.instruments.filter((instrument) => instrument.source === 'manual')
+    dispatch({ type: 'SET_INSTRUMENTS', instruments: [...manual, ...raw] })
+    dispatch({ type: 'SET_ACTIVE_UNIVERSE', universe: 'index_global', snapshot })
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: `Resolving ${raw.length} index constituents...`, current: 0, total: raw.length } })
     try {
       const enriched = await enrichWithOpenFIGI(raw)
@@ -1356,7 +1363,6 @@ export function usePipeline() {
       const withPrices = await fetchPrices(enriched)
       const refs = await ensureReferenceReturns()
       // A universe switch replaces only prior universe members; manual entries persist.
-      const manual = state.instruments.filter((instrument) => instrument.source === 'manual')
       dispatch({
         type: 'SET_INSTRUMENTS',
         instruments: recalculateAll(

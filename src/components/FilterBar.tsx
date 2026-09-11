@@ -75,12 +75,15 @@ export function FilterBar() {
   const classificationOptions = useMemo(() => {
     const unique = (values: Array<string | null | undefined>) =>
       [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b))
+    // The snapshot is available before price/enrichment data. Include it so
+    // the classifications never disappear while that background work runs.
+    const constituents = state.universeSnapshot?.constituents ?? []
     return {
-      regions: unique(state.instruments.map((i) => i.indexRegion)),
-      countries: unique(state.instruments.map((i) => i.primaryListingCountry)),
-      sectors: unique(state.instruments.map((i) => i.sector)),
+      regions: unique([...state.instruments.map((i) => i.indexRegion), ...constituents.map((i) => i.region)]),
+      countries: unique([...state.instruments.map((i) => i.primaryListingCountry), ...constituents.map((i) => i.primaryListingCountry)]),
+      sectors: unique([...state.instruments.map((i) => i.sector), ...constituents.map((i) => i.sector)]),
     }
-  }, [state.instruments])
+  }, [state.instruments, state.universeSnapshot])
 
   type PrimaryFilter = TypeFilter | 'tfa' | 'pullback' | 'botsi'
   const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : botsiMode ? 'botsi' : typeFilter
