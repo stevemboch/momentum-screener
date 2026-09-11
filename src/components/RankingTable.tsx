@@ -58,7 +58,9 @@ const VIEW_PRESET_CONFIG: Record<ViewPreset, { label: string; sortColumn: SortCo
     label: 'BOTSI',
     sortColumn: 'botsiRank',
     sortDirection: 'asc',
-    hiddenGroups: ['scores', 'returns', 'technical', 'fundamentals', 'breakout', 'tfa', 'pullback'],
+    // BOTSI uses the full Detail view; its indicator columns supplement the
+    // normal scores, returns, technical and fundamental context.
+    hiddenGroups: [],
   },
 }
 
@@ -2330,24 +2332,11 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         hiddenColumnGroups: cfg.hiddenGroups,
         sortColumn: cfg.sortColumn,
         sortDirection: cfg.sortDirection,
-        // BOTSI is a focused result view, just like Scan or Detail. Selecting
-        // it here also enables its top-10/portfolio universe; selecting any
-        // other view returns to the regular stock universe.
-        botsiMode: preset === 'botsi',
-        ...(preset === 'botsi'
-          ? { typeFilter: 'stock', tfaMode: false, pullbackMode: false }
-          : isBotsiMode
-            ? { typeFilter: 'stock' }
-            : {}),
       },
     })
   }
 
-  const forcedVisible = new Set<string>(
-    isBotsiMode
-      ? ['displayName', 'tfaPhase']
-      : CORE_STICKY_COLUMNS
-  )
+  const forcedVisible = new Set<string>(CORE_STICKY_COLUMNS)
   const hiddenKeys = new Set(
     state.tableState.hiddenColumnGroups.flatMap((g) => COLUMN_GROUPS[g])
       .filter((key) => !forcedVisible.has(key))
