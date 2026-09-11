@@ -217,12 +217,16 @@ export function calculateDrawFromHigh(closes: number[]): number | null {
   return (last - high52w) / high52w
 }
 
-/** Latest close relative to the highest close in the trailing 52 trading weeks. */
-export function calculateRelative52wHigh(closes: number[]): number | null {
+/**
+ * Close relative to the highest close in the preceding 252 trading days.
+ * `offsetDays` calculates the same measure from a past trading day.
+ */
+export function calculateRelative52wHigh(closes: number[], offsetDays = 0): number | null {
   const n = closes.length
-  if (n < 2) return null
-  const high52w = Math.max(...closes.slice(Math.max(0, n - 252)))
-  const last = closes[n - 1]
+  const endIndex = n - 1 - offsetDays
+  if (endIndex < 1) return null
+  const high52w = Math.max(...closes.slice(Math.max(0, endIndex - 251), endIndex + 1))
+  const last = closes[endIndex]
   if (high52w <= 0 || last <= 0) return null
   return last / high52w
 }
@@ -1303,6 +1307,7 @@ export function recalculateAll(
       updated.rsi14 = calculateRSI(inst.closes)
       updated.drawFromHigh = calculateDrawFromHigh(inst.closes)
       updated.relative52wHigh = calculateRelative52wHigh(inst.closes)
+      updated.relative52wHigh17dAgo = calculateRelative52wHigh(inst.closes, 17)
       updated.levyRS = calculateLevyRS(inst.closes)
       updated.higherLow = calculateHigherLow(inst.closes)
 
