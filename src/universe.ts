@@ -5,8 +5,8 @@ export type UniverseStatus = 'fresh' | 'stale'
 
 export interface UniverseConstituent {
   isin: string
-  /** ISIN when supplied; otherwise an exchange-bound OpenFIGI identity. */
-  identifierType?: 'ISIN' | 'FIGI'
+  /** ISIN when supplied; otherwise a deterministic source-listing identity. */
+  identifierType?: 'ISIN' | 'LISTING'
   ticker: string | null
   yahooTicker?: string | null
   name: string
@@ -42,7 +42,7 @@ export interface UniverseSnapshot {
   constituents: UniverseConstituent[]
 }
 
-export const UNIVERSE_SNAPSHOT_KEY = 'universe:snapshot:index_global:v1'
+export const UNIVERSE_SNAPSHOT_KEY = 'universe:snapshot:index_global:v2'
 
 export function constituentToInstrument(constituent: UniverseConstituent): Instrument {
   return {

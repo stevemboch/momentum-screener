@@ -1,5 +1,4 @@
 import Papa from 'papaparse'
-import { fetchOpenFigiBatch, type FigiJob } from '../api/openfigi'
 
 type UniverseSourceCode = 'STOXX_EUROPE_600' | 'SP_500' | 'MSCI_JAPAN' | 'MSCI_EM'
 
@@ -15,7 +14,7 @@ interface SourceDefinition {
 
 interface Constituent {
   isin: string
-  identifierType: 'ISIN' | 'FIGI'
+  identifierType: 'ISIN' | 'LISTING'
   ticker: string | null
   yahooTicker: string | null
   name: string
@@ -57,49 +56,28 @@ function isEquity(assetClass: string): boolean {
   return !normalized || normalized.includes('equity') || normalized.includes('aktien')
 }
 
-const EXCHANGE_MAP: Record<string, { figi: string; country: string; yahooSuffix?: string; padTicker?: number }> = {
-  'new york stock exchange': { figi: 'UN', country: 'United States' }, nyse: { figi: 'UN', country: 'United States' }, nasdaq: { figi: 'UQ', country: 'United States' },
-  'tokyo stock exchange': { figi: 'JT', country: 'Japan', yahooSuffix: '.T' }, 'london stock exchange': { figi: 'LN', country: 'United Kingdom', yahooSuffix: '.L' },
-  'euronext amsterdam': { figi: 'NA', country: 'Netherlands', yahooSuffix: '.AS' }, 'euronext paris': { figi: 'FP', country: 'France', yahooSuffix: '.PA' },
-  'six swiss exchange': { figi: 'SW', country: 'Switzerland', yahooSuffix: '.SW' }, 'deutsche boerse ag': { figi: 'GR', country: 'Germany', yahooSuffix: '.DE' },
-  'hong kong exchanges and clearing': { figi: 'HK', country: 'Hong Kong', yahooSuffix: '.HK', padTicker: 4 }, 'hong kong stock exchange': { figi: 'HK', country: 'Hong Kong', yahooSuffix: '.HK', padTicker: 4 },
-  'korea exchange': { figi: 'KS', country: 'South Korea', yahooSuffix: '.KS', padTicker: 6 }, 'taiwan stock exchange': { figi: 'TT', country: 'Taiwan', yahooSuffix: '.TW', padTicker: 4 },
-  'shanghai stock exchange': { figi: 'CH', country: 'China', yahooSuffix: '.SS', padTicker: 6 }, 'shenzhen stock exchange': { figi: 'CS', country: 'China', yahooSuffix: '.SZ', padTicker: 6 },
-  'national stock exchange of india': { figi: 'IN', country: 'India', yahooSuffix: '.NS' },
-  'bse ltd': { figi: 'IB', country: 'India', yahooSuffix: '.BO' },
-  'borsa italiana': { figi: 'IM', country: 'Italy', yahooSuffix: '.MI' },
-  'bolsa de madrid': { figi: 'SM', country: 'Spain', yahooSuffix: '.MC' },
-  'warsaw stock exchange/equities/main market': { figi: 'PW', country: 'Poland', yahooSuffix: '.WA' },
-  'oslo bors asa': { figi: 'NO', country: 'Norway', yahooSuffix: '.OL' },
-  'johannesburg stock exchange': { figi: 'SJ', country: 'South Africa', yahooSuffix: '.JO' },
-  'saudi stock exchange': { figi: 'AB', country: 'Saudi Arabia', yahooSuffix: '.SR' },
-  'stock exchange of thailand': { figi: 'TB', country: 'Thailand', yahooSuffix: '.BK' },
-  'bursa malaysia': { figi: 'MK', country: 'Malaysia', yahooSuffix: '.KL' },
-  'istanbul stock exchange': { figi: 'TI', country: 'Turkey', yahooSuffix: '.IS' },
-  'bolsa mexicana de valores': { figi: 'MM', country: 'Mexico', yahooSuffix: '.MX' },
-  'nyse euronext - euronext brussels': { figi: 'BB', country: 'Belgium', yahooSuffix: '.BR' },
-  'nyse euronext - euronext lisbon': { figi: 'PL', country: 'Portugal', yahooSuffix: '.LS' },
-  'wiener boerse ag': { figi: 'AV', country: 'Austria', yahooSuffix: '.VI' },
-  'athens exchange s.a. cash market': { figi: 'GA', country: 'Greece', yahooSuffix: '.AT' },
-  'prague stock exchange': { figi: 'CP', country: 'Czech Republic', yahooSuffix: '.PR' },
-  'budapest stock exchange': { figi: 'HB', country: 'Hungary', yahooSuffix: '.BD' },
-  'indonesia stock exchange': { figi: 'IJ', country: 'Indonesia', yahooSuffix: '.JK' },
-  'philippine stock exchange inc.': { figi: 'PM', country: 'Philippines', yahooSuffix: '.PS' },
-  'qatar exchange': { figi: 'QD', country: 'Qatar', yahooSuffix: '.QA' },
-  'dubai financial market': { figi: 'DU', country: 'United Arab Emirates', yahooSuffix: '.DU' },
-  'abu dhabi securities exchange': { figi: 'AD', country: 'United Arab Emirates', yahooSuffix: '.AD' },
-  'nasdaq omx nordic': { figi: 'SS', country: 'Sweden', yahooSuffix: '.ST' },
-  'nasdaq omx helsinki ltd.': { figi: 'FH', country: 'Finland', yahooSuffix: '.HE' },
-  'omx nordic exchange copenhagen a/s': { figi: 'DC', country: 'Denmark', yahooSuffix: '.CO' },
-  'cboe bzx': { figi: 'US', country: 'United States' },
-  'xbsp': { figi: 'BZ', country: 'Brazil', yahooSuffix: '.SA' },
-  'bolsa de valores de colombia': { figi: 'CB', country: 'Colombia', yahooSuffix: '.CL' },
-  'santiago stock exchange': { figi: 'CI', country: 'Chile', yahooSuffix: '.SN' },
-  'egyptian exchange': { figi: 'EA', country: 'Egypt', yahooSuffix: '.CA' },
-  'kuwait stock exchange': { figi: 'KK', country: 'Kuwait', yahooSuffix: '.KW' },
+const EXCHANGE_MAP: Record<string, { country: string; yahooSuffix?: string; padTicker?: number }> = {
+  'new york stock exchange': { country: 'United States' }, nyse: { country: 'United States' }, nasdaq: { country: 'United States' },
+  'tokyo stock exchange': { country: 'Japan', yahooSuffix: '.T' }, 'london stock exchange': { country: 'United Kingdom', yahooSuffix: '.L' },
+  'euronext amsterdam': { country: 'Netherlands', yahooSuffix: '.AS' }, 'euronext paris': { country: 'France', yahooSuffix: '.PA' },
+  'six swiss exchange': { country: 'Switzerland', yahooSuffix: '.SW' }, 'deutsche boerse ag': { country: 'Germany', yahooSuffix: '.DE' },
+  'hong kong exchanges and clearing': { country: 'Hong Kong', yahooSuffix: '.HK', padTicker: 4 }, 'hong kong stock exchange': { country: 'Hong Kong', yahooSuffix: '.HK', padTicker: 4 },
+  'korea exchange': { country: 'South Korea', yahooSuffix: '.KS', padTicker: 6 }, 'taiwan stock exchange': { country: 'Taiwan', yahooSuffix: '.TW', padTicker: 4 },
+  'shanghai stock exchange': { country: 'China', yahooSuffix: '.SS', padTicker: 6 }, 'shenzhen stock exchange': { country: 'China', yahooSuffix: '.SZ', padTicker: 6 },
+  'national stock exchange of india': { country: 'India', yahooSuffix: '.NS' }, 'bse ltd': { country: 'India', yahooSuffix: '.BO' }, 'borsa italiana': { country: 'Italy', yahooSuffix: '.MI' },
+  'bolsa de madrid': { country: 'Spain', yahooSuffix: '.MC' }, 'warsaw stock exchange/equities/main market': { country: 'Poland', yahooSuffix: '.WA' }, 'oslo bors asa': { country: 'Norway', yahooSuffix: '.OL' },
+  'johannesburg stock exchange': { country: 'South Africa', yahooSuffix: '.JO' }, 'saudi stock exchange': { country: 'Saudi Arabia', yahooSuffix: '.SR' }, 'stock exchange of thailand': { country: 'Thailand', yahooSuffix: '.BK' },
+  'bursa malaysia': { country: 'Malaysia', yahooSuffix: '.KL' }, 'istanbul stock exchange': { country: 'Turkey', yahooSuffix: '.IS' }, 'bolsa mexicana de valores': { country: 'Mexico', yahooSuffix: '.MX' },
+  'nyse euronext - euronext brussels': { country: 'Belgium', yahooSuffix: '.BR' }, 'nyse euronext - euronext lisbon': { country: 'Portugal', yahooSuffix: '.LS' },
+  'wiener boerse ag': { country: 'Austria', yahooSuffix: '.VI' }, 'athens exchange s.a. cash market': { country: 'Greece', yahooSuffix: '.AT' }, 'prague stock exchange': { country: 'Czech Republic', yahooSuffix: '.PR' },
+  'budapest stock exchange': { country: 'Hungary', yahooSuffix: '.BD' }, 'indonesia stock exchange': { country: 'Indonesia', yahooSuffix: '.JK' }, 'philippine stock exchange inc.': { country: 'Philippines', yahooSuffix: '.PS' },
+  'qatar exchange': { country: 'Qatar', yahooSuffix: '.QA' }, 'dubai financial market': { country: 'United Arab Emirates', yahooSuffix: '.DU' }, 'abu dhabi securities exchange': { country: 'United Arab Emirates', yahooSuffix: '.AD' },
+  'nasdaq omx nordic': { country: 'Sweden', yahooSuffix: '.ST' }, 'nasdaq omx helsinki ltd.': { country: 'Finland', yahooSuffix: '.HE' }, 'omx nordic exchange copenhagen a/s': { country: 'Denmark', yahooSuffix: '.CO' },
+  'cboe bzx': { country: 'United States' }, 'xbsp': { country: 'Brazil', yahooSuffix: '.SA' }, 'bolsa de valores de colombia': { country: 'Colombia', yahooSuffix: '.CL' },
+  'santiago stock exchange': { country: 'Chile', yahooSuffix: '.SN' }, 'egyptian exchange': { country: 'Egypt', yahooSuffix: '.CA' }, 'kuwait stock exchange': { country: 'Kuwait', yahooSuffix: '.KW' },
 }
 
-function exchangeMeta(exchange: string): { figi?: string; country?: string; yahooSuffix?: string; padTicker?: number } {
+function normalizedExchange(exchange: string): string {
   const raw = exchange.trim().toLowerCase()
   const aliases: Record<string, string> = {
     'new york stock exchange inc.': 'nyse', 'nasdaq': 'nasdaq', 'xetra': 'deutsche boerse ag',
@@ -108,7 +86,11 @@ function exchangeMeta(exchange: string): { figi?: string; country?: string; yaho
     'nyse euronext - euronext paris': 'euronext paris',
     'deutsche börse ag': 'deutsche boerse ag',
   }
-  return EXCHANGE_MAP[aliases[raw] ?? raw] ?? {}
+  return aliases[raw] ?? raw
+}
+
+function exchangeMeta(exchange: string): { country?: string; yahooSuffix?: string; padTicker?: number } {
+  return EXCHANGE_MAP[normalizedExchange(exchange)] ?? {}
 }
 
 function yahooTicker(ticker: string | null, exchange: string | null): string | null {
@@ -147,34 +129,7 @@ function stableHash(input: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
-interface Candidate { isin: string | null; figi: string | null; ticker: string | null; name: string; sourceSector: string | null; sourceCountry: string | null; exchange: string | null; weight: number | null }
-interface OpenFigiMatch { figi?: string; isin?: string; securityType2?: string; exchCode?: string }
-
-async function resolveMissingIdentifiers(candidates: Candidate[]): Promise<void> {
-  const unresolved = candidates.filter((candidate) =>
-    !candidate.isin && !candidate.figi && candidate.ticker && candidate.exchange && exchangeMeta(candidate.exchange).figi
-  )
-  if (!unresolved.length) return
-  const apiKey = process.env.OPENFIGI_API_KEY
-  if (!apiKey) throw new Error('OPENFIGI_API_KEY is required to resolve holdings without ISIN')
-  for (let start = 0; start < unresolved.length; start += 100) {
-    const batch = unresolved.slice(start, start + 100)
-    const jobs: FigiJob[] = batch.map((candidate) => ({ idType: 'TICKER', idValue: candidate.ticker ?? '', exchCode: exchangeMeta(candidate.exchange ?? '').figi }))
-    const payload = await fetchOpenFigiBatch(jobs, apiKey) as Array<{ data?: OpenFigiMatch[] } | null>
-    batch.forEach((candidate, index) => {
-      const expectedExchange = exchangeMeta(candidate.exchange ?? '').figi
-      const matches = (payload[index]?.data ?? [])
-        .filter((match) => !expectedExchange || match.exchCode === expectedExchange)
-        .filter((match) => !match.securityType2 || /common stock|ordinary share|equity/i.test(match.securityType2))
-      const figis = [...new Set(matches.map((match) => match.figi).filter((figi): figi is string => Boolean(figi)))]
-      const isins = [...new Set(matches.map((match) => match.isin?.toUpperCase()).filter((isin): isin is string => Boolean(isin && ISIN.test(isin))))]
-      // ISIN is often absent from OpenFIGI ticker results; a unique exact FIGI
-      // is still a stable, provider-issued listing identity.
-      if (isins.length === 1) candidate.isin = isins[0]
-      if (figis.length === 1) candidate.figi = figis[0]
-    })
-  }
-}
+interface Candidate { isin: string | null; ticker: string | null; name: string; sourceSector: string | null; sourceCountry: string | null; exchange: string | null; weight: number | null }
 
 async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   const response = await fetch(process.env[source.urlEnv] || source.defaultUrl, { headers: { Accept: 'text/csv,text/plain,*/*', 'User-Agent': 'MomentumScreener/1.0' } })
@@ -188,27 +143,31 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   for (const row of rows) {
     if (!isEquity(value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse']))) continue
     const rawIsin = value(row, ['isin']).toUpperCase()
-    candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, figi: null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
+    candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
       name: value(row, ['name', 'security name', 'holding name', 'instrument']), sourceSector: value(row, ['sector', 'gics sector', 'industry', 'sektor']) || null,
       sourceCountry: value(row, ['country', 'location', 'country of risk', 'standort']) || null, exchange: value(row, ['exchange', 'börse']) || null,
       weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
   }
-  await resolveMissingIdentifiers(candidates)
   const byIsin = new Map<string, Constituent>()
   for (const candidate of candidates) {
-    const identifier = candidate.isin || (candidate.figi ? `FIGI:${candidate.figi}` : null)
-    if (!identifier) continue
+    // The holdings file is the membership authority. If no ISIN is disclosed,
+    // retain the source listing identity; no third-party mapper can remove it.
+    // Exchange + local ticker is sufficient across sources and preserves shared
+    // benchmark memberships. Only a ticker-less exceptional row includes its
+    // source, to avoid accidentally merging namesakes from different markets.
+    const listingKey = candidate.ticker
+      ? [normalizedExchange(candidate.exchange ?? ''), candidate.ticker].map((part) => part.trim().toUpperCase()).join(':')
+      : [source.code, normalizedExchange(candidate.exchange ?? ''), candidate.name].map((part) => part.trim().toUpperCase()).join(':')
+    const identifier = candidate.isin || `LISTING:${stableHash(listingKey)}`
     const exchange = exchangeMeta(candidate.exchange ?? '')
-    byIsin.set(identifier, { isin: identifier, identifierType: candidate.isin ? 'ISIN' : 'FIGI', ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || identifier,
+    byIsin.set(identifier, { isin: identifier, identifierType: candidate.isin ? 'ISIN' : 'LISTING', ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || identifier,
       sector: candidate.sourceSector ? canonicalGicsSector(candidate.sourceSector) : null, sourceSector: candidate.sourceSector,
       primaryListingCountry: exchange.country ?? null, sourceCountry: candidate.sourceCountry, weight: candidate.weight,
       benchmark: source.benchmark, region: source.region, source: source.code, memberships: [source.benchmark] })
   }
   const constituents = [...byIsin.values()]
-  const matchRate = candidates.length === 0 ? 0 : constituents.length / candidates.length
-  if (matchRate < 0.95) throw new Error(`${source.code}: exact FIGI/ISIN resolution rate ${(matchRate * 100).toFixed(1)}% below 95% minimum`)
-  if (constituents.length < source.minRows || constituents.length > source.maxRows) throw new Error(`${source.code}: ${constituents.length} valid equity ISINs outside expected range ${source.minRows}-${source.maxRows}`)
-  return { constituents, retrievedAt: new Date().toISOString(), inputRows: candidates.length, resolvedRows: constituents.length, unresolvedRows: candidates.filter((candidate) => !candidate.isin).length }
+  if (constituents.length < source.minRows || constituents.length > source.maxRows) throw new Error(`${source.code}: ${constituents.length} valid equity holdings outside expected range ${source.minRows}-${source.maxRows}`)
+  return { constituents, retrievedAt: new Date().toISOString(), inputRows: candidates.length, resolvedRows: constituents.length, unresolvedRows: 0 }
 }
 
 /** Import all index proxy holdings, failing closed when a source is incomplete. */
