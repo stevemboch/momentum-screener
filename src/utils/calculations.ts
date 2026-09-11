@@ -217,6 +217,16 @@ export function calculateDrawFromHigh(closes: number[]): number | null {
   return (last - high52w) / high52w
 }
 
+/** Latest close relative to the highest close in the trailing 52 trading weeks. */
+export function calculateRelative52wHigh(closes: number[]): number | null {
+  const n = closes.length
+  if (n < 2) return null
+  const high52w = Math.max(...closes.slice(Math.max(0, n - 252)))
+  const last = closes[n - 1]
+  if (high52w <= 0 || last <= 0) return null
+  return last / high52w
+}
+
 // ─── Drawdown vom N-Jahres-Hoch (Wochendaten) ────────────────────────────────
 // Gibt negativen Wert zurück: z.B. -0.65 = 65% unter N-Jahres-Hoch
 export function calculateDrawFromNYHigh(closesWeekly: number[], weeks: number): number | null {
@@ -1292,6 +1302,7 @@ export function recalculateAll(
       // TFA technical inputs
       updated.rsi14 = calculateRSI(inst.closes)
       updated.drawFromHigh = calculateDrawFromHigh(inst.closes)
+      updated.relative52wHigh = calculateRelative52wHigh(inst.closes)
       updated.levyRS = calculateLevyRS(inst.closes)
       updated.higherLow = calculateHigherLow(inst.closes)
 
