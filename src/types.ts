@@ -427,6 +427,8 @@ export interface TableState {
   hiddenColumnGroups: ColumnGroup[]
   /** Index-region filter, independent from listing country. */
   regionFilter: string
+  /** Index regions to omit. Works on its own or alongside `regionFilter`. */
+  excludedRegionFilters: string[]
   /** Uses the explicit primary-listing-country field only. */
   primaryListingCountryFilter: string
   /** Canonical GICS sector filter. */

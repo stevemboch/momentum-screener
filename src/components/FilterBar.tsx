@@ -31,7 +31,7 @@ export function FilterBar() {
     aiFilterActive,
   } = state.tableState
   const { fetchStatus } = state
-  const { regionFilter, primaryListingCountryFilter, sectorFilter } = state.tableState
+  const { regionFilter, excludedRegionFilters, primaryListingCountryFilter, sectorFilter } = state.tableState
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const colMenuRef = useRef<HTMLDivElement | null>(null)
   const [aiInput, setAiInput] = useState('')
@@ -88,6 +88,21 @@ export function FilterBar() {
   type PrimaryFilter = TypeFilter | 'tfa' | 'pullback' | 'botsi'
   const primaryFilter: PrimaryFilter = tfaMode ? 'tfa' : pullbackMode ? 'pullback' : botsiMode ? 'botsi' : typeFilter
   const isActive = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(fetchStatus.phase)
+
+  const addExcludedRegion = (region: string) => {
+    if (!region || excludedRegionFilters.includes(region)) return
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: { excludedRegionFilters: [...excludedRegionFilters, region] },
+    })
+  }
+
+  const removeExcludedRegion = (region: string) => {
+    dispatch({
+      type: 'SET_TABLE_STATE',
+      updates: { excludedRegionFilters: excludedRegionFilters.filter((value) => value !== region) },
+    })
+  }
 
   const setPrimaryFilter = (f: PrimaryFilter) => {
     if (f === 'tfa') {
@@ -219,8 +234,8 @@ export function FilterBar() {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="flex items-center gap-0.5 rounded border border-border bg-surface2 p-0.5">
+    <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex items-center gap-0.5 rounded-md border border-border bg-surface2 p-0.5" aria-label="Instrument type">
         {(['all', 'etf', 'stock', 'tfa', 'pullback', 'botsi'] as PrimaryFilter[]).map((f) => (
           <button
             key={f}
@@ -254,20 +269,47 @@ export function FilterBar() {
         ))}
       </div>
 
-      <select
-        value={regionFilter}
-        onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { regionFilter: event.target.value } })}
-        className="focus-ring rounded border border-border bg-bg px-2 py-1 font-mono text-ui-sm text-gray-300"
-        aria-label="Filter by index region"
-      >
-        <option value="">All regions</option>
-        {classificationOptions.regions.map((value) => <option key={value} value={value}>{value}</option>)}
-      </select>
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/80 bg-surface/50 p-1">
+        <select
+          value={regionFilter}
+          onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { regionFilter: event.target.value } })}
+          className="filter-select"
+          aria-label="Include only index region"
+        >
+          <option value="">All regions</option>
+          {classificationOptions.regions.map((value) => <option key={value} value={value}>{value}</option>)}
+        </select>
+
+        <select
+          value=""
+          onChange={(event) => addExcludedRegion(event.target.value)}
+          className="filter-select text-muted"
+          aria-label="Exclude an index region"
+        >
+          <option value="">Exclude region…</option>
+          {classificationOptions.regions
+            .filter((value) => !excludedRegionFilters.includes(value))
+            .map((value) => <option key={value} value={value}>Exclude {value}</option>)}
+        </select>
+
+        {excludedRegionFilters.map((region) => (
+          <button
+            key={region}
+            type="button"
+            onClick={() => removeExcludedRegion(region)}
+            className="focus-ring inline-flex items-center gap-1 rounded border border-red-400/30 bg-red-400/5 px-1.5 py-1 font-mono text-ui-xs text-red-300 transition-colors hover:bg-red-400/15"
+            title={`${region} aus dem Ergebnis entfernen`}
+            aria-label={`Remove excluded region ${region}`}
+          >
+            − {region} <span aria-hidden="true">×</span>
+          </button>
+        ))}
+      </div>
 
       <select
         value={primaryListingCountryFilter}
         onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { primaryListingCountryFilter: event.target.value } })}
-        className="focus-ring rounded border border-border bg-bg px-2 py-1 font-mono text-ui-sm text-gray-300"
+        className="filter-select"
         aria-label="Filter by primary listing country"
       >
         <option value="">All listing countries</option>
@@ -277,7 +319,7 @@ export function FilterBar() {
       <select
         value={sectorFilter}
         onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { sectorFilter: event.target.value } })}
-        className="focus-ring rounded border border-border bg-bg px-2 py-1 font-mono text-ui-sm text-gray-300"
+        className="filter-select"
         aria-label="Filter by GICS sector"
       >
         <option value="">All GICS sectors</option>

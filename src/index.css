@@ -70,6 +70,10 @@
     transition-timing-function: var(--ui-motion-ease);
   }
 
+  .filter-select {
+    @apply focus-ring rounded-md border border-border bg-bg px-2 py-1 font-mono text-ui-sm text-gray-300 transition-colors hover:border-accent/35;
+  }
+
   .panel-shell {
     @apply rounded-md border border-border bg-bg/40;
   }

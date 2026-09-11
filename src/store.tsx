@@ -209,6 +209,7 @@ const DEFAULT_STATE: AppState = {
     aiFilterActive: false,
     hiddenColumnGroups: persistedHiddenColumns.length > 0 ? persistedHiddenColumns : ['botsi'],
     regionFilter: '',
+    excludedRegionFilters: [],
     primaryListingCountryFilter: '',
     sectorFilter: '',
   },
@@ -580,6 +581,10 @@ export function useDisplayedInstruments() {
     if (tableState.regionFilter) {
       filtered = filtered.filter((i) => i.indexRegion === tableState.regionFilter)
     }
+    if (tableState.excludedRegionFilters.length > 0) {
+      const excludedRegions = new Set(tableState.excludedRegionFilters)
+      filtered = filtered.filter((i) => !i.indexRegion || !excludedRegions.has(i.indexRegion))
+    }
     if (tableState.primaryListingCountryFilter) {
       filtered = filtered.filter((i) => i.primaryListingCountry === tableState.primaryListingCountryFilter)
     }
@@ -696,6 +701,7 @@ export function useDisplayedInstruments() {
     instruments,
     tableState.typeFilter,
     tableState.regionFilter,
+    tableState.excludedRegionFilters,
     tableState.primaryListingCountryFilter,
     tableState.sectorFilter,
     tableState.tfaMode,
