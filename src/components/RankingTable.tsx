@@ -74,6 +74,7 @@ const COLUMNS: Col[] = [
   { key: 'gd130',         label: 'GD130',    title: 'GD130 distance = (price - MA130) / MA130, ignored in overall BOTSI score' },
   { key: 'mom260',        label: 'MOM260',   title: '260 trading day momentum' },
   { key: 'momjt',         label: 'MOMJT',    title: 'MOM260 mit Endpunkt 1 Monat frueher: (close[t-1M] - close[t-260T]) / close[t-260T]' },
+  { key: 'kaufmanEfficiencyRatio', label: 'Kaufman ER', title: 'Kaufman Efficiency Ratio (200 Handelstage): 1 = effizienter Trend, 0 = seitwaerts bzw. volatil; kein Bestandteil des BOTSI-Scores' },
   { key: 'relative52wHigh', label: '52W ATH', title: 'Latest close as a percentage of the highest close in the trailing 252 trading days (100% = 52-week high)' },
   { key: 'relative52wHigh17dAgo', label: '52W ATH −17D', title: '52-week-high proximity as of 17 trading days ago; helps separate sustained leaders from short-term reversals' },
   { key: 'botsiScore',    label: 'BOTSI',    title: 'BOTSI: #Rank (1=best) und Summe der GD200/MOM260/MOMJT-Indikator-Ranks unter Aktien. Niedrigere Summe = besser.' },
@@ -114,7 +115,7 @@ const COLUMNS: Col[] = [
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore', 'accelerationScore'],
-  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'relative52wHigh', 'relative52wHigh17dAgo', 'botsiScore', 'botsiRank'],
+  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'kaufmanEfficiencyRatio', 'relative52wHigh', 'relative52wHigh17dAgo', 'botsiScore', 'botsiRank'],
   returns:      ['r1w', 'r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
@@ -899,6 +900,7 @@ function CandidateRow({
       {!hiddenKeys.has('gd130') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('mom260') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('momjt') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('kaufmanEfficiencyRatio') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('relative52wHigh') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('relative52wHigh17dAgo') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('botsiScore') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
@@ -2441,6 +2443,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
               { key: 'botsiRank', label: 'Rank' },
               { key: 'gd200', label: 'GD200' },
               { key: 'mom260', label: 'MOM260' },
+              { key: 'kaufmanEfficiencyRatio', label: 'Kaufman ER' },
             ] as const).map((opt) => {
               const active = sortColumn === opt.key
               return (
@@ -2645,6 +2648,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('momjt') && (
                     <td className="px-2 py-1.5 text-right">
                       <MetricCell value={inst.momjt} rank={inst.momjtRank} fmt={(v) => fmtPct(v)} />
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('kaufmanEfficiencyRatio') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <MetricCell value={inst.kaufmanEfficiencyRatio} fmt={(v) => v.toFixed(2)} />
                     </td>
                   )}
 

@@ -285,14 +285,38 @@ function calculateLookbackReturn(closes: number[], lookbackDays: number, skipDay
   return (last - base) / base
 }
 
+/**
+ * Kaufman Efficiency Ratio (ER). A value near 1 indicates a directional trend;
+ * a value near 0 indicates a choppy price path. The conventional period is 10
+ * trading days; BOTSI uses 200 trading days, requiring 201 closing prices.
+ */
+export function calculateKaufmanEfficiencyRatio(closes: number[], period = 200): number | null {
+  if (!Number.isInteger(period) || period <= 0 || closes.length < period + 1) return null
+
+  const start = closes.length - 1 - period
+  const first = closes[start]
+  const last = closes[closes.length - 1]
+  if (!Number.isFinite(first) || !Number.isFinite(last)) return null
+
+  let volatility = 0
+  for (let i = start + 1; i < closes.length; i++) {
+    const previous = closes[i - 1]
+    const current = closes[i]
+    if (!Number.isFinite(previous) || !Number.isFinite(current)) return null
+    volatility += Math.abs(current - previous)
+  }
+  return volatility === 0 ? 0 : Math.abs(last - first) / volatility
+}
+
 export function calculateBotsiIndicators(closes: number[]): {
   gd200: number | null
   gd130: number | null
   mom260: number | null
   momjt: number | null
+  kaufmanEfficiencyRatio: number | null
 } {
   if (!closes || closes.length < 2) {
-    return { gd200: null, gd130: null, mom260: null, momjt: null }
+    return { gd200: null, gd130: null, mom260: null, momjt: null, kaufmanEfficiencyRatio: null }
   }
   const price = closes[closes.length - 1]
   const gd200 = calculateMA(closes, 200)
@@ -308,6 +332,7 @@ export function calculateBotsiIndicators(closes: number[]): {
     // -> Lookback = 260 Tage vom 'heute', aber Endpunkt einen Monat frueher.
     //    (closes[n-23] - closes[n-261]) / closes[n-261]
     momjt: calculateLookbackReturn(closes, 238, 22),
+    kaufmanEfficiencyRatio: calculateKaufmanEfficiencyRatio(closes),
   }
 }
 
@@ -1296,11 +1321,13 @@ export function recalculateAll(
         updated.gd130 = botsi.gd130
         updated.mom260 = botsi.mom260
         updated.momjt = botsi.momjt
+        updated.kaufmanEfficiencyRatio = botsi.kaufmanEfficiencyRatio
       } else {
         updated.gd200 = null
         updated.gd130 = null
         updated.mom260 = null
         updated.momjt = null
+        updated.kaufmanEfficiencyRatio = null
       }
 
       // TFA technical inputs

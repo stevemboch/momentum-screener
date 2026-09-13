@@ -73,6 +73,8 @@ export interface Instrument {
   mom260Rank?: number
   momjt?: number | null
   momjtRank?: number
+  /** Kaufman Efficiency Ratio over the latest 200 trading days (0 = noisy, 1 = efficient trend). */
+  kaufmanEfficiencyRatio?: number | null
   /** Latest close as a share of the highest close in the trailing 252 trading days (1 = 52W high). */
   relative52wHigh?: number | null
   /** 52W-high proximity calculated as of 17 trading days ago, to reduce one-month reversal bias. */
@@ -374,7 +376,7 @@ export type SortColumn =
   | 'pe' | 'pb' | 'earningsYield' | 'returnOnAssets'
   | 'combinedScore'
   | 'accelerationScore'
-  | 'gd200' | 'gd130' | 'mom260' | 'momjt' | 'relative52wHigh' | 'relative52wHigh17dAgo'
+  | 'gd200' | 'gd130' | 'mom260' | 'momjt' | 'kaufmanEfficiencyRatio' | 'relative52wHigh' | 'relative52wHigh17dAgo'
   | 'botsiScore' | 'botsiRank' | 'botsiTargetWeight'
   | 'breakoutScore'
   | 'sellingThreshold'
