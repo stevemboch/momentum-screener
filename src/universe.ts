@@ -31,7 +31,7 @@ export interface UniverseSnapshot {
     code: string
     benchmark: string
     region: string
-    sourceType?: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE' | 'OFFICIAL_INDEX'
+    sourceType?: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE' | 'OFFICIAL_LISTING_SCREEN' | 'OFFICIAL_INDEX'
     inputRows?: number
     resolvedRows?: number
     unresolvedRows?: number

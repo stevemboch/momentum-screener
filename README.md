@@ -62,7 +62,7 @@ OPENFIGI_API_KEY=your_key_here
 
 ### Universe profiles
 
-- **Index Global (default):** a union of STOXX Europe 600, S&P 500, S&P MidCap 400, S&P SmallCap 600, MSCI Japan, MSCI Pacific ex Japan and MSCI Emerging Markets. Constituents are keyed by source ISIN when available, otherwise by a deterministic source-listing identity; a title in more than one benchmark is emitted once with every membership retained.
+- **Index Global (default):** a union of STOXX Europe 600, S&P 500, S&P MidCap 400, S&P SmallCap 600, Nasdaq Composite, MSCI Japan, MSCI Pacific ex Japan and MSCI Emerging Markets. Constituents are keyed by source ISIN when available, otherwise by a deterministic source-listing identity; a title in more than one benchmark is emitted once with every membership retained.
 - **Legacy Xetra:** preserves the existing T7/Xetra path as a separate listing-based universe. It is never an automatic fallback for an index screen.
 
 Index Global imports use publicly accessible CSV holdings disclosures that are configured at deployment. This makes their use explicit: an ETF holdings file is an `ETF_HOLDINGS_PROXY`, not an assertion that it is an official index constituent file. The MidCap source is separately labelled `TRACKING_FUND_DISCLOSURE`, because it republishes the daily holdings disclosure of a full-replication tracking ETF. Use a physically replicating fund that names the intended benchmark, and verify its terms before automated use.
@@ -84,6 +84,7 @@ UNIVERSE_STOXX_EUROPE_600_CSV_URL=
 UNIVERSE_SP_500_CSV_URL=
 UNIVERSE_SP_MIDCAP_400_CSV_URL=
 UNIVERSE_SP_SMALLCAP_600_CSV_URL=
+UNIVERSE_NASDAQ_COMPOSITE_CSV_URL=
 UNIVERSE_MSCI_JAPAN_CSV_URL=
 UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL=
 UNIVERSE_MSCI_EM_CSV_URL=
