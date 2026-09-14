@@ -1,6 +1,59 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { gunzipSync } from 'zlib'
 import { requireAuth } from '../server/auth'
 import { getIndexGlobalSnapshot } from '../server/universe'
+
+const GETTEX_PRETRADE_PAGE = 'https://www.gettex.de/handel/delayed-data/pretrade-data/'
+
+type GettexQuote = { bid: number; ask: number; spreadPct: number; time: string; currency: string }
+
+function readRequestedGettexIsins(body: unknown): string[] {
+  const candidate = (body as { isins?: unknown })?.isins
+  if (!Array.isArray(candidate)) return []
+  return [...new Set(candidate
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim().toUpperCase())
+    .filter((value) => /^[A-Z]{2}[A-Z0-9]{10}$/.test(value)))]
+    .slice(0, 60)
+}
+
+async function findGettex1700MuncFile(): Promise<string> {
+  const response = await fetch(GETTEX_PRETRADE_PAGE, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
+  if (!response.ok) throw new Error(`Gettex index unavailable (HTTP ${response.status})`)
+  const html = await response.text()
+  const match = html.match(/href="(https:\/\/erdk\.bayerische-boerse\.de:8000\/[^\"]*pretrade\.\d{8}\.17\.00\.munc\.csv\.gz)"/i)
+  if (!match) throw new Error('No Gettex MUNC pre-trade snapshot for 17:00 found')
+  return match[1]
+}
+
+function parseGettexQuotes(csv: string, wanted: Set<string>): Record<string, GettexQuote> {
+  const quotes: Record<string, GettexQuote> = {}
+  for (const line of csv.split(/\r?\n/)) {
+    const [isin, time, currency, bidRaw, , askRaw] = line.split(',')
+    if (!isin || !wanted.has(isin)) continue
+    const bid = Number(bidRaw)
+    const ask = Number(askRaw)
+    const mid = (bid + ask) / 2
+    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid || mid <= 0) continue
+    quotes[isin] = { bid, ask, spreadPct: ((ask - bid) / mid) * 100, time, currency }
+  }
+  return quotes
+}
+
+async function handleGettexSpreads(req: VercelRequest, res: VercelResponse) {
+  const isins = readRequestedGettexIsins(req.body)
+  if (isins.length === 0) return res.status(400).json({ error: 'Provide at least one valid ISIN' })
+  try {
+    const fileUrl = await findGettex1700MuncFile()
+    const response = await fetch(fileUrl, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
+    if (!response.ok) throw new Error(`Gettex pre-trade file unavailable (HTTP ${response.status})`)
+    const csv = gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8')
+    res.setHeader('Cache-Control', 'private, max-age=900')
+    return res.status(200).json({ quotes: parseGettexQuotes(csv, new Set(isins)), source: 'gettex-pretrade', fetchedAt: Date.now() })
+  } catch (error: any) {
+    return res.status(502).json({ error: error?.message ?? 'Gettex pre-trade data unavailable' })
+  }
+}
 
 async function findXetraCSVUrl(): Promise<string | null> {
   try {
@@ -38,8 +91,15 @@ async function findXetraCSVUrl(): Promise<string | null> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
   if (!requireAuth(req, res)) return
+
+  // Kept in this multi-purpose function to stay within Vercel Hobby's
+  // serverless-function limit.
+  if (req.query.gettexSpreads === '1') {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+    return handleGettexSpreads(req, res)
+  }
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
   // Keep the public Xetra endpoint and the global index universe in one
   // serverless function so the Hobby plan's 12-function limit is respected.

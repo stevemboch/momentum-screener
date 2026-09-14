@@ -2020,7 +2020,7 @@ export function usePipeline() {
     const isins = [...new Set(targets.map((inst) => inst.isin))]
     if (isins.length === 0) return
 
-    const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/gettex-spreads', {
+    const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isins }),
