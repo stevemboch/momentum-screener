@@ -5,6 +5,10 @@ import { requireAuth } from '../server/auth'
 import { getIndexGlobalSnapshot } from '../server/universe'
 
 const GETTEX_PRETRADE_PAGE = 'https://www.gettex.de/handel/delayed-data/pretrade-data/'
+// Shares occur at the beginning of the MUND snapshot (Apple, for example, is
+// around line 145k). A hard cap prevents one unavailable ISIN from forcing a
+// full multi-hundred-megabyte download and timing out the whole batch.
+const GETTEX_MUND_MAX_LINES = 500_000
 
 type GettexQuote = { bid: number; ask: number; spreadPct: number; time: string; currency: string }
 
@@ -64,6 +68,7 @@ async function streamGettexMundQuotes(fileUrl: string, wanted: Set<string>): Pro
   source.pipe(gunzip)
   const quotes: Record<string, GettexQuote> = {}
   let remainder = ''
+  let processedLines = 0
 
   try {
     for await (const chunk of gunzip) {
@@ -71,6 +76,8 @@ async function streamGettexMundQuotes(fileUrl: string, wanted: Set<string>): Pro
       const lines = remainder.split(/\r?\n/)
       remainder = lines.pop() ?? ''
       for (const line of lines) {
+        processedLines += 1
+        if (processedLines > GETTEX_MUND_MAX_LINES) return quotes
         const [isin, time, currency, bidRaw, , askRaw] = line.split(',')
         if (!isin || !wanted.has(isin)) continue
         const bid = Number(bidRaw)

@@ -2024,7 +2024,7 @@ export function usePipeline() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isins }),
-      timeoutMs: 20_000,
+      timeoutMs: 55_000,
     })
     const updates = new Map<string, Partial<Instrument>>()
     for (const isin of isins) {
