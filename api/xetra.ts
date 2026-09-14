@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { gunzipSync } from 'zlib'
+import { createGunzip, gunzipSync } from 'zlib'
+import { Readable } from 'stream'
 import { requireAuth } from '../server/auth'
 import { getIndexGlobalSnapshot } from '../server/universe'
 
@@ -26,6 +27,15 @@ async function findGettex1700MuncFile(): Promise<string> {
   return match[1]
 }
 
+async function findGettex1700MundFile(): Promise<string> {
+  const response = await fetch(GETTEX_PRETRADE_PAGE, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
+  if (!response.ok) throw new Error(`Gettex index unavailable (HTTP ${response.status})`)
+  const html = await response.text()
+  const match = html.match(/href="(https:\/\/erdk\.bayerische-boerse\.de:8000\/[^\"]*pretrade\.\d{8}\.17\.00\.mund\.csv\.gz)"/i)
+  if (!match) throw new Error('No Gettex MUND pre-trade snapshot for 17:00 found')
+  return match[1]
+}
+
 function parseGettexQuotes(csv: string, wanted: Set<string>): Record<string, GettexQuote> {
   const quotes: Record<string, GettexQuote> = {}
   for (const line of csv.split(/\r?\n/)) {
@@ -40,6 +50,45 @@ function parseGettexQuotes(csv: string, wanted: Set<string>): Record<string, Get
   return quotes
 }
 
+/**
+ * MUND is the complete pre-trade feed (including international shares), but
+ * can be very large. Read it as a stream and stop as soon as every missing
+ * BOTSI ISIN has been found; never buffer or decompress the complete file.
+ */
+async function streamGettexMundQuotes(fileUrl: string, wanted: Set<string>): Promise<Record<string, GettexQuote>> {
+  const response = await fetch(fileUrl, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
+  if (!response.ok || !response.body) throw new Error(`Gettex complete pre-trade file unavailable (HTTP ${response.status})`)
+
+  const source = Readable.fromWeb(response.body as any)
+  const gunzip = createGunzip()
+  source.pipe(gunzip)
+  const quotes: Record<string, GettexQuote> = {}
+  let remainder = ''
+
+  try {
+    for await (const chunk of gunzip) {
+      remainder += chunk.toString('utf8')
+      const lines = remainder.split(/\r?\n/)
+      remainder = lines.pop() ?? ''
+      for (const line of lines) {
+        const [isin, time, currency, bidRaw, , askRaw] = line.split(',')
+        if (!isin || !wanted.has(isin)) continue
+        const bid = Number(bidRaw)
+        const ask = Number(askRaw)
+        const mid = (bid + ask) / 2
+        if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid || mid <= 0) continue
+        quotes[isin] = { bid, ask, spreadPct: ((ask - bid) / mid) * 100, time, currency }
+        if (Object.keys(quotes).length === wanted.size) return quotes
+      }
+    }
+    return quotes
+  } finally {
+    // Closing both streams also cancels an unfinished upstream download.
+    source.destroy()
+    gunzip.destroy()
+  }
+}
+
 async function handleGettexSpreads(req: VercelRequest, res: VercelResponse) {
   const isins = readRequestedGettexIsins(req.body)
   if (isins.length === 0) return res.status(400).json({ error: 'Provide at least one valid ISIN' })
@@ -48,8 +97,14 @@ async function handleGettexSpreads(req: VercelRequest, res: VercelResponse) {
     const response = await fetch(fileUrl, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
     if (!response.ok) throw new Error(`Gettex pre-trade file unavailable (HTTP ${response.status})`)
     const csv = gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8')
+    const quotes = parseGettexQuotes(csv, new Set(isins))
+    const missingIsins = isins.filter((isin) => !quotes[isin])
+    if (missingIsins.length > 0) {
+      const completeFileUrl = await findGettex1700MundFile()
+      Object.assign(quotes, await streamGettexMundQuotes(completeFileUrl, new Set(missingIsins)))
+    }
     res.setHeader('Cache-Control', 'private, max-age=900')
-    return res.status(200).json({ quotes: parseGettexQuotes(csv, new Set(isins)), source: 'gettex-pretrade', fetchedAt: Date.now() })
+    return res.status(200).json({ quotes, source: 'gettex-pretrade', fetchedAt: Date.now() })
   } catch (error: any) {
     return res.status(502).json({ error: error?.message ?? 'Gettex pre-trade data unavailable' })
   }
