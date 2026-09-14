@@ -2010,31 +2010,102 @@ export function usePipeline() {
   }, [state.instruments, fetchPrices])
 
   const loadedGettexSpreadSetRef = useRef<string | null>(null)
-  const fetchBotsiGettexSpreads = useCallback(async () => {
-    const targets = state.instruments.filter((inst) =>
-      inst.type === 'Stock' &&
-      inst.botsiRank != null &&
-      (inst.botsiRank <= 50 || inst.inPortfolio === true) &&
-      /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin),
-    )
-    const isins = [...new Set(targets.map((inst) => inst.isin))]
-    if (isins.length === 0) return
+const fetchBotsiGettexSpreads = useCallback(async () => {
+     // Step 1: Filter instruments for BOTSI mode (without ISIN regex check)
+     const targets = state.instruments.filter((inst) =>
+       inst.type === 'Stock' &&
+       inst.botsiRank != null &&
+       (inst.botsiRank <= 50 || inst.inPortfolio === true)
+     )
 
-    const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isins }),
-      timeoutMs: 55_000,
-    })
-    const updates = new Map<string, Partial<Instrument>>()
-    for (const isin of isins) {
-      const quote = data.quotes[isin]
-      updates.set(isin, quote
-        ? { gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
-        : { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
-    }
-    dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
-  }, [state.instruments, dispatch])
+     // Step 2: Split into withIsin and needsIsin
+     const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
+     const needsIsin = targets.filter(inst => {
+       const isValidIsin = /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
+       return !isValidIsin && (inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker)
+     })
+
+     // Step 3: Prepare OpenFIGI jobs for needsIsin
+     const needsIsinWithMeta = needsIsin.map(inst => {
+       let job: { idType: string; idValue: string }
+       let originalId: string
+       if (inst.wkn && inst.wkn.length === 6) {
+         job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
+         originalId = inst.wkn
+       } else {
+         const ticker = inst.mnemonic || inst.yahooTicker
+         job = { idType: 'TICKER', idValue: ticker }
+         originalId = ticker
+       }
+       return { instrument: inst, job, originalId }
+     })
+
+     const openfigiJobs = needsIsinWithMeta.map(item => item.job)
+     const openfigiResults: Array<OpenFIGIResult | null> = openfigiJobs.length > 0
+       ? await apiOpenFIGI(openfigiJobs).catch(err => {
+         console.warn('[fetchBotsiGettexSpreads] OpenFIGI batch failed:', err)
+         return new Array<OpenFIGIResult | null>(openfigiJobs.length).fill(null)
+       })
+       : []
+
+     // Step 4: Build map from original identifier to resolved ISIN (for needsIsin that succeeded)
+     const resolvedIsinMap = new Map<string, string>() // originalId -> resolvedIsin
+     needsIsinWithMeta.forEach((meta, index) => {
+       const result = openfigiResults[index]
+       if (result?.isin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(result.isin)) {
+         resolvedIsinMap.set(meta.originalId, result.isin)
+       }
+     })
+
+     // Step 5: Build queryIsin list and map from queryIsin to instrumentIsin (original identifier)
+     const queryIsinToInstrumentIsin = new Map<string, string>() // queryIsin (for xetra) -> instrumentIsin (original identifier in store)
+     const queryIsins: string[] = []
+
+     // Add withIsin: queryIsin == instrumentIsin (the valid ISIN)
+     withIsin.forEach(inst => {
+       const isin = inst.isin
+       // TypeScript might not know isin is string, but we know from filter
+       queryIsinToInstrumentIsin.set(isin, isin)
+       queryIsins.push(isin)
+     })
+
+     // Add needsIsin that were resolved: queryIsin is the resolved ISIN, instrumentIsin is the originalId
+     needsIsinWithMeta.forEach(meta => {
+       const resolvedIsin = resolvedIsinMap.get(meta.originalId)
+       if (resolvedIsin) {
+         queryIsinToInstrumentIsin.set(resolvedIsin, meta.originalId)
+         queryIsins.push(resolvedIsin)
+       }
+       // Note: if not resolved, we skip (no queryIsin, no update)
+     })
+
+     // Remove duplicates
+     const uniqueQueryIsins = [...new Set(queryIsins)]
+     if (uniqueQueryIsins.length === 0) return
+
+     // Step 6: Make the xetra request
+     const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ isins: uniqueQueryIsins }),
+       timeoutMs: 55_000,
+     })
+
+     // Step 7: Update instruments using the map
+     const updates = new Map<string, Partial<Instrument>>()
+     for (const queryIsin of uniqueQueryIsins) {
+       const quote = data.quotes[queryIsin]
+       const instrumentIsin = queryIsinToInstrumentIsin.get(queryIsin)
+       if (!instrumentIsin) {
+         // This should not happen if the map is built correctly
+         continue
+       }
+       updates.set(instrumentIsin, quote
+         ? { gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
+         : { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+     }
+     dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
+   }, [state.instruments, dispatch])
 
   useEffect(() => {
     if (!state.tableState.botsiMode) return
