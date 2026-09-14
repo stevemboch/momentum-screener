@@ -79,6 +79,7 @@ const COLUMNS: Col[] = [
   { key: 'relative52wHigh17dAgo', label: '52W ATH −17D', title: '52-week-high proximity as of 17 trading days ago; helps separate sustained leaders from short-term reversals' },
   { key: 'botsiScore',    label: 'BOTSI',    title: 'BOTSI: #Rank (1=best) und Summe der GD200/MOM260/MOMJT-Indikator-Ranks unter Aktien. Niedrigere Summe = besser.' },
   { key: 'botsiRank',     label: 'B-Rank',   title: 'BOTSI overall rank' },
+  { key: 'gettexSpreadPct', label: 'Gettex Spr.', title: 'Delayed Gettex pre-trade spread: (Ask − Bid) / midpoint. Quotes are delayed and not executable prices.' },
   { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
   { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'r1w',           label: '1W',       title: '1-week return' },
@@ -115,7 +116,7 @@ const COLUMNS: Col[] = [
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore', 'accelerationScore'],
-  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'kaufmanEfficiencyRatio', 'relative52wHigh', 'relative52wHigh17dAgo', 'botsiScore', 'botsiRank'],
+  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'kaufmanEfficiencyRatio', 'relative52wHigh', 'relative52wHigh17dAgo', 'botsiScore', 'botsiRank', 'gettexSpreadPct'],
   returns:      ['r1w', 'r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
@@ -2678,6 +2679,14 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('botsiRank') && (
                     <td className="px-2 py-1.5 text-right text-gray-300">
                       {inst.botsiRank != null ? `#${inst.botsiRank}` : '—'}
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('gettexSpreadPct') && (
+                    <td className={`px-2 py-1.5 text-right ${inst.gettexSpreadPct != null && inst.gettexSpreadPct > 1 ? 'text-amber-400' : 'text-gray-300'}`}>
+                      {inst.gettexSpreadPct != null
+                        ? <span title={inst.gettexBid != null && inst.gettexAsk != null ? `Bid ${inst.gettexBid.toFixed(2)} / Ask ${inst.gettexAsk.toFixed(2)}${inst.gettexQuoteTime ? ` · ${inst.gettexQuoteTime}` : ''}` : undefined}>{inst.gettexSpreadPct.toFixed(2)}%</span>
+                        : '—'}
                     </td>
                   )}
 

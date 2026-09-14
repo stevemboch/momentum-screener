@@ -2009,6 +2009,48 @@ export function usePipeline() {
     dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
   }, [state.instruments, fetchPrices])
 
+  const loadedGettexSpreadSetRef = useRef<string | null>(null)
+  const fetchBotsiGettexSpreads = useCallback(async () => {
+    const targets = state.instruments.filter((inst) =>
+      inst.type === 'Stock' &&
+      inst.botsiRank != null &&
+      (inst.botsiRank <= 50 || inst.inPortfolio === true) &&
+      /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin),
+    )
+    const isins = [...new Set(targets.map((inst) => inst.isin))]
+    if (isins.length === 0) return
+
+    const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/gettex-spreads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isins }),
+      timeoutMs: 20_000,
+    })
+    const updates = new Map<string, Partial<Instrument>>()
+    for (const isin of isins) {
+      const quote = data.quotes[isin]
+      updates.set(isin, quote
+        ? { gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
+        : { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+    }
+    dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
+  }, [state.instruments, dispatch])
+
+  useEffect(() => {
+    if (!state.tableState.botsiMode) return
+    const signature = state.instruments
+      .filter((inst) => inst.type === 'Stock' && inst.botsiRank != null && (inst.botsiRank <= 50 || inst.inPortfolio === true))
+      .map((inst) => inst.isin)
+      .sort()
+      .join(',')
+    if (!signature || loadedGettexSpreadSetRef.current === signature) return
+    loadedGettexSpreadSetRef.current = signature
+    fetchBotsiGettexSpreads().catch(() => {
+      // A missing delayed quote should not interrupt the BOTSI scan. The table
+      // keeps an em dash for unavailable instruments.
+    })
+  }, [state.tableState.botsiMode, state.instruments, fetchBotsiGettexSpreads])
+
   return {
     processManualInput,
     loadXetraBackground,
@@ -2022,5 +2064,6 @@ export function usePipeline() {
     fetchSingleInstrumentAnalyst,
     fetchSingleInstrumentTfaCatalyst,
     fetchPortfolioPrices,
+    fetchBotsiGettexSpreads,
   }
 }

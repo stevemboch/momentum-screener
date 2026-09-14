@@ -86,6 +86,11 @@ export interface Instrument {
   botsiTargetWeight?: number | null
   botsiFilterPassed?: boolean | null
   botsiTop10?: boolean | null
+  /** Delayed Gettex pre-trade quote, loaded for the BOTSI selection only. */
+  gettexBid?: number | null
+  gettexAsk?: number | null
+  gettexSpreadPct?: number | null
+  gettexQuoteTime?: string | null
   impulse5d?: number | null
   relativeKick5d?: number | null
   accelAgeDays?: number | null
@@ -378,6 +383,7 @@ export type SortColumn =
   | 'accelerationScore'
   | 'gd200' | 'gd130' | 'mom260' | 'momjt' | 'kaufmanEfficiencyRatio' | 'relative52wHigh' | 'relative52wHigh17dAgo'
   | 'botsiScore' | 'botsiRank' | 'botsiTargetWeight'
+  | 'gettexSpreadPct'
   | 'breakoutScore'
   | 'sellingThreshold'
   | 'tfaScore' | 'drawFromHigh' | 'rsi14' | 'levyRS' | 'tfaTScore' | 'tfaFScore'
@@ -441,6 +447,8 @@ export interface TableState {
   excludedPrimaryListingCountryFilters: string[]
   /** Canonical GICS sector filter. */
   sectorFilter: string
+  /** Maximum delayed Gettex spread in percent; empty means no spread filter. */
+  maxGettexSpreadPct: string
 }
 
 // ─── Xetra CSV Row ──────────────────────────────────────────────────────────

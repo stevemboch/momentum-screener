@@ -213,6 +213,7 @@ const DEFAULT_STATE: AppState = {
     primaryListingCountryFilter: '',
     excludedPrimaryListingCountryFilters: [],
     sectorFilter: '',
+    maxGettexSpreadPct: '',
   },
   referenceR3m: null,
   referenceR5d: null,
@@ -614,10 +615,16 @@ export function useDisplayedInstruments() {
       // Nur Titel die Gate bestanden haben (pullbackScore !== null = alle Gates erfüllt)
     }
 
-    // BOTSI mode — existing investor view: show top-10 candidates plus held positions
+    // BOTSI mode — show the top-50 candidate universe plus held positions.
+    // The advisor allocation itself remains based on the separate top-10 flag.
     if (tableState.botsiMode) {
       filtered = filtered.filter((i) => i.type === 'Stock')
-      filtered = filtered.filter((i) => (i.botsiTop10 === true || i.inPortfolio === true) && i.botsiRank != null)
+      filtered = filtered.filter((i) => ((i.botsiRank != null && i.botsiRank <= 50) || i.inPortfolio === true) && i.botsiRank != null)
+      const maxSpread = Number(tableState.maxGettexSpreadPct)
+      if (tableState.maxGettexSpreadPct !== '' && Number.isFinite(maxSpread)) {
+        // Missing Gettex quotes are excluded when a limit is explicitly chosen.
+        filtered = filtered.filter((i) => i.gettexSpreadPct != null && i.gettexSpreadPct <= maxSpread)
+      }
     }
 
     // Dedup filter — hides non-winners when enabled
@@ -710,6 +717,7 @@ export function useDisplayedInstruments() {
     tableState.primaryListingCountryFilter,
     tableState.excludedPrimaryListingCountryFilters,
     tableState.sectorFilter,
+    tableState.maxGettexSpreadPct,
     tableState.tfaMode,
     tableState.pullbackMode,
     tableState.botsiMode,
