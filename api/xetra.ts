@@ -8,12 +8,19 @@ const GETTEX_SESSION_INSTRUMENT = 'DE0007664005' // Volkswagen; used only to obt
 const GETTEX_BATCH_SIZE = 50
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{10}$/
 const EODHD_US_SYMBOLS_URL = 'https://eodhd.com/api/exchange-symbol-list/US'
+const DEUTSCHE_BOERSE_EQUITY_SEARCH_URL = 'https://api.live.deutsche-boerse.com/v1/search/equity_search'
+const DEUTSCHE_BOERSE_PAGE_SIZE = 300 // The public endpoint caps larger values at 300.
+const DEUTSCHE_BOERSE_EQUITY_COUNT = 15_230 // Updated from recordsTotal when a page is fetched.
 
 type IsinResolverRequest = { key: string; ticker?: string; name?: string }
 type IsinResolution = { isin: string; source: 'eodhd-us-symbols' | 'eodhd-id-mapping' | 'deutsche-boerse-search' }
 
 let eodhdUsSymbolCache: { expiresAt: number; byTicker: Map<string, string> } | null = null
 const EODHD_SYMBOL_CACHE_MS = 24 * 60 * 60 * 1000
+type DeutscheBoerseEquity = { isin: string; name: string }
+type DeutscheBoersePage = { expiresAt: number; total: number; rows: DeutscheBoerseEquity[] }
+const deutscheBoersePages = new Map<number, Promise<DeutscheBoersePage>>()
+const DEUTSCHE_BOERSE_PAGE_CACHE_MS = 24 * 60 * 60 * 1000
 
 type GettexQuote = { bid: number; ask: number; spreadPct: number; time: string; currency: string }
 
@@ -69,33 +76,90 @@ async function resolveEodhdIdentifier(ticker: string, apiToken: string): Promise
   return response.ok ? normalizeIsin(payload?.data?.[0]?.isin) : null
 }
 
-function collectIsins(value: unknown, output: Array<{ isin: string; type: string; name: string }>) {
-  if (Array.isArray(value)) { value.forEach((item) => collectIsins(item, output)); return }
-  if (!value || typeof value !== 'object') return
-  const row = value as Record<string, unknown>
-  const isin = normalizeIsin(row.isin ?? row.ISIN)
-  if (isin) output.push({ isin, type: String(row.type ?? row.instrumentType ?? ''), name: String(row.name ?? row.instrumentName ?? '') })
-  Object.values(row).forEach((item) => collectIsins(item, output))
+function normalizedCompanyName(value: string): string {
+  return nameSearchTerms(value)
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function companyNameScore(target: string, candidate: string): number {
+  const targetTokens = normalizedCompanyName(target).split(' ').filter((token) => token.length >= 2)
+  const candidateTokens = normalizedCompanyName(candidate).split(' ').filter((token) => token.length >= 2)
+  if (targetTokens.length === 0 || candidateTokens.length === 0) return 0
+  // Do not turn a loose word match into a different instrument.  The first
+  // distinctive word is a useful guard for company names from index sources.
+  if (!candidateTokens.some((token) => token === targetTokens[0])) return 0
+  const matches = targetTokens.filter((token) => candidateTokens.some((other) => other === token || other.startsWith(token) || token.startsWith(other))).length
+  return matches / targetTokens.length
+}
+
+async function getDeutscheBoerseEquityPage(pageNumber: number): Promise<DeutscheBoersePage> {
+  const cached = deutscheBoersePages.get(pageNumber)
+  if (cached) {
+    const page = await cached
+    if (page.expiresAt > Date.now()) return page
+    deutscheBoersePages.delete(pageNumber)
+  }
+  const loading = (async (): Promise<DeutscheBoersePage> => {
+    const response = await fetch(DEUTSCHE_BOERSE_EQUITY_SEARCH_URL, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', Origin: 'https://live.deutsche-boerse.com' },
+      body: JSON.stringify({ lang: 'de', offset: pageNumber * DEUTSCHE_BOERSE_PAGE_SIZE, limit: DEUTSCHE_BOERSE_PAGE_SIZE, sorting: 'NAME', sortOrder: 'ASC' }),
+    })
+    const payload = await response.json().catch(() => null) as { recordsTotal?: unknown; data?: Array<{ isin?: unknown; name?: { originalValue?: unknown } }> } | null
+    if (!response.ok || !Array.isArray(payload?.data)) throw new Error(`Deutsche Börse equity search unavailable (HTTP ${response.status})`)
+    return {
+      expiresAt: Date.now() + DEUTSCHE_BOERSE_PAGE_CACHE_MS,
+      total: typeof payload.recordsTotal === 'number' ? payload.recordsTotal : DEUTSCHE_BOERSE_EQUITY_COUNT,
+      rows: payload.data.flatMap((row) => {
+        const isin = normalizeIsin(row?.isin)
+        const name = typeof row?.name?.originalValue === 'string' ? row.name.originalValue : ''
+        return isin && name ? [{ isin, name }] : []
+      }),
+    }
+  })()
+  deutscheBoersePages.set(pageNumber, loading)
+  try { return await loading } catch (error) { deutscheBoersePages.delete(pageNumber); throw error }
 }
 
 /**
- * Public site fallback, intentionally best effort: this is not a documented
- * Deutsche-Börse API. It is only reached after the structured EODHD lookup.
+ * Public website fallback, intentionally best effort: this is not a documented
+ * Deutsche-Börse API. The site's text-search endpoint is not usable from a
+ * server, so use its working equity-search endpoint, navigate its alphabetical
+ * result pages, and retain those pages in an in-memory 24-hour cache.
  */
 async function resolveDeutscheBoerseSearch(name: string): Promise<string | null> {
   const terms = nameSearchTerms(name)
   if (!terms) return null
-  const params = new URLSearchParams({ searchTerms: terms.split(' ').join(',') })
-  const response = await fetch(`https://api.live.deutsche-boerse.com/v1/global_search/limitedsearch/de?${params}`, {
-    headers: { Accept: 'application/json', Origin: 'https://live.deutsche-boerse.com', Referer: 'https://live.deutsche-boerse.com/' },
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) return null
-  const candidates: Array<{ isin: string; type: string; name: string }> = []
-  collectIsins(payload, candidates)
-  // Prefer an explicitly identified equity, but retain any valid ISIN as the
-  // user requested: Gettex is the final availability check.
-  return candidates.find((candidate) => /equity|aktie|stock/i.test(candidate.type))?.isin ?? candidates[0]?.isin ?? null
+  const normalizedTerms = normalizedCompanyName(terms)
+  let low = 0
+  let high = Math.ceil(DEUTSCHE_BOERSE_EQUITY_COUNT / DEUTSCHE_BOERSE_PAGE_SIZE) - 1
+  let page: DeutscheBoersePage | null = null
+  let locatedPageNumber = 0
+  // A binary search locates the alphabetical page in at most six requests.
+  // Adjacent pages cover abbreviations and the few boundary cases.
+  for (let attempt = 0; attempt < 6 && low <= high; attempt += 1) {
+    const pageNumber = Math.floor((low + high) / 2)
+    const candidate = await getDeutscheBoerseEquityPage(pageNumber)
+    locatedPageNumber = pageNumber
+    const first = normalizedCompanyName(candidate.rows[0]?.name ?? '')
+    const last = normalizedCompanyName(candidate.rows.at(-1)?.name ?? '')
+    page = candidate
+    if (normalizedTerms < first) high = pageNumber - 1
+    else if (normalizedTerms > last) low = pageNumber + 1
+    else break
+  }
+  if (!page) return null
+  const pages = await Promise.all([locatedPageNumber - 1, locatedPageNumber, locatedPageNumber + 1]
+    .filter((number) => number >= 0 && number <= Math.ceil(page.total / DEUTSCHE_BOERSE_PAGE_SIZE) - 1)
+    .map((number) => getDeutscheBoerseEquityPage(number)))
+  const ranked = pages.flatMap((candidate) => candidate.rows)
+    .map((candidate) => ({ ...candidate, score: companyNameScore(terms, candidate.name) }))
+    .sort((left, right) => right.score - left.score)
+  // A one-token individual name must match exactly; multi-word names allow a
+  // single known abbreviation such as "Dell Techs" / "Dell Technologies".
+  const minimumScore = normalizedTerms.split(' ').length === 1 ? 1 : 0.5
+  return ranked[0]?.score >= minimumScore ? ranked[0].isin : null
 }
 
 function readIsinResolverRequests(body: unknown): IsinResolverRequest[] {
