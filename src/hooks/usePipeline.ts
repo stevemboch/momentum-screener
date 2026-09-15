@@ -54,6 +54,7 @@ const OPENFIGI_CLIENT_TIMEOUT_MS = 30_000
 const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
 const YAHOO_SYMBOL_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const ISIN_RESOLUTION_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const YAHOO_SYMBOL_RESOLVE_BATCH = 100
 const YAHOO_SYMBOL_RESOLVE_CONCURRENCY = 3
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
@@ -158,6 +159,10 @@ function buildYahooCacheKey(ticker: string): string {
 
 function buildYahooSymbolCacheKey(isin: string): string {
   return `cache:yahoo-symbol:v1:${isin.trim().toUpperCase()}`
+}
+
+function buildIsinResolutionCacheKey(identity: string): string {
+  return `cache:isin-resolution:v1:${identity.trim().toUpperCase()}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -2133,13 +2138,49 @@ export function usePipeline() {
        return !isValidIsin && (Boolean(inst.cusip) || inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker)
      })
 
+     // Resolve only the qualified remainder, never the entire index universe.
+     // Browser caching makes successful ticker/name lookups a one-time cost.
+     const resolvedByInstrumentId = new Map<string, string>()
+     const unresolvedForRemote: Instrument[] = []
+     for (const instrument of needsIsin) {
+       const cached = cacheGet<{ isin?: unknown }>(buildIsinResolutionCacheKey(instrument.isin), ISIN_RESOLUTION_TTL_MS)
+       const isin = typeof cached?.isin === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(cached.isin)
+         ? cached.isin : null
+       if (isin) resolvedByInstrumentId.set(instrument.isin, isin)
+       else unresolvedForRemote.push(instrument)
+     }
+     for (let start = 0; start < unresolvedForRemote.length; start += 100) {
+       const batch = unresolvedForRemote.slice(start, start + 100)
+       try {
+         const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveIsins=1', {
+           method: 'POST', headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ instruments: batch.map((instrument) => ({
+             key: instrument.isin,
+             ticker: instrument.mnemonic || instrument.yahooTicker,
+             name: instrument.longName || instrument.yahooLongName || instrument.displayName,
+           })) }),
+           timeoutMs: 55_000,
+         })
+         for (const instrument of batch) {
+           const isin = data.resolutions?.[instrument.isin]?.isin
+           if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
+           resolvedByInstrumentId.set(instrument.isin, isin)
+           cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
+         }
+       } catch (error) {
+         // A resolver outage must never hide a qualified candidate or prevent
+         // the normal CUSIP/OpenFIGI fallbacks below.
+         console.warn('[fetchBotsiGettexSpreads] ISIN resolver batch failed:', error)
+       }
+     }
+
      // Prefer a deterministic US-CUSIP conversion. Gettex itself validates it
      // by returning a quote, so a non-US exception simply remains without one.
      const cusipResolved = needsIsin
        .map((instrument) => ({ instrument, resolvedIsin: usCusipToIsin(instrument.cusip) }))
        .filter((item): item is { instrument: Instrument; resolvedIsin: string } => item.resolvedIsin != null)
-     const cusipResolvedIds = new Set(cusipResolved.map((item) => item.instrument.isin))
-     const needsOpenFigi = needsIsin.filter((instrument) => !cusipResolvedIds.has(instrument.isin))
+     cusipResolved.forEach(({ instrument, resolvedIsin }) => resolvedByInstrumentId.set(instrument.isin, resolvedIsin))
+     const needsOpenFigi = needsIsin.filter((instrument) => !resolvedByInstrumentId.has(instrument.isin))
 
      // Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
      // the reducer key even when it is a LISTING: identity.
@@ -2182,7 +2223,7 @@ export function usePipeline() {
        addQuery(isin, isin)
      })
 
-     cusipResolved.forEach(({ instrument, resolvedIsin }) => addQuery(resolvedIsin, instrument.isin))
+     resolvedByInstrumentId.forEach((resolvedIsin, instrumentId) => addQuery(resolvedIsin, instrumentId))
 
      // Add LISTING identities that OpenFIGI resolved. Crucially, updates are
      // written back using LISTING:… (not the ticker used for the lookup).
@@ -2195,12 +2236,7 @@ export function usePipeline() {
 
      // Remove duplicates
      const uniqueQueryIsins = [...new Set(queryIsins)]
-     if (uniqueQueryIsins.length === 0) {
-       if (needsOpenFigi.length > 0) {
-         throw new Error('Keine LISTING-Werte konnten zu einer ISIN aufgelöst werden. Prüfe OPENFIGI_API_KEY in Vercel.')
-       }
-       return
-     }
+     if (uniqueQueryIsins.length === 0) return
 
      // Request Gettex quotes.
      const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
@@ -2221,7 +2257,7 @@ export function usePipeline() {
        }
        for (const instrumentIsin of instrumentIsins) {
          updates.set(instrumentIsin, quote
-           ? { gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
+           ? { isin: /^[A-Z]{2}[A-Z0-9]{10}$/.test(instrumentIsin) ? undefined : queryIsin, gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
            : { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
        }
      }
