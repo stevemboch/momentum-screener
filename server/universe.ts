@@ -2,7 +2,7 @@ import Papa from 'papaparse'
 
 type UniverseSourceCode =
   | 'STOXX_EUROPE_600' | 'SP_500' | 'SP_MIDCAP_400' | 'SP_SMALLCAP_600'
-  | 'NASDAQ_COMPOSITE' | 'MSCI_JAPAN' | 'MSCI_PACIFIC_EX_JAPAN' | 'MSCI_EM'
+  | 'NASDAQ_100' | 'MSCI_JAPAN' | 'MSCI_PACIFIC_EX_JAPAN' | 'MSCI_EM'
 
 interface SourceDefinition {
   code: UniverseSourceCode
@@ -49,7 +49,7 @@ const SOURCES: SourceDefinition[] = [
   // fund is swap-based and therefore not a constituent proxy.
   { code: 'SP_MIDCAP_400', region: 'North America', benchmark: 'S&P MidCap 400', urlEnv: 'UNIVERSE_SP_MIDCAP_400_CSV_URL', defaultUrl: 'https://equibles.com/indexes/sp-400.csv', minRows: 390, maxRows: 430, defaultListingCountry: 'United States', sourceType: 'TRACKING_FUND_DISCLOSURE' },
   { code: 'SP_SMALLCAP_600', region: 'North America', benchmark: 'S&P SmallCap 600', urlEnv: 'UNIVERSE_SP_SMALLCAP_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251920/ishares-sp-smallcap-600-ucits-etf/1478358465952.ajax?fileType=csv&fileName=IUS3_holdings&dataType=fund', minRows: 580, maxRows: 700, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
-  { code: 'NASDAQ_COMPOSITE', region: 'North America', benchmark: 'Nasdaq Composite', urlEnv: 'UNIVERSE_NASDAQ_COMPOSITE_CSV_URL', defaultUrl: 'https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=5000&offset=0&exchange=nasdaq', minRows: 2_500, maxRows: 4_000, defaultListingCountry: 'United States', sourceType: 'OFFICIAL_LISTING_SCREEN' },
+  { code: 'NASDAQ_100', region: 'North America', benchmark: 'Nasdaq 100', urlEnv: 'UNIVERSE_NASDAQ_100_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251896/ishares-nasdaq100-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXXT_holdings&dataType=fund', minRows: 90, maxRows: 110, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
   { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251866/ishares-msci-japan-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IJPN_holdings&dataType=fund', minRows: 100, maxRows: 400, sourceType: 'ETF_HOLDINGS_PROXY' },
   { code: 'MSCI_PACIFIC_EX_JAPAN', region: 'Pacific ex Japan', benchmark: 'MSCI Pacific ex Japan', urlEnv: 'UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/253735/ishares-msci-pacific-ex-japan-ucits-etf-acc-fund/1478358465952.ajax?fileType=csv&fileName=SXR1_holdings&dataType=fund', minRows: 70, maxRows: 120, sourceType: 'ETF_HOLDINGS_PROXY' },
   { code: 'MSCI_EM', region: 'Emerging Markets', benchmark: 'MSCI Emerging Markets', urlEnv: 'UNIVERSE_MSCI_EM_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251857/ishares-msci-emerging-markets-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IQQE_holdings&dataType=fund', minRows: 600, maxRows: 1_800, sourceType: 'ETF_HOLDINGS_PROXY' },
@@ -67,14 +67,7 @@ function isEquity(assetClass: string): boolean {
   return !normalized || normalized.includes('equity') || normalized.includes('aktien')
 }
 
-function isNasdaqCompositeSecurity(name: string): boolean {
-  const normalized = name.toLowerCase()
-  const eligible = /\b(common stock|ordinary shares?|shares of beneficial interest|limited partnership)\b/.test(normalized)
-  // Nasdaq excludes these security classes from COMP even where they appear in
-  // its exchange screener. SPAC common shares remain eligible common shares.
-  const ineligible = /\b(preferred|warrant|rights?|units?|etf|fund|notes?|debentures?|bond)\b/.test(normalized)
-  return eligible && !ineligible
-}
+
 
 const EXCHANGE_MAP: Record<string, { country: string; yahooSuffix?: string; padTicker?: number }> = {
   'new york stock exchange': { country: 'United States' }, nyse: { country: 'United States' }, nasdaq: { country: 'United States' },
@@ -157,7 +150,7 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   const response = await fetch(process.env[source.urlEnv] || source.defaultUrl, { headers: { Accept: 'text/csv,text/plain,*/*', 'User-Agent': 'MomentumScreener/1.0' } })
   if (!response.ok) throw new Error(`${source.code}: HTTP ${response.status}`)
   const payload = await response.text()
-  if (source.code === 'NASDAQ_COMPOSITE') return importNasdaqComposite(source, payload)
+  
   const parsedRows = Papa.parse<string[]>(payload, { header: false, skipEmptyLines: 'greedy', delimitersToGuess: [',', ';', '\t', '|'] })
   const headerIndex = parsedRows.data.findIndex((row) => row.some((cell) => ['isin', 'ticker', 'emittententicker', 'issuer ticker'].includes(String(cell ?? '').replace(/^\uFEFF/, '').trim().toLowerCase())))
   if (headerIndex < 0) throw new Error(`${source.code}: CSV has no recognised holdings header`)
@@ -194,34 +187,7 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   return { constituents, retrievedAt: new Date().toISOString(), inputRows: candidates.length, resolvedRows: constituents.length, unresolvedRows: 0 }
 }
 
-async function importNasdaqComposite(source: SourceDefinition, payload: string): Promise<ImportedSource> {
-  let rows: Array<{ symbol?: unknown; name?: unknown }>
-  try {
-    const parsed = JSON.parse(payload)
-    rows = parsed?.data?.table?.rows
-    if (!Array.isArray(rows)) throw new Error('rows missing')
-  } catch {
-    throw new Error(`${source.code}: official Nasdaq screener payload is invalid`)
-  }
-  const byListing = new Map<string, Constituent>()
-  for (const row of rows) {
-    const ticker = String(row.symbol ?? '').trim().toUpperCase()
-    const name = String(row.name ?? '').trim()
-    if (!ticker || !name || !isNasdaqCompositeSecurity(name)) continue
-    const identifier = `LISTING:${stableHash(`NASDAQ:${ticker}`)}`
-    byListing.set(identifier, {
-      isin: identifier, identifierType: 'LISTING', ticker, yahooTicker: ticker, name,
-      sector: null, sourceSector: null, primaryListingCountry: source.defaultListingCountry ?? null,
-      sourceCountry: null, weight: null, benchmark: source.benchmark, region: source.region,
-      source: source.code, memberships: [source.benchmark],
-    })
-  }
-  const constituents = [...byListing.values()]
-  if (constituents.length < source.minRows || constituents.length > source.maxRows) {
-    throw new Error(`${source.code}: ${constituents.length} eligible common shares outside expected range ${source.minRows}-${source.maxRows}`)
-  }
-  return { constituents, retrievedAt: new Date().toISOString(), inputRows: rows.length, resolvedRows: constituents.length, unresolvedRows: 0 }
-}
+
 
 /** Import all index proxy holdings, failing closed when a source is incomplete. */
 export async function getIndexGlobalSnapshot() {
