@@ -132,6 +132,23 @@ function normalizeMnemonicForCache(mnemonic?: string): string | null {
   return normalized.length > 0 ? normalized : null
 }
 
+/** Derives a US ISIN from a nine-character CUSIP, including the ISO 6166 check digit. */
+function usCusipToIsin(cusip: string | null | undefined): string | null {
+  const normalized = (cusip ?? '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{9}$/.test(normalized)) return null
+  const body = `US${normalized}`
+  const expanded = [...body].map((char) => (/\d/.test(char) ? char : String(char.charCodeAt(0) - 55))).join('')
+  let sum = 0
+  let doubleDigit = true
+  for (let index = expanded.length - 1; index >= 0; index--) {
+    let digit = Number(expanded[index])
+    if (doubleDigit) digit *= 2
+    sum += digit > 9 ? digit - 9 : digit
+    doubleDigit = !doubleDigit
+  }
+  return `${body}${(10 - (sum % 10)) % 10}`
+}
+
 function buildYahooCacheKey(ticker: string): string {
   return `cache:yahoo:v4:${normalizeTickerForCache(ticker)}`
 }
@@ -2025,9 +2042,17 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
        return !isValidIsin && (Boolean(inst.cusip) || inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker)
      })
 
-     // Step 3: Prepare OpenFIGI jobs for needsIsin. `instrument.isin` remains
+     // Prefer a deterministic US-CUSIP conversion. Gettex itself validates it
+     // by returning a quote, so a non-US exception simply remains without one.
+     const cusipResolved = needsIsin
+       .map((instrument) => ({ instrument, resolvedIsin: usCusipToIsin(instrument.cusip) }))
+       .filter((item): item is { instrument: Instrument; resolvedIsin: string } => item.resolvedIsin != null)
+     const cusipResolvedIds = new Set(cusipResolved.map((item) => item.instrument.isin))
+     const needsOpenFigi = needsIsin.filter((instrument) => !cusipResolvedIds.has(instrument.isin))
+
+     // Step 3: Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
      // the reducer key even when it is a LISTING: identity.
-     const needsIsinWithMeta = needsIsin.map(inst => {
+     const needsIsinWithMeta = needsOpenFigi.map(inst => {
        let job: { idType: string; idValue: string }
        if (inst.cusip && /^[A-Z0-9]{9}$/i.test(inst.cusip)) {
          job = { idType: 'ID_CUSIP', idValue: inst.cusip }
@@ -2066,6 +2091,8 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
        addQuery(isin, isin)
      })
 
+     cusipResolved.forEach(({ instrument, resolvedIsin }) => addQuery(resolvedIsin, instrument.isin))
+
      // Add LISTING identities that OpenFIGI resolved. Crucially, updates are
      // written back using LISTING:… (not the ticker used for the lookup).
      needsIsinWithMeta.forEach((meta, index) => {
@@ -2078,7 +2105,7 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
      // Remove duplicates
      const uniqueQueryIsins = [...new Set(queryIsins)]
      if (uniqueQueryIsins.length === 0) {
-       if (needsIsin.length > 0) {
+       if (needsOpenFigi.length > 0) {
          throw new Error('Keine LISTING-Werte konnten zu einer ISIN aufgelöst werden. Prüfe OPENFIGI_API_KEY in Vercel.')
        }
        return
