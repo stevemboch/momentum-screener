@@ -14,6 +14,7 @@ interface SourceDefinition {
   maxRows: number
   defaultListingCountry?: string
   sourceType: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE' | 'OFFICIAL_LISTING_SCREEN'
+  format?: 'csv' | 'blackrock_holdings_json'
 }
 
 interface Constituent {
@@ -45,10 +46,10 @@ interface ImportedSource {
 const SOURCES: SourceDefinition[] = [
   { code: 'STOXX_EUROPE_600', region: 'Europe', benchmark: 'STOXX Europe 600', urlEnv: 'UNIVERSE_STOXX_EUROPE_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251931/ishares-stoxx-europe-600-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXSA_holdings&dataType=fund', minRows: 500, maxRows: 750, sourceType: 'ETF_HOLDINGS_PROXY' },
   { code: 'SP_500', region: 'North America', benchmark: 'S&P 500', urlEnv: 'UNIVERSE_SP_500_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/253743/ishares-sp-500-b-ucits-etf-acc-fund/1478358465952.ajax?fileType=csv&fileName=SXR8_holdings&dataType=fund', minRows: 450, maxRows: 550, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
-  // Equibles republishes the full daily holdings disclosure of the
-  // fully-replicating iShares Core S&P Mid-Cap ETF (IJH). The available UCITS
-  // fund is swap-based and therefore not a constituent proxy.
-  { code: 'SP_MIDCAP_400', region: 'North America', benchmark: 'S&P MidCap 400', urlEnv: 'UNIVERSE_SP_MIDCAP_400_CSV_URL', defaultUrl: 'https://equibles.com/indexes/sp-400.csv', minRows: 390, maxRows: 430, defaultListingCountry: 'United States', sourceType: 'TRACKING_FUND_DISCLOSURE' },
+  // BlackRock's detailed holdings JSON for the fully replicating iShares Core
+  // S&P Mid-Cap ETF (IJH) includes the constituent ISINs. The simpler CSV
+  // export and the former Equibles proxy expose tickers only.
+  { code: 'SP_MIDCAP_400', region: 'North America', benchmark: 'S&P MidCap 400', urlEnv: 'UNIVERSE_SP_MIDCAP_400_CSV_URL', defaultUrl: 'https://www.blackrock.com/uk/intermediaries/products/239763/ishares-core-sp-midcap-etf/1472631233320.ajax?tab=all&fileType=json', minRows: 390, maxRows: 430, defaultListingCountry: 'United States', sourceType: 'TRACKING_FUND_DISCLOSURE', format: 'blackrock_holdings_json' },
   { code: 'SP_SMALLCAP_600', region: 'North America', benchmark: 'S&P SmallCap 600', urlEnv: 'UNIVERSE_SP_SMALLCAP_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251920/ishares-sp-smallcap-600-ucits-etf/1478358465952.ajax?fileType=csv&fileName=IUS3_holdings&dataType=fund', minRows: 580, maxRows: 700, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
   { code: 'NASDAQ_100', region: 'North America', benchmark: 'Nasdaq 100', urlEnv: 'UNIVERSE_NASDAQ_100_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251896/ishares-nasdaq100-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXXT_holdings&dataType=fund', minRows: 90, maxRows: 110, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
   { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251866/ishares-msci-japan-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IJPN_holdings&dataType=fund', minRows: 100, maxRows: 400, sourceType: 'ETF_HOLDINGS_PROXY' },
@@ -152,20 +153,43 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   if (!response.ok) throw new Error(`${source.code}: HTTP ${response.status}`)
   const payload = await response.text()
   
-  const parsedRows = Papa.parse<string[]>(payload, { header: false, skipEmptyLines: 'greedy', delimitersToGuess: [',', ';', '\t', '|'] })
-  const headerIndex = parsedRows.data.findIndex((row) => row.some((cell) => ['isin', 'ticker', 'emittententicker', 'issuer ticker'].includes(String(cell ?? '').replace(/^\uFEFF/, '').trim().toLowerCase())))
-  if (headerIndex < 0) throw new Error(`${source.code}: CSV has no recognised holdings header`)
-  const header = parsedRows.data[headerIndex].map((cell) => String(cell ?? '').replace(/^\uFEFF/, '').trim())
-  const rows = parsedRows.data.slice(headerIndex + 1).map((cells) => Object.fromEntries(header.map((name, index) => [name, cells[index] ?? ''])) as Record<string, unknown>)
   const candidates: Candidate[] = []
-  for (const row of rows) {
-    if (!isEquity(value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse']))) continue
-    const rawIsin = value(row, ['isin']).toUpperCase()
-    const rawCusip = value(row, ['cusip']).toUpperCase()
-    candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
-      name: value(row, ['name', 'company', 'security name', 'holding name', 'instrument']), sourceSector: value(row, ['sector', 'gics sector', 'industry', 'sektor']) || null,
-      sourceCountry: value(row, ['country', 'location', 'country of risk', 'standort']) || null, exchange: value(row, ['exchange', 'börse']) || null,
-      weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
+  if (source.format === 'blackrock_holdings_json') {
+    const parsed = JSON.parse(payload.replace(/^\uFEFF/, '')) as { aaData?: unknown[][] }
+    if (!Array.isArray(parsed.aaData)) throw new Error(`${source.code}: holdings JSON has no aaData array`)
+    for (const row of parsed.aaData) {
+      // BlackRock table order: ticker, name, type, sector, asset class, …,
+      // CUSIP, ISIN, SEDOL, price, location, exchange, …, market weight.
+      const assetClass = String(row[4] ?? '')
+      if (!isEquity(assetClass)) continue
+      const rawIsin = String(row[9] ?? '').trim().toUpperCase()
+      const rawCusip = String(row[8] ?? '').trim().toUpperCase()
+      candidates.push({
+        isin: ISIN.test(rawIsin) ? rawIsin : null,
+        cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null,
+        ticker: String(row[0] ?? '').trim() || null,
+        name: String(row[1] ?? '').trim(),
+        sourceSector: String(row[3] ?? '').trim() || null,
+        sourceCountry: String(row[12] ?? '').trim() || null,
+        exchange: String(row[13] ?? '').trim() || null,
+        weight: numberValue(String(row[17] ?? '')),
+      })
+    }
+  } else {
+    const parsedRows = Papa.parse<string[]>(payload, { header: false, skipEmptyLines: 'greedy', delimitersToGuess: [',', ';', '\t', '|'] })
+    const headerIndex = parsedRows.data.findIndex((row) => row.some((cell) => ['isin', 'ticker', 'emittententicker', 'issuer ticker'].includes(String(cell ?? '').replace(/^\uFEFF/, '').trim().toLowerCase())))
+    if (headerIndex < 0) throw new Error(`${source.code}: CSV has no recognised holdings header`)
+    const header = parsedRows.data[headerIndex].map((cell) => String(cell ?? '').replace(/^\uFEFF/, '').trim())
+    const rows = parsedRows.data.slice(headerIndex + 1).map((cells) => Object.fromEntries(header.map((name, index) => [name, cells[index] ?? ''])) as Record<string, unknown>)
+    for (const row of rows) {
+      if (!isEquity(value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse']))) continue
+      const rawIsin = value(row, ['isin']).toUpperCase()
+      const rawCusip = value(row, ['cusip']).toUpperCase()
+      candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
+        name: value(row, ['name', 'company', 'security name', 'holding name', 'instrument']), sourceSector: value(row, ['sector', 'gics sector', 'industry', 'sektor']) || null,
+        sourceCountry: value(row, ['country', 'location', 'country of risk', 'standort']) || null, exchange: value(row, ['exchange', 'börse']) || null,
+        weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
+    }
   }
   const byIsin = new Map<string, Constituent>()
   for (const candidate of candidates) {
