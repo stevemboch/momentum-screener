@@ -88,7 +88,7 @@ export interface Instrument {
   botsiTargetWeight?: number | null
   botsiFilterPassed?: boolean | null
   botsiTop10?: boolean | null
-  /** Delayed Gettex pre-trade quote, loaded for the BOTSI selection only. */
+  /** Gettex ISIN quote, loaded for the qualified BOTSI selection only. */
   gettexBid?: number | null
   gettexAsk?: number | null
   gettexSpreadPct?: number | null
@@ -449,7 +449,7 @@ export interface TableState {
   excludedPrimaryListingCountryFilters: string[]
   /** Canonical GICS sector filter. */
   sectorFilter: string
-  /** Maximum delayed Gettex spread in percent; empty means no spread filter. */
+  /** Maximum Gettex quote spread in percent; empty means no spread filter. */
   maxGettexSpreadPct: string
 }
 

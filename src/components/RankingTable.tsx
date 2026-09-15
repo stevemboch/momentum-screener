@@ -79,7 +79,7 @@ const COLUMNS: Col[] = [
   { key: 'relative52wHigh17dAgo', label: '52W ATH −17D', title: '52-week-high proximity as of 17 trading days ago; helps separate sustained leaders from short-term reversals' },
   { key: 'botsiScore',    label: 'BOTSI',    title: 'BOTSI: #Rank (1=best) und Summe der GD200/MOM260/MOMJT-Indikator-Ranks unter Aktien. Niedrigere Summe = besser.' },
   { key: 'botsiRank',     label: 'B-Rank',   title: 'BOTSI overall rank' },
-  { key: 'gettexSpreadPct', label: 'Gettex Spr.', title: 'Delayed Gettex pre-trade spread: (Ask − Bid) / midpoint. Quotes are delayed and not executable prices.' },
+  { key: 'gettexSpreadPct', label: 'Gettex Spr.', title: 'Gettex ISIN quote spread: (Ask − Bid) / midpoint. Indicative quote; not an executable price.' },
   { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
   { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'r1w',           label: '1W',       title: '1-week return' },
@@ -1985,7 +1985,7 @@ function TableToolbar({
               onClick={onRefreshGettexSpreads}
               disabled={gettexSpreadsLoading}
               className="focus-ring ml-2 rounded border border-cyan-400/35 px-2 py-1 text-cyan-200 transition-colors hover:bg-cyan-400/10 disabled:cursor-wait disabled:opacity-60"
-              title="Gettex-Spreads aus dem 17:00-Snapshot erneut laden"
+              title="Gettex-Spreads für alle qualifizierten BOTSI-Titel erneut laden"
             >
               {gettexSpreadsLoading ? 'Spreads laden…' : 'Spreads aktualisieren'}
             </button>

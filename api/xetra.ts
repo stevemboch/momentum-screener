@@ -1,15 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createGunzip, gunzipSync } from 'zlib'
-import { Readable } from 'stream'
 import { requireAuth } from '../server/auth'
 import { getIndexGlobalSnapshot } from '../server/universe'
 
-const GETTEX_PRETRADE_PAGE = 'https://www.gettex.de/handel/delayed-data/pretrade-data/'
-// Abort MUND scan based on elapsed time (not line count) to avoid Vercel function timeout.
-// GETTEX_MUND_HARD_LINE_CEILING: backstop against pathological/corrupt file (e.g. missing newlines)
-// GETTEX_HANDLER_BUDGET_MS: total budget in ms from handler start (~10s margin under 60s maxDuration)
-const GETTEX_MUND_HARD_LINE_CEILING = 3_000_000
-const GETTEX_HANDLER_BUDGET_MS = 50_000
+const GETTEX_WEB_ORIGIN = 'https://www.gettex.de'
+const GETTEX_DATA_ORIGIN = 'https://lseg-widgets.financial.com'
+const GETTEX_SESSION_INSTRUMENT = 'DE0007664005' // Volkswagen; used only to obtain the website session.
+const GETTEX_BATCH_SIZE = 50
 
 type GettexQuote = { bid: number; ask: number; spreadPct: number; time: string; currency: string }
 
@@ -20,107 +16,63 @@ function readRequestedGettexIsins(body: unknown): string[] {
     .filter((value): value is string => typeof value === 'string')
     .map((value) => value.trim().toUpperCase())
     .filter((value) => /^[A-Z]{2}[A-Z0-9]{10}$/.test(value)))]
-    .slice(0, 60)
+    .slice(0, 100)
 }
 
-async function findGettex1700MuncFile(): Promise<string> {
-  const response = await fetch(GETTEX_PRETRADE_PAGE, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
-  if (!response.ok) throw new Error(`Gettex index unavailable (HTTP ${response.status})`)
-  const html = await response.text()
-  const match = html.match(/href="(https:\/\/erdk\.bayerische-boerse\.de:8000\/[^\"]*pretrade\.\d{8}\.17\.00\.munc\.csv\.gz)"/i)
-  if (!match) throw new Error('No Gettex MUNC pre-trade snapshot for 17:00 found')
-  return match[1]
+/** Obtain the short-lived session used by Gettex's own ISIN detail pages. */
+async function getGettexWebToken(): Promise<string> {
+  const page = await fetch(`${GETTEX_WEB_ORIGIN}/aktie/${GETTEX_SESSION_INSTRUMENT}/`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Momentum-Screener/1.0)' },
+  })
+  if (!page.ok) throw new Error(`Gettex instrument page unavailable (HTTP ${page.status})`)
+  const html = await page.text()
+  const saml = html.match(/const samlRequest=`([\s\S]*?)`;/)?.[1]
+  if (!saml) throw new Error('Gettex website session was not found')
+
+  const response = await fetch(`${GETTEX_DATA_ORIGIN}/auth/api/v1/sessions/samllogin?fetchToken=true`, {
+    method: 'POST',
+    headers: { Accept: '*/*', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `SAMLResponse=${encodeURIComponent(Buffer.from(saml).toString('base64'))}`,
+  })
+  const payload = await response.json().catch(() => null) as { token?: unknown } | null
+  if (!response.ok || typeof payload?.token !== 'string') throw new Error(`Gettex quote session unavailable (HTTP ${response.status})`)
+  return payload.token
 }
 
-async function findGettex1700MundFile(): Promise<string> {
-  const response = await fetch(GETTEX_PRETRADE_PAGE, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
-  if (!response.ok) throw new Error(`Gettex index unavailable (HTTP ${response.status})`)
-  const html = await response.text()
-  const match = html.match(/href="(https:\/\/erdk\.bayerische-boerse\.de:8000\/[^\"]*pretrade\.\d{8}\.17\.00\.mund\.csv\.gz)"/i)
-  if (!match) throw new Error('No Gettex MUND pre-trade snapshot for 17:00 found')
-  return match[1]
-}
-
-function parseGettexQuotes(csv: string, wanted: Set<string>): Record<string, GettexQuote> {
+async function fetchGettexWebQuotes(isins: string[]): Promise<Record<string, GettexQuote>> {
+  const token = await getGettexWebToken()
   const quotes: Record<string, GettexQuote> = {}
-  for (const line of csv.split(/\r?\n/)) {
-    const [isin, time, currency, bidRaw, , askRaw] = line.split(',')
-    if (!isin || !wanted.has(isin)) continue
-    const bid = Number(bidRaw)
-    const ask = Number(askRaw)
-    const mid = (bid + ask) / 2
-    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid || mid <= 0) continue
-    quotes[isin] = { bid, ask, spreadPct: ((ask - bid) / mid) * 100, time, currency }
+  const time = new Date().toISOString()
+  for (let index = 0; index < isins.length; index += GETTEX_BATCH_SIZE) {
+    const search = isins.slice(index, index + GETTEX_BATCH_SIZE).join(',')
+    const params = new URLSearchParams({
+      fids: 'x._ISIN,q._BID,q._ASK', search, searchFor: 'ISIN', exchanges: 'GTX',
+      pageSize: String(GETTEX_BATCH_SIZE), pageNo: '0',
+    })
+    const response = await fetch(`${GETTEX_DATA_ORIGIN}/rest/api/find/securities?${params}`, { headers: { jwt: token } })
+    const payload = await response.json().catch(() => null) as { data?: Array<Record<string, unknown>> } | null
+    if (!response.ok || !Array.isArray(payload?.data)) throw new Error(`Gettex quote lookup unavailable (HTTP ${response.status})`)
+    for (const row of payload.data) {
+      const isin = typeof row['x._ISIN'] === 'string' ? row['x._ISIN'].trim().toUpperCase() : ''
+      const bid = Number(row['q._BID'])
+      const ask = Number(row['q._ASK'])
+      const mid = (bid + ask) / 2
+      if (!isins.includes(isin) || !Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid || mid <= 0) continue
+      quotes[isin] = { bid, ask, spreadPct: ((ask - bid) / mid) * 100, time, currency: 'unknown' }
+    }
   }
   return quotes
 }
-
-/**
- * MUND is the complete pre-trade feed (including international shares), but
- * can be very large. Read it as a stream and stop as soon as every missing
- * BOTSI ISIN has been found; never buffer or decompress the complete file.
- */
-async function streamGettexMundQuotes(fileUrl: string, wanted: Set<string>, deadline: number): Promise<{ quotes: Record<string, GettexQuote>; truncated: boolean; linesScanned: number }> {
-   const response = await fetch(fileUrl, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
-   if (!response.ok || !response.body) throw new Error(`Gettex complete pre-trade file unavailable (HTTP ${response.status})`)
-
-   const source = Readable.fromWeb(response.body as any)
-   const gunzip = createGunzip()
-   source.pipe(gunzip)
-   const quotes: Record<string, GettexQuote> = {}
-   let remainder = ''
-   let processedLines = 0
-
-   try {
-     for await (const chunk of gunzip) {
-       remainder += chunk.toString('utf8')
-       const lines = remainder.split(/\r?\n/)
-       remainder = lines.pop() ?? ''
-       for (const line of lines) {
-         processedLines += 1
-         if (processedLines > GETTEX_MUND_HARD_LINE_CEILING || Date.now() >= deadline) {
-           return { quotes, truncated: true, linesScanned: processedLines }
-         }
-         const [isin, time, currency, bidRaw, , askRaw] = line.split(',')
-         if (!isin || !wanted.has(isin)) continue
-         const bid = Number(bidRaw)
-         const ask = Number(askRaw)
-         const mid = (bid + ask) / 2
-         if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid || mid <= 0) continue
-         quotes[isin] = { bid, ask, spreadPct: ((ask - bid) / mid) * 100, time, currency }
-         if (Object.keys(quotes).length === wanted.size) return { quotes, truncated: false, linesScanned: processedLines }
-       }
-     }
-     return { quotes, truncated: false, linesScanned: processedLines }
-   } finally {
-     // Closing both streams also cancels an unfinished upstream download.
-     source.destroy()
-     gunzip.destroy()
-   }
- }
 
 async function handleGettexSpreads(req: VercelRequest, res: VercelResponse) {
    const isins = readRequestedGettexIsins(req.body)
    if (isins.length === 0) return res.status(400).json({ error: 'Provide at least one valid ISIN' })
    try {
-     const startedAt = Date.now()
-     const fileUrl = await findGettex1700MuncFile()
-     const response = await fetch(fileUrl, { headers: { 'User-Agent': 'Momentum-Screener/1.0' } })
-     if (!response.ok) throw new Error(`Gettex pre-trade file unavailable (HTTP ${response.status})`)
-     const csv = gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8')
-     const quotes = parseGettexQuotes(csv, new Set(isins))
-     const missingIsins = isins.filter((isin) => !quotes[isin])
-     let mundScan = null
-     if (missingIsins.length > 0) {
-       const completeFileUrl = await findGettex1700MundFile()
-       const { quotes: mundQuotes, truncated: mundTruncated, linesScanned: mundLinesScanned } = await streamGettexMundQuotes(completeFileUrl, new Set(missingIsins), startedAt + GETTEX_HANDLER_BUDGET_MS)
-       Object.assign(quotes, mundQuotes)
-       mundScan = { truncated: mundTruncated, linesScanned: mundLinesScanned }
-     }
-     res.setHeader('Cache-Control', 'private, max-age=900')
-     return res.status(200).json({ quotes, source: 'gettex-pretrade', fetchedAt: Date.now(), mundScan })
+     const quotes = await fetchGettexWebQuotes(isins)
+     res.setHeader('Cache-Control', 'private, max-age=60')
+     return res.status(200).json({ quotes, source: 'gettex-web-isin-quote', fetchedAt: Date.now() })
    } catch (error: any) {
-     return res.status(502).json({ error: error?.message ?? 'Gettex pre-trade data unavailable' })
+     return res.status(502).json({ error: error?.message ?? 'Gettex ISIN quotes unavailable' })
    }
  }
 

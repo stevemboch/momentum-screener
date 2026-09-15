@@ -15,7 +15,7 @@ interface SourceDefinition {
   maxRows: number
   defaultListingCountry?: string
   sourceType: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE' | 'OFFICIAL_LISTING_SCREEN'
-  format?: 'csv' | 'blackrock_holdings_json' | 'dws_excel'
+  format?: 'csv' | 'blackrock_holdings_json' | 'blackrock_product_data' | 'dws_excel'
 }
 
 interface Constituent {
@@ -51,8 +51,9 @@ const SOURCES: SourceDefinition[] = [
   // Using Russell 2000 as the mid-cap proxy is not appropriate. We use the US API with MIDE ticker.
   // Updated to match actual file format - the MIDE ETF has ~280 holdings, not the expected 390-430
   { code: 'SP_MIDCAP_400', region: 'North America', benchmark: 'S&P MidCap 400', urlEnv: 'UNIVERSE_SP_MIDCAP_400_CSV_URL', defaultUrl: 'https://etf.dws.com/api/pdp/en-us/export/etf/MIDE/Securities', minRows: 250, maxRows: 320, defaultListingCountry: 'United States', sourceType: 'TRACKING_FUND_DISCLOSURE', format: 'dws_excel' },
-  // Xtrackers does not offer an S&P SmallCap 600 UCITS ETF; using Russell 2000 UCITS as small-cap proxy.
-  { code: 'SP_SMALLCAP_600', region: 'North America', benchmark: 'Russell 2000', urlEnv: 'UNIVERSE_SP_SMALLCAP_600_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE00BJZ2DD79/', minRows: 1800, maxRows: 2200, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  // iShares ISP6 (IE00B2QWCY14) tracks the actual S&P SmallCap 600. Its public
+  // holdings endpoint exposes the current physical ETF basket, including ISINs.
+  { code: 'SP_SMALLCAP_600', region: 'North America', benchmark: 'S&P SmallCap 600', urlEnv: 'UNIVERSE_SP_SMALLCAP_600_CSV_URL', defaultUrl: 'https://www.blackrock.com/varnish-api/uk-retail01-product-data/product-data/api/v2/get-product-data?appSubType=ISHARES&appType=PRODUCT_PAGE&component=holdings&locale=en_GB&portfolioId=251920&targetSite=ishares-uk&userType=individual&excludeContent=true&asOfDate=&includeConfig=true', minRows: 580, maxRows: 700, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY', format: 'blackrock_product_data' },
   { code: 'NASDAQ_100', region: 'North America', benchmark: 'Nasdaq 100', urlEnv: 'UNIVERSE_NASDAQ_100_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE00BMFKG444/', minRows: 90, maxRows: 110, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
   { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0274209740/', minRows: 100, maxRows: 400, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
   { code: 'MSCI_PACIFIC_EX_JAPAN', region: 'Pacific ex Japan', benchmark: 'MSCI Pacific ex Japan', urlEnv: 'UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0322252338/', minRows: 70, maxRows: 120, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
@@ -61,6 +62,27 @@ const SOURCES: SourceDefinition[] = [
 
 const ISIN = /^[A-Z]{2}[A-Z0-9]{10}$/
 
+/**
+ * Holdings providers occasionally format an ISIN with spaces or hyphens.  Do
+ * not accept a value merely because it has twelve characters: the ISO 6166
+ * check digit catches provider placeholders (for example `___451CVR021`) and
+ * prevents those rows from reaching a quote request as fake instruments.
+ */
+function normalizeIsin(raw: unknown): string | null {
+  const isin = String(raw ?? '').normalize('NFKC').toUpperCase().replace(/[\s-]/g, '')
+  if (!ISIN.test(isin)) return null
+
+  let digits = ''
+  for (const char of isin) digits += /\d/.test(char) ? char : String(char.charCodeAt(0) - 55)
+  let total = 0
+  for (let i = digits.length - 1, parity = 0; i >= 0; i--, parity ^= 1) {
+    let digit = Number(digits[i])
+    if (parity) digit *= 2
+    total += digit > 9 ? digit - 9 : digit
+  }
+  return total % 10 === 0 ? isin : null
+}
+
 function value(row: Record<string, unknown>, names: string[]): string {
   const key = Object.keys(row).find((candidate) => names.includes(candidate.trim().toLowerCase()))
   return key == null ? '' : String(row[key] ?? '').trim()
@@ -68,7 +90,7 @@ function value(row: Record<string, unknown>, names: string[]): string {
 
 function isEquity(assetClass: string): boolean {
   const normalized = assetClass.trim().toLowerCase()
-  return !normalized || normalized.includes('equity') || normalized.includes('aktien')
+  return normalized.includes('equity') || normalized.includes('aktien')
 }
 
 
@@ -154,8 +176,11 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   const isExcel = source.format === 'dws_excel'
   const response = await fetch(process.env[source.urlEnv] || source.defaultUrl, { 
     headers: { 
-      Accept: isExcel ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*' : 'text/csv,text/plain,*/*', 
-      'User-Agent': 'MomentumScreener/1.0' 
+      Accept: isExcel
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*'
+        : source.format === 'blackrock_product_data' ? 'application/json,*/*' : 'text/csv,text/plain,*/*',
+      'User-Agent': 'MomentumScreener/1.0',
+      ...(source.format === 'blackrock_product_data' ? { 'x-application-id': 'pp-ui-csr' } : {}),
     } 
   })
   if (!response.ok) throw new Error(`${source.code}: HTTP ${response.status}`)
@@ -169,10 +194,10 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
     for (const row of parsed.aaData) {
       const assetClass = String(row[4] ?? '')
       if (!isEquity(assetClass)) continue
-      const rawIsin = String(row[9] ?? '').trim().toUpperCase()
+      const isin = normalizeIsin(row[9])
       const rawCusip = String(row[8] ?? '').trim().toUpperCase()
       candidates.push({
-        isin: ISIN.test(rawIsin) ? rawIsin : null,
+        isin,
         cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null,
         ticker: String(row[0] ?? '').trim() || null,
         name: String(row[1] ?? '').trim(),
@@ -180,6 +205,37 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
         sourceCountry: String(row[12] ?? '').trim() || null,
         exchange: String(row[13] ?? '').trim() || null,
         weight: numberValue(String(row[17] ?? '')),
+      })
+    }
+  } else if (source.format === 'blackrock_product_data') {
+    const parsed = await response.json() as {
+      componentsByNameMap?: {
+        holdings?: {
+          containersByNameMap?: {
+            all?: { dataPointsByNameMap?: Record<string, { value?: unknown }> }
+          }
+        }
+      }
+    }
+    const fields = parsed.componentsByNameMap?.holdings?.containersByNameMap?.all?.dataPointsByNameMap
+    if (!fields) throw new Error(`${source.code}: BlackRock holdings response has no all-holdings data`)
+    const column = (name: string): unknown[] => Array.isArray(fields[name]?.value) ? fields[name]!.value as unknown[] : []
+    const assetClasses = column('assetClass')
+    const isins = column('isin')
+    const rowCount = Math.max(assetClasses.length, isins.length, column('issueName').length)
+    if (rowCount === 0) throw new Error(`${source.code}: BlackRock holdings response is empty`)
+    for (let index = 0; index < rowCount; index++) {
+      const assetClass = String(assetClasses[index] ?? '')
+      if (!isEquity(assetClass)) continue
+      candidates.push({
+        isin: normalizeIsin(isins[index]),
+        cusip: null,
+        ticker: String(column('ticker')[index] ?? '').trim() || null,
+        name: String(column('issueName')[index] ?? '').trim(),
+        sourceSector: String(column('sectorName')[index] ?? '').trim() || null,
+        sourceCountry: String(column('countryOfRisk')[index] ?? '').trim() || null,
+        exchange: String(column('exchange')[index] ?? '').trim() || null,
+        weight: numberValue(String(column('holdingPercent')[index] ?? '')),
       })
     }
   } else if (source.format === 'dws_excel') {
@@ -248,13 +304,15 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
       if (row.length === 0 || row.every((cell) => !cell)) continue
       
       const assetClass = assetClassCol >= 0 ? String(row[assetClassCol] ?? '').trim() : ''
-      if (!isEquity(assetClass)) continue
+      // If the file declares an asset-class column, an empty footer/cash row
+      // is not an equity holding. Files without that column remain supported.
+      if (assetClassCol >= 0 && !isEquity(assetClass)) continue
       
-      const rawIsin = isinCol >= 0 ? String(row[isinCol] ?? '').trim().toUpperCase() : ''
+      const isin = isinCol >= 0 ? normalizeIsin(row[isinCol]) : null
       const rawCusip = cusipCol >= 0 ? String(row[cusipCol] ?? '').trim().toUpperCase() : ''
       
       candidates.push({
-        isin: ISIN.test(rawIsin) ? rawIsin : null,
+        isin,
         cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null,
         ticker: tickerCol >= 0 ? String(row[tickerCol] ?? '').trim() || null : null,
         name: nameCol >= 0 ? String(row[nameCol] ?? '').trim() : '',
@@ -272,17 +330,22 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
     const header = parsedRows.data[headerIndex].map((cell) => String(cell ?? '').replace(/^\uFEFF/, '').trim())
     const rows = parsedRows.data.slice(headerIndex + 1).map((cells) => Object.fromEntries(header.map((name, index) => [name, cells[index] ?? ''])) as Record<string, unknown>)
     for (const row of rows) {
-      if (!isEquity(value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse']))) continue
-      const rawIsin = value(row, ['isin']).toUpperCase()
+      const assetClass = value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse'])
+      if (assetClass && !isEquity(assetClass)) continue
+      const isin = normalizeIsin(value(row, ['isin']))
       const rawCusip = value(row, ['cusip']).toUpperCase()
-      candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
+      candidates.push({ isin, cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
         name: value(row, ['name', 'company', 'security name', 'holding name', 'instrument']), sourceSector: value(row, ['sector', 'gics sector', 'industry', 'sektor']) || null,
         sourceCountry: value(row, ['country', 'location', 'country of risk', 'standort']) || null, exchange: value(row, ['exchange', 'börse']) || null,
         weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
     }
   }
+  // An index member without an ISIN cannot be sent to Gettex.  Preserve rows
+  // only where the source provides a real alternate listing identifier; this
+  // also discards XLSX footers, cash lines and DWS placeholder "ISINs".
+  const quoteableCandidates = candidates.filter((candidate) => candidate.isin || candidate.ticker || candidate.cusip)
   const byIsin = new Map<string, Constituent>()
-  for (const candidate of candidates) {
+  for (const candidate of quoteableCandidates) {
     // The holdings file is the membership authority. If no ISIN is disclosed,
     // retain the source listing identity; no third-party mapper can remove it.
     // Exchange + local ticker is sufficient across sources and preserves shared
@@ -300,7 +363,17 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   }
   const constituents = [...byIsin.values()]
   if (constituents.length < source.minRows || constituents.length > source.maxRows) throw new Error(`${source.code}: ${constituents.length} valid equity holdings outside expected range ${source.minRows}-${source.maxRows}`)
-  return { constituents, retrievedAt: new Date().toISOString(), inputRows: candidates.length, resolvedRows: constituents.length, unresolvedRows: 0 }
+  // Keep this a row-level metric. A fund can disclose the same ISIN in more
+  // than one line (for example share-class or basket accounting); deduping it
+  // into one universe member must not lower the published ISIN match rate.
+  const resolvedRows = candidates.filter((candidate) => candidate.isin != null).length
+  return {
+    constituents,
+    retrievedAt: new Date().toISOString(),
+    inputRows: candidates.length,
+    resolvedRows,
+    unresolvedRows: candidates.length - resolvedRows,
+  }
 }
 
 

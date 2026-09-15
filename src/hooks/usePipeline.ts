@@ -2027,15 +2027,15 @@ export function usePipeline() {
   }, [state.instruments, fetchPrices])
 
   const loadedGettexSpreadSetRef = useRef<string | null>(null)
-const fetchBotsiGettexSpreads = useCallback(async () => {
-     // Step 1: Filter instruments for BOTSI mode (without ISIN regex check)
+  const fetchBotsiGettexSpreads = useCallback(async () => {
+     // Fetch exactly the investable BOTSI selection. This keeps the Gettex
+     // request small and guarantees that every qualified instrument is asked.
      const targets = state.instruments.filter((inst) =>
        inst.type === 'Stock' &&
-       inst.botsiRank != null &&
-       (inst.botsiRank <= 50 || inst.inPortfolio === true)
+       inst.botsiQualified === true
      )
 
-     // Step 2: Split into withIsin and needsIsin
+     // Split into with-ISIN and needs-ISIN instruments.
      const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
      const needsIsin = targets.filter(inst => {
        const isValidIsin = /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
@@ -2050,7 +2050,7 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
      const cusipResolvedIds = new Set(cusipResolved.map((item) => item.instrument.isin))
      const needsOpenFigi = needsIsin.filter((instrument) => !cusipResolvedIds.has(instrument.isin))
 
-     // Step 3: Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
+     // Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
      // the reducer key even when it is a LISTING: identity.
      const needsIsinWithMeta = needsOpenFigi.map(inst => {
        let job: { idType: string; idValue: string }
@@ -2073,7 +2073,7 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
        })
        : []
 
-     // Step 4: Build the Gettex query list. Several listings can map to the
+     // Build the Gettex query list. Several listings can map to the
      // same ISIN, so retain every original reducer key for each query ISIN.
      const queryIsinToInstrumentIsins = new Map<string, string[]>()
      const queryIsins: string[] = []
@@ -2111,7 +2111,7 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
        return
      }
 
-     // Step 6: Make the xetra request
+     // Request Gettex quotes.
      const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
        method: 'POST',
        headers: { 'Content-Type': 'application/json' },
@@ -2119,7 +2119,7 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
        timeoutMs: 55_000,
      })
 
-     // Step 7: Update instruments using the map
+     // Update instruments using the map.
      const updates = new Map<string, Partial<Instrument>>()
      for (const queryIsin of uniqueQueryIsins) {
        const quote = data.quotes[queryIsin]
@@ -2140,14 +2140,14 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
   useEffect(() => {
     if (!state.tableState.botsiMode) return
     const signature = state.instruments
-      .filter((inst) => inst.type === 'Stock' && inst.botsiRank != null && (inst.botsiRank <= 50 || inst.inPortfolio === true))
+      .filter((inst) => inst.type === 'Stock' && inst.botsiQualified === true)
       .map((inst) => inst.isin)
       .sort()
       .join(',')
     if (!signature || loadedGettexSpreadSetRef.current === signature) return
     loadedGettexSpreadSetRef.current = signature
     fetchBotsiGettexSpreads().catch(() => {
-      // A missing delayed quote should not interrupt the BOTSI scan. The table
+      // A missing Gettex quote should not interrupt the BOTSI scan. The table
       // keeps an em dash for unavailable instruments.
     })
   }, [state.tableState.botsiMode, state.instruments, fetchBotsiGettexSpreads])
