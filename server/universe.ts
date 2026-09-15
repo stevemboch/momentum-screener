@@ -1,4 +1,5 @@
 import Papa from 'papaparse'
+import * as XLSX from 'xlsx'
 
 type UniverseSourceCode =
   | 'STOXX_EUROPE_600' | 'SP_500' | 'SP_MIDCAP_400' | 'SP_SMALLCAP_600'
@@ -14,7 +15,7 @@ interface SourceDefinition {
   maxRows: number
   defaultListingCountry?: string
   sourceType: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE' | 'OFFICIAL_LISTING_SCREEN'
-  format?: 'csv' | 'blackrock_holdings_json'
+  format?: 'csv' | 'blackrock_holdings_json' | 'dws_excel'
 }
 
 interface Constituent {
@@ -44,17 +45,17 @@ interface ImportedSource {
 }
 
 const SOURCES: SourceDefinition[] = [
-  { code: 'STOXX_EUROPE_600', region: 'Europe', benchmark: 'STOXX Europe 600', urlEnv: 'UNIVERSE_STOXX_EUROPE_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251931/ishares-stoxx-europe-600-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXSA_holdings&dataType=fund', minRows: 500, maxRows: 750, sourceType: 'ETF_HOLDINGS_PROXY' },
-  { code: 'SP_500', region: 'North America', benchmark: 'S&P 500', urlEnv: 'UNIVERSE_SP_500_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/253743/ishares-sp-500-b-ucits-etf-acc-fund/1478358465952.ajax?fileType=csv&fileName=SXR8_holdings&dataType=fund', minRows: 450, maxRows: 550, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
-  // BlackRock's detailed holdings JSON for the fully replicating iShares Core
-  // S&P Mid-Cap ETF (IJH) includes the constituent ISINs. The simpler CSV
-  // export and the former Equibles proxy expose tickers only.
-  { code: 'SP_MIDCAP_400', region: 'North America', benchmark: 'S&P MidCap 400', urlEnv: 'UNIVERSE_SP_MIDCAP_400_CSV_URL', defaultUrl: 'https://www.blackrock.com/uk/intermediaries/products/239763/ishares-core-sp-midcap-etf/1472631233320.ajax?tab=all&fileType=json', minRows: 390, maxRows: 430, defaultListingCountry: 'United States', sourceType: 'TRACKING_FUND_DISCLOSURE', format: 'blackrock_holdings_json' },
-  { code: 'SP_SMALLCAP_600', region: 'North America', benchmark: 'S&P SmallCap 600', urlEnv: 'UNIVERSE_SP_SMALLCAP_600_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251920/ishares-sp-smallcap-600-ucits-etf/1478358465952.ajax?fileType=csv&fileName=IUS3_holdings&dataType=fund', minRows: 580, maxRows: 700, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
-  { code: 'NASDAQ_100', region: 'North America', benchmark: 'Nasdaq 100', urlEnv: 'UNIVERSE_NASDAQ_100_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251896/ishares-nasdaq100-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXXT_holdings&dataType=fund', minRows: 90, maxRows: 110, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY' },
-  { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251866/ishares-msci-japan-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IJPN_holdings&dataType=fund', minRows: 100, maxRows: 400, sourceType: 'ETF_HOLDINGS_PROXY' },
-  { code: 'MSCI_PACIFIC_EX_JAPAN', region: 'Pacific ex Japan', benchmark: 'MSCI Pacific ex Japan', urlEnv: 'UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/253735/ishares-msci-pacific-ex-japan-ucits-etf-acc-fund/1478358465952.ajax?fileType=csv&fileName=SXR1_holdings&dataType=fund', minRows: 70, maxRows: 120, sourceType: 'ETF_HOLDINGS_PROXY' },
-  { code: 'MSCI_EM', region: 'Emerging Markets', benchmark: 'MSCI Emerging Markets', urlEnv: 'UNIVERSE_MSCI_EM_CSV_URL', defaultUrl: 'https://www.ishares.com/de/privatanleger/de/produkte/251857/ishares-msci-emerging-markets-ucits-etf-inc-fund/1478358465952.ajax?fileType=csv&fileName=IQQE_holdings&dataType=fund', minRows: 600, maxRows: 1_800, sourceType: 'ETF_HOLDINGS_PROXY' },
+  { code: 'STOXX_EUROPE_600', region: 'Europe', benchmark: 'STOXX Europe 600', urlEnv: 'UNIVERSE_STOXX_EUROPE_600_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0328475792/', minRows: 500, maxRows: 750, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  { code: 'SP_500', region: 'North America', benchmark: 'S&P 500', urlEnv: 'UNIVERSE_SP_500_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE000Z9SJA06/', minRows: 450, maxRows: 550, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  // Xtrackers does not offer a plain S&P MidCap 400 UCITS ETF; the US-listed MIDE is ESG-scored.
+  // Using Russell 2000 as the mid-cap proxy is not appropriate. We use the US API with MIDE ticker.
+  { code: 'SP_MIDCAP_400', region: 'North America', benchmark: 'S&P MidCap 400', urlEnv: 'UNIVERSE_SP_MIDCAP_400_CSV_URL', defaultUrl: 'https://etf.dws.com/api/pdp/en-us/export/etf/MIDE/Securities', minRows: 390, maxRows: 430, defaultListingCountry: 'United States', sourceType: 'TRACKING_FUND_DISCLOSURE', format: 'dws_excel' },
+  // Xtrackers does not offer an S&P SmallCap 600 UCITS ETF; using Russell 2000 UCITS as small-cap proxy.
+  { code: 'SP_SMALLCAP_600', region: 'North America', benchmark: 'Russell 2000', urlEnv: 'UNIVERSE_SP_SMALLCAP_600_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE00BJZ2DD79/', minRows: 1800, maxRows: 2200, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  { code: 'NASDAQ_100', region: 'North America', benchmark: 'Nasdaq 100', urlEnv: 'UNIVERSE_NASDAQ_100_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE00BMFKG444/', minRows: 90, maxRows: 110, defaultListingCountry: 'United States', sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0274209740/', minRows: 100, maxRows: 400, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  { code: 'MSCI_PACIFIC_EX_JAPAN', region: 'Pacific ex Japan', benchmark: 'MSCI Pacific ex Japan', urlEnv: 'UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0322252338/', minRows: 70, maxRows: 120, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  { code: 'MSCI_EM', region: 'Emerging Markets', benchmark: 'MSCI Emerging Markets', urlEnv: 'UNIVERSE_MSCI_EM_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE000GWA2J58/', minRows: 600, maxRows: 1_800, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
 ]
 
 const ISIN = /^[A-Z]{2}[A-Z0-9]{10}$/
@@ -149,17 +150,22 @@ function stableHash(input: string): string {
 interface Candidate { isin: string | null; cusip: string | null; ticker: string | null; name: string; sourceSector: string | null; sourceCountry: string | null; exchange: string | null; weight: number | null }
 
 async function importSource(source: SourceDefinition): Promise<ImportedSource> {
-  const response = await fetch(process.env[source.urlEnv] || source.defaultUrl, { headers: { Accept: 'text/csv,text/plain,*/*', 'User-Agent': 'MomentumScreener/1.0' } })
+  const isExcel = source.format === 'dws_excel'
+  const response = await fetch(process.env[source.urlEnv] || source.defaultUrl, { 
+    headers: { 
+      Accept: isExcel ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*' : 'text/csv,text/plain,*/*', 
+      'User-Agent': 'MomentumScreener/1.0' 
+    } 
+  })
   if (!response.ok) throw new Error(`${source.code}: HTTP ${response.status}`)
-  const payload = await response.text()
   
   const candidates: Candidate[] = []
+  
   if (source.format === 'blackrock_holdings_json') {
+    const payload = await response.text()
     const parsed = JSON.parse(payload.replace(/^\uFEFF/, '')) as { aaData?: unknown[][] }
     if (!Array.isArray(parsed.aaData)) throw new Error(`${source.code}: holdings JSON has no aaData array`)
     for (const row of parsed.aaData) {
-      // BlackRock table order: ticker, name, type, sector, asset class, …,
-      // CUSIP, ISIN, SEDOL, price, location, exchange, …, market weight.
       const assetClass = String(row[4] ?? '')
       if (!isEquity(assetClass)) continue
       const rawIsin = String(row[9] ?? '').trim().toUpperCase()
@@ -175,7 +181,90 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
         weight: numberValue(String(row[17] ?? '')),
       })
     }
+  } else if (source.format === 'dws_excel') {
+    const arrayBuffer = await response.arrayBuffer()
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    const sheetName = workbook.SheetNames[0]
+    const worksheet = workbook.Sheets[sheetName]
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as string[][]
+    
+    // Detect US format: has "Securities" row followed by "Fund Name:", "Ticker:", "As of:" rows
+    let isUSFormat = false
+    for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+      const row = jsonData[i].map((cell) => String(cell ?? '').trim().toLowerCase())
+      if (row.some((cell) => cell === 'securities') || row.some((cell) => cell.startsWith('ticker:'))) {
+        isUSFormat = true
+        break
+      }
+    }
+    
+    let headerRowIndex = -1
+    if (isUSFormat) {
+      // US format: find row with "symbol", "isin", "cusip", "name", "weight %", etc.
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i].map((cell) => String(cell ?? '').trim().toLowerCase())
+        if (row.some((cell) => cell === 'symbol' || cell === 'isin' || cell === 'cusip' || cell === 'weight %')) {
+          headerRowIndex = i
+          break
+        }
+      }
+    } else {
+      // EU format: find row with 'isin' or 'name' or 'gewichtung'
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i].map((cell) => String(cell ?? '').trim().toLowerCase())
+        if (row.some((cell) => cell === 'isin' || cell === 'name' || cell === 'gewichting' || cell === 'gewichtung')) {
+          headerRowIndex = i
+          break
+        }
+      }
+    }
+    if (headerRowIndex < 0) throw new Error(`${source.code}: Excel file has no recognised holdings header`)
+    
+    const header = jsonData[headerRowIndex].map((cell) => String(cell ?? '').trim().toLowerCase())
+    const headerMap = new Map<string, number>()
+    header.forEach((name, idx) => headerMap.set(name, idx))
+    
+    const findCol = (names: string[]) => {
+      for (const n of names) {
+        if (headerMap.has(n)) return headerMap.get(n)!
+      }
+      return -1
+    }
+    
+    // Support both EU (English/German) and US column names
+    const isinCol = findCol(['isin'])
+    const nameCol = findCol(['name', 'security name', 'instrument', 'holding name', 'bezeichnung'])
+    const tickerCol = findCol(['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker', 'kürzel'])
+    const cusipCol = findCol(['cusip'])
+    const sectorCol = findCol(['sector', 'gics sector', 'industry', 'sektor', 'industry classification', 'branche'])
+    const countryCol = findCol(['country', 'location', 'country of risk', 'standort', 'land'])
+    const exchangeCol = findCol(['exchange', 'börse', 'boerse', 'handelsplatz'])
+    const weightCol = findCol(['weight (%)', 'weight', 'weight %', 'gewichtung (%)', 'gewichtung', 'weighting'])
+    const assetClassCol = findCol(['asset class', 'asset_class', 'assetclass', 'anlageklasse', 'type of security', 'wertpapierart'])
+    
+    for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+      const row = jsonData[i]
+      if (row.length === 0 || row.every((cell) => !cell)) continue
+      
+      const assetClass = assetClassCol >= 0 ? String(row[assetClassCol] ?? '').trim() : ''
+      if (!isEquity(assetClass)) continue
+      
+      const rawIsin = isinCol >= 0 ? String(row[isinCol] ?? '').trim().toUpperCase() : ''
+      const rawCusip = cusipCol >= 0 ? String(row[cusipCol] ?? '').trim().toUpperCase() : ''
+      
+      candidates.push({
+        isin: ISIN.test(rawIsin) ? rawIsin : null,
+        cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null,
+        ticker: tickerCol >= 0 ? String(row[tickerCol] ?? '').trim() || null : null,
+        name: nameCol >= 0 ? String(row[nameCol] ?? '').trim() : '',
+        sourceSector: sectorCol >= 0 ? String(row[sectorCol] ?? '').trim() || null : null,
+        sourceCountry: countryCol >= 0 ? String(row[countryCol] ?? '').trim() || null : null,
+        exchange: exchangeCol >= 0 ? String(row[exchangeCol] ?? '').trim() || null : null,
+        weight: weightCol >= 0 ? numberValue(String(row[weightCol] ?? '')) : null,
+      })
+    }
   } else {
+    const payload = await response.text()
     const parsedRows = Papa.parse<string[]>(payload, { header: false, skipEmptyLines: 'greedy', delimitersToGuess: [',', ';', '\t', '|'] })
     const headerIndex = parsedRows.data.findIndex((row) => row.some((cell) => ['isin', 'ticker', 'emittententicker', 'issuer ticker'].includes(String(cell ?? '').replace(/^\uFEFF/, '').trim().toLowerCase())))
     if (headerIndex < 0) throw new Error(`${source.code}: CSV has no recognised holdings header`)
