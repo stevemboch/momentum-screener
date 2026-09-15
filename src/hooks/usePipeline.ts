@@ -548,9 +548,10 @@ export function usePipeline() {
     // aus dem CSV — OpenFIGI liefert nur einen marginal besseren Namen.
     // ETFs/ETCs/Unknown brauchen OpenFIGI für Typ-Klärung und ISIN-Bestätigung.
     const needsEnrichment = (inst: Instrument): boolean => {
-      // Index imports were already resolved to their primary exchange server-side.
-      // A ticker-only re-query here could lose that exchange binding.
-      if (inst.source === 'index') return false
+      // A normal index row already carries a source ISIN. An exceptional
+      // LISTING: row, however, must go through OpenFIGI so it becomes usable
+      // for Gettex instead of remaining a permanent synthetic identifier.
+      if (inst.source === 'index') return !/^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
       return inst.source !== 'xetra' || inst.type === 'ETF' || inst.type === 'ETC' || inst.type === 'Unknown'
     }
 
@@ -667,7 +668,7 @@ export function usePipeline() {
         // provider/native ticker unless an explicit Yahoo ticker was supplied.
         yahooTicker = ticker.includes('.') || inst.source === 'index' ? ticker : `${ticker}.DE`
       }
-      const mappedIsin = figi.isin && figi.isin.length === 12 ? figi.isin : undefined
+      const mappedIsin = figi.isin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(figi.isin) ? figi.isin : undefined
       return {
         ...inst,
         isin: mappedIsin || inst.isin,
@@ -679,7 +680,10 @@ export function usePipeline() {
     })
 
     // Reihenfolge der ursprünglichen instruments-Liste wiederherstellen
-    const enrichedMap = new Map(enrichedToEnrich.map((i) => [i.isin, i]))
+    // Key by the original identity. A successful ISIN resolution deliberately
+    // changes `i.isin`, so keying by the result would make the replacement
+    // impossible and leave the original LISTING: value on screen.
+    const enrichedMap = new Map(toEnrich.map((original, index) => [original.isin, enrichedToEnrich[index]]))
     const skippedMap = new Map(skipEnrich.map((i) => [i.isin, i]))
     return instruments.map((inst) =>
       enrichedMap.get(inst.isin) ?? skippedMap.get(inst.isin) ?? inst

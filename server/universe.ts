@@ -90,7 +90,19 @@ function value(row: Record<string, unknown>, names: string[]): string {
 
 function isEquity(assetClass: string): boolean {
   const normalized = assetClass.trim().toLowerCase()
-  return normalized.includes('equity') || normalized.includes('aktien')
+  return normalized.includes('equity') || normalized.includes('aktien') || normalized.includes('stock') ||
+    normalized.includes('share') || normalized.includes('depository receipt') || normalized.includes('reit')
+}
+
+/**
+ * Provider overrides are not guaranteed to use DWS's `Aktien` label.  A
+ * holdings row with a valid ISIN should remain an equity candidate unless its
+ * type is explicitly a non-equity instrument. This prevents an otherwise valid
+ * index file from being reduced to zero rows solely by a translated label.
+ */
+function isExplicitlyNonEquity(assetClass: string): boolean {
+  const normalized = assetClass.trim().toLowerCase()
+  return /cash|future|forward|option|swap|bond|fixed income|money market|currency|derivative/.test(normalized)
 }
 
 
@@ -306,7 +318,7 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
       const assetClass = assetClassCol >= 0 ? String(row[assetClassCol] ?? '').trim() : ''
       // If the file declares an asset-class column, an empty footer/cash row
       // is not an equity holding. Files without that column remain supported.
-      if (assetClassCol >= 0 && !isEquity(assetClass)) continue
+      if (assetClassCol >= 0 && !isEquity(assetClass) && isExplicitlyNonEquity(assetClass)) continue
       
       const isin = isinCol >= 0 ? normalizeIsin(row[isinCol]) : null
       const rawCusip = cusipCol >= 0 ? String(row[cusipCol] ?? '').trim().toUpperCase() : ''
@@ -331,7 +343,7 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
     const rows = parsedRows.data.slice(headerIndex + 1).map((cells) => Object.fromEntries(header.map((name, index) => [name, cells[index] ?? ''])) as Record<string, unknown>)
     for (const row of rows) {
       const assetClass = value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse'])
-      if (assetClass && !isEquity(assetClass)) continue
+      if (assetClass && !isEquity(assetClass) && isExplicitlyNonEquity(assetClass)) continue
       const isin = normalizeIsin(value(row, ['isin']))
       const rawCusip = value(row, ['cusip']).toUpperCase()
       candidates.push({ isin, cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
@@ -340,14 +352,19 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
         weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
     }
   }
-  // BOTSI's execution check is ISIN-based. Do not emit a synthetic listing
-  // identity: a row without a checksum-valid ISIN can neither be verified by
-  // Gettex nor reliably be merged across index sources.
-  const quoteableCandidates = candidates.filter((candidate): candidate is Candidate & { isin: string } => candidate.isin != null)
+  // Keep every real source row. Sources that omit an ISIN retain a stable
+  // temporary identity and are resolved by the client before the Gettex call.
+  // Never silently drop an index constituent merely because an upstream file
+  // is incomplete.
+  const quoteableCandidates = candidates.filter((candidate) => candidate.isin || candidate.ticker || candidate.cusip)
   const byIsin = new Map<string, Constituent>()
   for (const candidate of quoteableCandidates) {
+    const listingKey = candidate.ticker
+      ? [normalizedExchange(candidate.exchange ?? ''), candidate.ticker].map((part) => part.trim().toUpperCase()).join(':')
+      : [source.code, normalizedExchange(candidate.exchange ?? ''), candidate.name].map((part) => part.trim().toUpperCase()).join(':')
+    const identifier = candidate.isin || `LISTING:${stableHash(listingKey)}`
     const exchange = exchangeMeta(candidate.exchange ?? '')
-    byIsin.set(candidate.isin, { isin: candidate.isin, identifierType: 'ISIN', cusip: candidate.cusip, ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || candidate.isin,
+    byIsin.set(identifier, { isin: identifier, identifierType: candidate.isin ? 'ISIN' : 'LISTING', cusip: candidate.cusip, ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || identifier,
       sector: candidate.sourceSector ? canonicalGicsSector(candidate.sourceSector) : null, sourceSector: candidate.sourceSector,
       primaryListingCountry: exchange.country ?? source.defaultListingCountry ?? null, sourceCountry: candidate.sourceCountry, weight: candidate.weight,
       benchmark: source.benchmark, region: source.region, source: source.code, memberships: [source.benchmark] })

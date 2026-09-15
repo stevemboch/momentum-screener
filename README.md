@@ -62,16 +62,15 @@ OPENFIGI_API_KEY=your_key_here
 
 ### Universe profiles
 
-- **Index Global (default):** a union of STOXX Europe 600, S&P 500, S&P MidCap 400, S&P SmallCap 600, Nasdaq Composite, MSCI Japan, MSCI Pacific ex Japan and MSCI Emerging Markets. Only checksum-valid source ISINs enter this universe, so every BOTSI candidate can be checked at Gettex; a title in more than one benchmark is emitted once with every membership retained.
+- **Index Global (default):** a union of STOXX Europe 600, S&P 500, S&P MidCap 400, S&P SmallCap 600, Nasdaq Composite, MSCI Japan, MSCI Pacific ex Japan and MSCI Emerging Markets. Constituents use the source ISIN when supplied; an exceptional unresolved source row retains a deterministic listing identity while it is resolved for Gettex. A title in more than one benchmark is emitted once with every membership retained.
 - **Legacy Xetra:** preserves the existing T7/Xetra path as a separate listing-based universe. It is never an automatic fallback for an index screen.
 
 Index Global imports use publicly accessible CSV holdings disclosures that are configured at deployment. This makes their use explicit: an ETF holdings file is an `ETF_HOLDINGS_PROXY`, not an assertion that it is an official index constituent file. The MidCap source is separately labelled `TRACKING_FUND_DISCLOSURE`, because it republishes the daily holdings disclosure of a full-replication tracking ETF. Use a physically replicating fund that names the intended benchmark, and verify its terms before automated use.
 
-The importer uses tested holdings disclosures and accepts only rows with a
-checksum-valid ISIN. The holdings file decides membership; ticker, name, sector,
-location and exchange are retained as metadata. It derives the Yahoo ticker from
-the supplied exchange (for example `7203.T`); OpenFIGI is not used to decide
-index membership.
+The importer uses tested holdings disclosures. The holdings file decides
+membership; ticker, name, sector, location and exchange are retained as
+metadata. It derives the Yahoo ticker from the supplied exchange (for example
+`7203.T`); OpenFIGI is not used to decide index membership.
 
 These environment variables are optional overrides, for example when a
 licensed or an ISIN-complete source becomes available:

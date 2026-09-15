@@ -5,8 +5,8 @@ export type UniverseStatus = 'fresh' | 'stale'
 
 export interface UniverseConstituent {
   isin: string
-  /** Index Global only accepts checksum-valid ISINs. */
-  identifierType?: 'ISIN'
+  /** ISIN when supplied; otherwise a deterministic source-listing identity. */
+  identifierType?: 'ISIN' | 'LISTING'
   cusip?: string | null
   ticker: string | null
   yahooTicker?: string | null
@@ -43,9 +43,7 @@ export interface UniverseSnapshot {
   constituents: UniverseConstituent[]
 }
 
-// v3 deliberately invalidates historical snapshots that could contain the
-// old synthetic LISTING: identifiers. They cannot be queried at Gettex.
-export const UNIVERSE_SNAPSHOT_KEY = 'universe:snapshot:index_global:v3'
+export const UNIVERSE_SNAPSHOT_KEY = 'universe:snapshot:index_global:v4'
 
 export function constituentToInstrument(constituent: UniverseConstituent): Instrument {
   return {
