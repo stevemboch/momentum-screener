@@ -43,7 +43,7 @@ function normalizeIsin(value: unknown): string | null {
 function nameSearchTerms(value: string | undefined): string {
   return (value ?? '')
     .replace(/[(),.]/g, ' ')
-    .replace(/\b(incorporated|inc|corp(?:oration)?|ltd|limited|plc|llc|l\.p|s\.a|ag|se|nv|holdings?|group|class|ordinary|shares?|stock|common|preferred|registered|bearer|dl|usd|eur)\b/gi, ' ')
+    .replace(/\b(incorporated|inc|corp(?:oration)?|ltd|limited|plc|llc|l\.p|s\.a|ag|se|nv|holdings?|group|class|ordinary|shares?|stock|common|preferred|registered|bearer|dl|usd|eur|o\.n\.|vz|st)\b/gi, ' ')
     .replace(/\b[a-z]\s*class\b|\bclass\s*[a-z]\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -90,15 +90,47 @@ function normalizedCompanyName(value: string): string {
     .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-function companyNameScore(target: string, candidate: string): number {
-  const targetTokens = normalizedCompanyName(target).split(' ').filter((token) => token.length >= 2)
-  const candidateTokens = normalizedCompanyName(candidate).split(' ').filter((token) => token.length >= 2)
+function companyNameScore(target: string, candidate: string, isin?: string): number {
+  const targetTerms = nameSearchTerms(target)
+  const candidateTerms = nameSearchTerms(candidate)
+  const targetNorm = normalizedCompanyName(targetTerms)
+  const candidateNorm = normalizedCompanyName(candidateTerms)
+
+  const targetTokens = targetNorm.split(' ').filter((token) => token.length >= 2)
+  const candidateTokens = candidateNorm.split(' ').filter((token) => token.length >= 2)
   if (targetTokens.length === 0 || candidateTokens.length === 0) return 0
-  // Do not turn a loose word match into a different instrument.  The first
-  // distinctive word is a useful guard for company names from index sources.
-  if (!candidateTokens.some((token) => token === targetTokens[0])) return 0
-  const matches = targetTokens.filter((token) => candidateTokens.some((other) => other === token || other.startsWith(token) || token.startsWith(other))).length
-  return matches / targetTokens.length
+
+  // Guard: First token must match
+  if (!candidateTokens.some((token) => token === targetTokens[0] || token.startsWith(targetTokens[0]) || targetTokens[0].startsWith(token))) {
+    return 0
+  }
+
+  let matches = 0
+  for (const t of targetTokens) {
+    if (candidateTokens.some((c) => c === t || c.startsWith(t) || t.startsWith(c))) {
+      matches += 1
+    }
+  }
+
+  // Dice / Sorensen similarity coefficient to penalize extra unwanted tokens in candidate
+  let score = (2 * matches) / (targetTokens.length + candidateTokens.length)
+
+  // Exact full normalized string match bonus
+  if (targetNorm === candidateNorm) score += 0.5
+
+  // Penalize ADR / CDR / secondary certificate derivatives if target did not specify ADR/CDR
+  const isTargetAdr = /\b(adr|cdr|gdr|nvdr)\b/i.test(target)
+  const isCandidateAdr = /\b(adr|adrs|cdr|cdrs|cdi|cdis|gdr|gdrs|nvdr|unsp|warrant|zertifikat)\b/i.test(candidate)
+  if (!isTargetAdr && isCandidateAdr) {
+    score -= 0.3
+  }
+
+  // If candidate ISIN matches German origin for German stocks, slight tie-breaker
+  if (isin && isin.startsWith('DE') && /\b(ag|se|gmbh|kgaa)\b/i.test(candidate)) {
+    score += 0.05
+  }
+
+  return score
 }
 
 async function getDeutscheBoerseEquityPage(pageNumber: number): Promise<DeutscheBoersePage> {
@@ -162,11 +194,9 @@ async function resolveDeutscheBoerseSearch(name: string): Promise<string | null>
     .filter((number) => number >= 0 && number <= Math.ceil(page.total / DEUTSCHE_BOERSE_PAGE_SIZE) - 1)
     .map((number) => getDeutscheBoerseEquityPage(number)))
   const ranked = pages.flatMap((candidate) => candidate.rows)
-    .map((candidate) => ({ ...candidate, score: companyNameScore(terms, candidate.name) }))
+    .map((candidate) => ({ ...candidate, score: companyNameScore(terms, candidate.name, candidate.isin) }))
     .sort((left, right) => right.score - left.score)
-  // A one-token individual name must match exactly; multi-word names allow a
-  // single known abbreviation such as "Dell Techs" / "Dell Technologies".
-  const minimumScore = normalizedTerms.split(' ').length === 1 ? 1 : 0.5
+  const minimumScore = 0.5
   return ranked[0]?.score >= minimumScore ? ranked[0].isin : null
 }
 
@@ -191,23 +221,45 @@ async function handleIsinResolver(req: VercelRequest, res: VercelResponse) {
   if (apiToken) {
     try { eodhdSymbols = await getEodhdUsSymbols(apiToken) } catch (error) { console.warn('EODHD symbol list failed:', error) }
   }
-  for (const request of requests) {
+
+  const resolveOne = async (request: IsinResolverRequest) => {
     const ticker = tickerKey(request.ticker)
     const bulkIsin = ticker ? eodhdSymbols?.get(ticker) : null
-    if (bulkIsin) { resolutions[request.key] = { isin: bulkIsin, source: 'eodhd-us-symbols' }; continue }
+    if (bulkIsin) {
+      resolutions[request.key] = { isin: bulkIsin, source: 'eodhd-us-symbols' }
+      return
+    }
     if (apiToken && ticker) {
       try {
         const isin = await resolveEodhdIdentifier(ticker, apiToken)
-        if (isin) { resolutions[request.key] = { isin, source: 'eodhd-id-mapping' }; continue }
+        if (isin) {
+          resolutions[request.key] = { isin, source: 'eodhd-id-mapping' }
+          return
+        }
       } catch (error) { console.warn('EODHD identifier lookup failed:', error) }
     }
     if (request.name) {
       try {
         const isin = await resolveDeutscheBoerseSearch(request.name)
-        if (isin) resolutions[request.key] = { isin, source: 'deutsche-boerse-search' }
+        if (isin) {
+          resolutions[request.key] = { isin, source: 'deutsche-boerse-search' }
+          return
+        }
       } catch (error) { console.warn('Deutsche Börse search fallback failed:', error) }
     }
   }
+
+  // Process requests with bounded concurrency (8 parallel workers)
+  let index = 0
+  const concurrency = Math.min(8, requests.length)
+  const workers = Array.from({ length: concurrency }, async () => {
+    while (index < requests.length) {
+      const current = requests[index++]
+      await resolveOne(current)
+    }
+  })
+  await Promise.all(workers)
+
   res.setHeader('Cache-Control', 'private, max-age=300')
   return res.status(200).json({ resolutions })
 }
