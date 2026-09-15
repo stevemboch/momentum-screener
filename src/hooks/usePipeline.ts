@@ -780,6 +780,32 @@ export function usePipeline() {
     })
   }, [])
 
+  const mergeResolvedIndexListings = useCallback((instruments: Instrument[]): Instrument[] => {
+    const groups = new Map<string, Instrument[]>()
+    for (const instrument of instruments) {
+      const ticker = normalizeTickerForCache(instrument.yahooTicker || instrument.mnemonic || '')
+      const country = instrument.primaryListingCountry?.trim().toUpperCase() || ''
+      const key = instrument.source === 'index' && ticker && country ? `${country}:${ticker}` : `identity:${instrument.isin}`
+      const group = groups.get(key)
+      if (group) group.push(instrument)
+      else groups.set(key, [instrument])
+    }
+
+    return Array.from(groups.values()).flatMap((group) => {
+      const sourceIsins = group.filter((instrument) => /^[A-Z]{2}[A-Z0-9]{10}$/.test(instrument.isin))
+      const listingRows = group.filter((instrument) => !/^[A-Z]{2}[A-Z0-9]{10}$/.test(instrument.isin))
+      // Do not merge two actual securities merely because a ticker happens to
+      // collide. We only collapse LISTING: rows into one already identified
+      // source constituent with the same Yahoo ticker and listing country.
+      if (sourceIsins.length !== 1 || listingRows.length === 0) return group
+      const canonical = sourceIsins[0]
+      return [{
+        ...canonical,
+        universeMemberships: [...new Set(group.flatMap((instrument) => instrument.universeMemberships ?? []))],
+      }]
+    })
+  }, [])
+
   const ensureReferenceReturns = useCallback(async () => {
     if (state.referenceR3m != null && state.referenceR5d != null) {
       return { r3m: state.referenceR3m, r5d: state.referenceR5d }
@@ -1471,9 +1497,10 @@ export function usePipeline() {
     try {
       const enriched = await enrichWithOpenFIGI(raw)
       const withYahooTickers = await resolveIndexYahooTickers(enriched)
-      const pricedCandidates = withYahooTickers.filter((instrument) => Boolean(instrument.yahooTicker))
-      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: `Fetching prices for ${pricedCandidates.length} of ${withYahooTickers.length} constituents...`, current: 0, total: pricedCandidates.length } })
-      const withPrices = await fetchPrices(withYahooTickers)
+      const mergedListings = mergeResolvedIndexListings(withYahooTickers)
+      const pricedCandidates = mergedListings.filter((instrument) => Boolean(instrument.yahooTicker))
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: `Fetching prices for ${pricedCandidates.length} of ${mergedListings.length} constituents...`, current: 0, total: pricedCandidates.length } })
+      const withPrices = await fetchPrices(mergedListings)
       const refs = await ensureReferenceReturns()
       // A universe switch replaces only prior universe members; manual entries persist.
       dispatch({
@@ -1494,7 +1521,7 @@ export function usePipeline() {
     } catch (error: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: error?.message ?? 'Index processing failed', current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, resolveIndexYahooTickers, fetchPrices, ensureReferenceReturns, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
+  }, [enrichWithOpenFIGI, resolveIndexYahooTickers, mergeResolvedIndexListings, fetchPrices, ensureReferenceReturns, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
@@ -2257,13 +2284,10 @@ export function usePipeline() {
        }
        for (const instrumentIsin of instrumentIsins) {
          if (quote) {
-           // Never write `isin: undefined`: UPDATE_INSTRUMENTS merges partial
-           // values and that would erase a previously valid identity.
-           const identityUpdate = /^[A-Z]{2}[A-Z0-9]{10}$/.test(instrumentIsin)
-             ? {}
-             : { isin: queryIsin }
+           // The immutable reducer key must remain the original source identity.
+           // Replacing LISTING:… by an ISIN here can collide with a constituent
+           // which already has that ISIN and produces duplicate table rows.
            updates.set(instrumentIsin, {
-             ...identityUpdate,
              gettexBid: quote.bid, gettexAsk: quote.ask,
              gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time,
            })

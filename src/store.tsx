@@ -325,20 +325,32 @@ function reducer(state: AppState, action: Action): AppState {
           })
           .map((i) => ({ ...i, inPortfolio: portfolioSet.has(i.isin) }))
         return { ...state, instruments: recalculateAll(next, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin) }
-      }
+    }
     case 'UPDATE_INSTRUMENT': {
+      // `undefined` means "no update"; callers must use explicit `null` to
+      // clear nullable data. This makes a partial network response unable to
+      // erase identity fields such as an ISIN.
+      const updates = Object.fromEntries(
+        Object.entries(action.updates).filter(([, value]) => value !== undefined)
+      ) as Partial<Instrument>
       const instruments = state.instruments.map((inst) =>
-        inst.isin === action.isin ? { ...inst, ...action.updates } : inst
+        inst.isin === action.isin ? { ...inst, ...updates } : inst
       )
-      if (!updatesAffectScores(action.updates)) {
+      if (!updatesAffectScores(updates)) {
         return { ...state, instruments }
       }
       return { ...state, instruments: recalculateAll(instruments, state.settings.weights, state.settings.atrMultiplier, state.referenceR3m, state.referenceR5d, state.settings.accelKVol, state.settings.botsiSafetyMargin) }
     }
     case 'UPDATE_INSTRUMENTS': {
-      const needsRecalc = Array.from(action.updates.values()).some((u) => updatesAffectScores(u))
+      const cleanUpdates = new Map<string, Partial<Instrument>>(
+        Array.from(action.updates, ([isin, update]) => [
+          isin,
+          Object.fromEntries(Object.entries(update).filter(([, value]) => value !== undefined)) as Partial<Instrument>,
+        ])
+      )
+      const needsRecalc = Array.from(cleanUpdates.values()).some((u) => updatesAffectScores(u))
       const instruments = state.instruments.map((inst) => {
-        const updates = action.updates.get(inst.isin)
+        const updates = cleanUpdates.get(inst.isin)
         return updates ? { ...inst, ...updates } : inst
       })
       if (!needsRecalc) {
