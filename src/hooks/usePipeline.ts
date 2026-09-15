@@ -2256,9 +2256,20 @@ export function usePipeline() {
          continue
        }
        for (const instrumentIsin of instrumentIsins) {
-         updates.set(instrumentIsin, quote
-           ? { isin: /^[A-Z]{2}[A-Z0-9]{10}$/.test(instrumentIsin) ? undefined : queryIsin, gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
-           : { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+         if (quote) {
+           // Never write `isin: undefined`: UPDATE_INSTRUMENTS merges partial
+           // values and that would erase a previously valid identity.
+           const identityUpdate = /^[A-Z]{2}[A-Z0-9]{10}$/.test(instrumentIsin)
+             ? {}
+             : { isin: queryIsin }
+           updates.set(instrumentIsin, {
+             ...identityUpdate,
+             gettexBid: quote.bid, gettexAsk: quote.ask,
+             gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time,
+           })
+         } else {
+           updates.set(instrumentIsin, { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+         }
        }
      }
      dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
