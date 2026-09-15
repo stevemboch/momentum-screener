@@ -441,8 +441,8 @@ async function apiFrankfurt() {
   return text
 }
 
-async function apiIndexUniverse(): Promise<UniverseSnapshot> {
-  return apiFetchJson<UniverseSnapshot>('/api/xetra?universe=index_global', { timeoutMs: 60_000 })
+async function apiIndexUniverse(nasdaqVariant: '100' | 'composite' = '100'): Promise<UniverseSnapshot> {
+  return apiFetchJson<UniverseSnapshot>(`/api/xetra?universe=index_global&nasdaq=${nasdaqVariant}`, { timeoutMs: 60_000 })
 }
 
 async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number, onProgress?: (done: number, total: number) => void): Promise<T[]> {
@@ -1427,16 +1427,16 @@ export function usePipeline() {
     }
   }, [state.frankfurtGroups, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d, enrichWithOpenFIGI, fetchPrices, ensureReferenceReturns])
 
-  const activateIndexUniverse = useCallback(async () => {
+  const activateIndexUniverse = useCallback(async (nasdaqVariant: '100' | 'composite' = '100') => {
     abortRef.current = false
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'parsing', message: 'Loading index universe...', current: 0, total: 0 } })
     let snapshot: UniverseSnapshot
     try {
-      snapshot = await apiIndexUniverse()
+      snapshot = await apiIndexUniverse(nasdaqVariant)
       cacheSnapshot(snapshot)
     } catch (error: any) {
       const cached = readCachedSnapshot()
-      if (!cached) {
+      if (!cached || (cached.nasdaqVariant ?? '100') !== nasdaqVariant) {
         dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: error?.message ?? 'Index universe unavailable', current: 0, total: 0 } })
         return
       }

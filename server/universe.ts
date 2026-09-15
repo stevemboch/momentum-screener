@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx'
 
 type UniverseSourceCode =
   | 'STOXX_EUROPE_600' | 'SP_500' | 'SP_MIDCAP_400' | 'SP_SMALLCAP_600'
-  | 'NASDAQ_100' | 'MSCI_JAPAN' | 'MSCI_PACIFIC_EX_JAPAN' | 'MSCI_EM'
+  | 'NASDAQ_100' | 'NASDAQ_COMPOSITE' | 'MSCI_JAPAN' | 'MSCI_PACIFIC_EX_JAPAN' | 'MSCI_EM'
 
 interface SourceDefinition {
   code: UniverseSourceCode
@@ -15,7 +15,7 @@ interface SourceDefinition {
   maxRows: number
   defaultListingCountry?: string
   sourceType: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE' | 'OFFICIAL_LISTING_SCREEN'
-  format?: 'csv' | 'blackrock_holdings_json' | 'blackrock_product_data' | 'dws_excel'
+  format?: 'csv' | 'nasdaq_screener_json' | 'blackrock_holdings_json' | 'blackrock_product_data' | 'dws_excel'
 }
 
 interface Constituent {
@@ -59,6 +59,14 @@ const SOURCES: SourceDefinition[] = [
   { code: 'MSCI_PACIFIC_EX_JAPAN', region: 'Pacific ex Japan', benchmark: 'MSCI Pacific ex Japan', urlEnv: 'UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0322252338/', minRows: 70, maxRows: 120, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
   { code: 'MSCI_EM', region: 'Emerging Markets', benchmark: 'MSCI Emerging Markets', urlEnv: 'UNIVERSE_MSCI_EM_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE000GWA2J58/', minRows: 600, maxRows: 1_800, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
 ]
+
+const NASDAQ_COMPOSITE_SOURCE: SourceDefinition = {
+  code: 'NASDAQ_COMPOSITE', region: 'North America', benchmark: 'Nasdaq Composite (listing proxy)',
+  urlEnv: 'UNIVERSE_NASDAQ_COMPOSITE_CSV_URL',
+  defaultUrl: 'https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=5000&exchange=NASDAQ&download=true',
+  minRows: 3_000, maxRows: 5_000, defaultListingCountry: 'United States',
+  sourceType: 'OFFICIAL_LISTING_SCREEN', format: 'nasdaq_screener_json',
+}
 
 const ISIN = /^[A-Z]{2}[A-Z0-9]{10}$/
 
@@ -250,6 +258,19 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
         weight: numberValue(String(column('holdingPercent')[index] ?? '')),
       })
     }
+  } else if (source.format === 'nasdaq_screener_json') {
+    const parsed = await response.json() as { data?: { rows?: Array<Record<string, unknown>> } }
+    const rows = parsed.data?.rows
+    if (!Array.isArray(rows)) throw new Error(`${source.code}: Nasdaq screener response has no rows`)
+    for (const row of rows) {
+      const ticker = String(row.symbol ?? '').trim().toUpperCase()
+      if (!/^[A-Z0-9.^-]+$/.test(ticker)) continue
+      candidates.push({
+        isin: null, cusip: null, ticker,
+        name: String(row.name ?? '').trim(), sourceSector: String(row.sector ?? '').trim() || null,
+        sourceCountry: String(row.country ?? '').trim() || null, exchange: 'NASDAQ', weight: null,
+      })
+    }
   } else if (source.format === 'dws_excel') {
     const arrayBuffer = await response.arrayBuffer()
     const workbook = XLSX.read(arrayBuffer, { type: 'array' })
@@ -387,8 +408,11 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
 
 
 /** Import all index proxy holdings, failing closed when a source is incomplete. */
-export async function getIndexGlobalSnapshot() {
-  const imports = await Promise.all(SOURCES.map(importSource))
+export async function getIndexGlobalSnapshot(nasdaqVariant: '100' | 'composite' = '100') {
+  const sources = nasdaqVariant === 'composite'
+    ? SOURCES.map((source) => source.code === 'NASDAQ_100' ? NASDAQ_COMPOSITE_SOURCE : source)
+    : SOURCES
+  const imports = await Promise.all(sources.map(importSource))
   const byIsin = new Map<string, Constituent>()
   imports.flatMap((item) => item.constituents).forEach((constituent) => {
     const existing = byIsin.get(constituent.isin)
@@ -397,9 +421,9 @@ export async function getIndexGlobalSnapshot() {
   })
   const constituents = [...byIsin.values()]
   return {
-    universeCode: 'index_global' as const, status: 'fresh' as const, asOfDate: new Date().toISOString().slice(0, 10), retrievedAt: new Date().toISOString(),
+    universeCode: 'index_global' as const, nasdaqVariant, status: 'fresh' as const, asOfDate: new Date().toISOString().slice(0, 10), retrievedAt: new Date().toISOString(),
     version: stableHash(constituents.map((item) => `${item.isin}:${item.source}`).sort().join('|')),
-    sources: SOURCES.map((source, index) => ({ code: source.code, benchmark: source.benchmark, region: source.region, sourceType: source.sourceType,
+    sources: sources.map((source, index) => ({ code: source.code, benchmark: source.benchmark, region: source.region, sourceType: source.sourceType,
       inputRows: imports[index].inputRows, resolvedRows: imports[index].resolvedRows, unresolvedRows: imports[index].unresolvedRows,
       isinMatchRate: imports[index].inputRows === 0 ? 0 : imports[index].resolvedRows / imports[index].inputRows, memberCount: imports[index].constituents.length, retrievedAt: imports[index].retrievedAt })),
     constituents,

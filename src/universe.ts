@@ -24,6 +24,7 @@ export interface UniverseConstituent {
 
 export interface UniverseSnapshot {
   universeCode: UniverseCode
+  nasdaqVariant?: '100' | 'composite'
   status: UniverseStatus
   asOfDate: string
   retrievedAt: string
