@@ -2217,10 +2217,11 @@ export function usePipeline() {
          job = { idType: 'ID_CUSIP', idValue: inst.cusip }
        } else if (inst.wkn && inst.wkn.length === 6) {
          job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
-       } else {
-         const ticker = inst.mnemonic || inst.yahooTicker
-         job = { idType: 'TICKER', idValue: ticker }
-       }
+        } else {
+          const rawTicker = inst.mnemonic || inst.yahooTicker
+          const ticker = rawTicker ? rawTicker.replace(/\.[A-Z]{1,5}$/, '').trim() : ''
+          job = { idType: 'TICKER', idValue: ticker }
+        }
        return { instrument: inst, job }
      })
 

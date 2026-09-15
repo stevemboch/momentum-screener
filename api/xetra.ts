@@ -50,7 +50,7 @@ function nameSearchTerms(value: string | undefined): string {
 }
 
 function tickerKey(value: string | undefined): string {
-  return (value ?? '').trim().toUpperCase().replace(/\.US$/, '')
+  return (value ?? '').trim().toUpperCase().replace(/\.[A-Z]{1,5}$/, '')
 }
 
 async function getEodhdUsSymbols(apiToken: string): Promise<Map<string, string>> {
@@ -70,10 +70,18 @@ async function getEodhdUsSymbols(apiToken: string): Promise<Map<string, string>>
 }
 
 async function resolveEodhdIdentifier(ticker: string, apiToken: string): Promise<string | null> {
-  const params = new URLSearchParams({ 'filter[symbol]': `${ticker}.US`, api_token: apiToken, fmt: 'json' })
-  const response = await fetch(`https://eodhd.com/api/id-mapping?${params}`, { headers: { Accept: 'application/json' } })
-  const payload = await response.json().catch(() => null) as { data?: Array<{ isin?: unknown }> } | null
-  return response.ok ? normalizeIsin(payload?.data?.[0]?.isin) : null
+  const cleanTicker = tickerKey(ticker)
+  const symbolsToTry = [`${cleanTicker}.US`, cleanTicker]
+  for (const sym of symbolsToTry) {
+    const params = new URLSearchParams({ 'filter[symbol]': sym, api_token: apiToken, fmt: 'json' })
+    const response = await fetch(`https://eodhd.com/api/id-mapping?${params}`, { headers: { Accept: 'application/json' } })
+    const payload = await response.json().catch(() => null) as { data?: Array<{ isin?: unknown }> } | null
+    if (response.ok) {
+      const isin = normalizeIsin(payload?.data?.[0]?.isin)
+      if (isin) return isin
+    }
+  }
+  return null
 }
 
 function normalizedCompanyName(value: string): string {
