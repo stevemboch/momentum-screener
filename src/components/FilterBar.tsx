@@ -62,7 +62,7 @@ export function FilterBar() {
       i.pullbackScore !== undefined
   ).length
   const botsiQualified = useMemo(
-    () => state.instruments.filter((i) => i.botsiTop10 === true && i.botsiFilterPassed === true).length,
+    () => state.instruments.filter((i) => i.botsiQualified === true).length,
     [state.instruments]
   )
   const botsiQuotePct = useMemo(
@@ -290,7 +290,7 @@ export function FilterBar() {
                   : ''
               }`}
             {f === 'pullback' && `Pullback ${pullbackMode ? `(${pullbackCount})` : ''}`}
-            {f === 'botsi' && `BOTSI ${botsiMode ? `(${botsiQualified}/10)` : ''}`}
+            {f === 'botsi' && `BOTSI ${botsiMode ? `(${botsiQualified})` : ''}`}
           </button>
         ))}
       </div>
@@ -495,9 +495,9 @@ export function FilterBar() {
       {botsiMode && (
         <div className="ml-1 flex flex-wrap items-center gap-2 font-mono text-ui-sm text-muted">
           <StatusBadge tone="info">BOTSI</StatusBadge>
-          <span>{botsiQualified}/10 qualifiziert</span>
+          <span>{botsiQualified} qualifiziert</span>
           <span className="text-muted">|</span>
-          <span>Spread-Universum: Top 50</span>
+          <span>Spread-Universum: alle Qualifizierten</span>
           <span className="text-muted">|</span>
           <span>Aktienquote: {(botsiQuotePct * 100).toFixed(0)}%</span>
           <span className="text-muted">|</span>

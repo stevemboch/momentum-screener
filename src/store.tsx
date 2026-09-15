@@ -615,11 +615,11 @@ export function useDisplayedInstruments() {
       // Nur Titel die Gate bestanden haben (pullbackScore !== null = alle Gates erfüllt)
     }
 
-    // BOTSI mode — show the top-50 candidate universe plus held positions.
-    // The advisor allocation itself remains based on the separate top-10 flag.
+    // BOTSI mode is an eligibility view: show every stock that passed the
+    // BOTSI qualification gates, not an arbitrary top-50 preview.
     if (tableState.botsiMode) {
       filtered = filtered.filter((i) => i.type === 'Stock')
-      filtered = filtered.filter((i) => ((i.botsiRank != null && i.botsiRank <= 50) || i.inPortfolio === true) && i.botsiRank != null)
+      filtered = filtered.filter((i) => i.botsiQualified === true)
       const maxSpread = Number(tableState.maxGettexSpreadPct)
       if (tableState.maxGettexSpreadPct !== '' && Number.isFinite(maxSpread)) {
         // Missing Gettex quotes are excluded when a limit is explicitly chosen.

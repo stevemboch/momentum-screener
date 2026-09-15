@@ -176,7 +176,10 @@ function buildLegacyAnalystCacheKey(ticker: string): string {
 }
 
 function buildOpenFigiCacheKey(idType: string, idValue: string): string {
-  return `cache:openfigi:v3:${idType}:${idValue.trim().toUpperCase()}`
+  // v4 deliberately invalidates the old negative cache entries.  Before this
+  // change a timeout or a missing Vercel secret was stored as "not found" for
+  // 30 days, which made a later successful configuration look broken.
+  return `cache:openfigi:v4:${idType}:${idValue.trim().toUpperCase()}`
 }
 
 function cacheGet<T>(key: string, ttlMs = CACHE_TTL_MS): T | null {
@@ -632,12 +635,17 @@ export function usePipeline() {
         chunks.map((chunk) => async () => {
           try {
             const rows = await apiOpenFIGI(chunk.map((m) => m.job))
-            return rows.length === chunk.length
+            return {
+              cacheable: true,
+              rows: rows.length === chunk.length
               ? rows
-              : chunk.map((_, i) => rows[i] ?? null)
+              : chunk.map((_, i) => rows[i] ?? null),
+            }
           } catch (err: any) {
             console.warn(`[openfigi] batch failed; continuing without enrichment (${err?.message || 'unknown error'})`)
-            return new Array<OpenFIGIResult | null>(chunk.length).fill(null)
+            // Do not turn a transient API/Vercel failure into a 30-day
+            // negative result in the browser cache.
+            return { cacheable: false, rows: new Array<OpenFIGIResult | null>(chunk.length).fill(null) }
           } finally {
             doneCount += chunk.length
             setStatus(`Enriching names: ${Math.min(doneCount, uniqueKeys.length)} / ${uniqueKeys.length}`, Math.min(doneCount, uniqueKeys.length), uniqueKeys.length)
@@ -646,7 +654,10 @@ export function usePipeline() {
         2,
       )
 
-      const fetched = fetchedChunks.flat()
+      const fetched = fetchedChunks.flatMap((chunk) => chunk.rows)
+      const cacheableByResult = fetchedChunks.flatMap((chunk) =>
+        new Array<boolean>(chunk.rows.length).fill(chunk.cacheable)
+      )
 
       let cacheWritesAllowed = canWriteOpenFigiCache()
       fetched.forEach((r, i) => {
@@ -654,7 +665,7 @@ export function usePipeline() {
         if (!miss) return
         const indices = jobKeyToIndexes.get(miss.key) || []
         for (const idx of indices) results[idx] = r ?? null
-        if (!cacheWritesAllowed) return
+        if (!cacheWritesAllowed || !cacheableByResult[i]) return
         const cacheValue: OpenFIGICacheEntry = r ?? { __empty: true }
         const cacheOk = cacheSet(
           buildOpenFigiCacheKey(miss.job.idType, miss.job.idValue),
