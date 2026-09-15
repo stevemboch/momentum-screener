@@ -2158,12 +2158,12 @@ export function usePipeline() {
        inst.botsiQualified === true
      )
 
-     // Split into with-ISIN and needs-ISIN instruments.
-     const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
-     const needsIsin = targets.filter(inst => {
-       const isValidIsin = /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
-       return !isValidIsin && (Boolean(inst.cusip) || inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker)
-     })
+      // Split into with-ISIN and needs-ISIN instruments.
+      const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
+      const needsIsin = targets.filter(inst => {
+        const isValidIsin = /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
+        return !isValidIsin && (Boolean(inst.cusip) || inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker || Boolean(inst.displayName || inst.longName || inst.yahooLongName))
+      })
 
      // Resolve only the qualified remainder, never the entire index universe.
      // Browser caching makes successful ticker/name lookups a one-time cost.
@@ -2217,11 +2217,11 @@ export function usePipeline() {
          job = { idType: 'ID_CUSIP', idValue: inst.cusip }
        } else if (inst.wkn && inst.wkn.length === 6) {
          job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
-        } else {
-          const rawTicker = inst.mnemonic || inst.yahooTicker
-          const ticker = rawTicker ? rawTicker.replace(/\.[A-Z]{1,5}$/, '').trim() : ''
-          job = { idType: 'TICKER', idValue: ticker }
-        }
+         } else {
+           const rawTicker = inst.mnemonic || inst.yahooTicker
+           const ticker = rawTicker ? rawTicker.replace(/\.[A-Z]{1,5}$/, '').trim() : ''
+           job = { idType: 'TICKER', idValue: ticker || inst.displayName }
+         }
        return { instrument: inst, job }
      })
 
