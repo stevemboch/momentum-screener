@@ -340,23 +340,14 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
         weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
     }
   }
-  // An index member without an ISIN cannot be sent to Gettex.  Preserve rows
-  // only where the source provides a real alternate listing identifier; this
-  // also discards XLSX footers, cash lines and DWS placeholder "ISINs".
-  const quoteableCandidates = candidates.filter((candidate) => candidate.isin || candidate.ticker || candidate.cusip)
+  // BOTSI's execution check is ISIN-based. Do not emit a synthetic listing
+  // identity: a row without a checksum-valid ISIN can neither be verified by
+  // Gettex nor reliably be merged across index sources.
+  const quoteableCandidates = candidates.filter((candidate): candidate is Candidate & { isin: string } => candidate.isin != null)
   const byIsin = new Map<string, Constituent>()
   for (const candidate of quoteableCandidates) {
-    // The holdings file is the membership authority. If no ISIN is disclosed,
-    // retain the source listing identity; no third-party mapper can remove it.
-    // Exchange + local ticker is sufficient across sources and preserves shared
-    // benchmark memberships. Only a ticker-less exceptional row includes its
-    // source, to avoid accidentally merging namesakes from different markets.
-    const listingKey = candidate.ticker
-      ? [normalizedExchange(candidate.exchange ?? ''), candidate.ticker].map((part) => part.trim().toUpperCase()).join(':')
-      : [source.code, normalizedExchange(candidate.exchange ?? ''), candidate.name].map((part) => part.trim().toUpperCase()).join(':')
-    const identifier = candidate.isin || `LISTING:${stableHash(listingKey)}`
     const exchange = exchangeMeta(candidate.exchange ?? '')
-    byIsin.set(identifier, { isin: identifier, identifierType: candidate.isin ? 'ISIN' : 'LISTING', cusip: candidate.cusip, ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || identifier,
+    byIsin.set(candidate.isin, { isin: candidate.isin, identifierType: 'ISIN', cusip: candidate.cusip, ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || candidate.isin,
       sector: candidate.sourceSector ? canonicalGicsSector(candidate.sourceSector) : null, sourceSector: candidate.sourceSector,
       primaryListingCountry: exchange.country ?? source.defaultListingCountry ?? null, sourceCountry: candidate.sourceCountry, weight: candidate.weight,
       benchmark: source.benchmark, region: source.region, source: source.code, memberships: [source.benchmark] })
