@@ -51,6 +51,8 @@ const YAHOO_API_HEADERS = {
 const YAHOO_SESSION_TTL_MS = 15 * 60 * 1000
 const YAHOO_SESSION_RETRY_COOLDOWN_MS = 60 * 1000
 const YAHOO_REQUEST_TIMEOUT_MS = 6000
+const YAHOO_SYMBOL_SEARCH_TIMEOUT_MS = 4500
+const YAHOO_SYMBOL_SEARCH_BATCH_MAX = 100
 
 const YAHOO_CRUMB_HEADERS = {
   ...YAHOO_BASE_HEADERS,
@@ -343,6 +345,40 @@ async function fetchOneTicker(
   return base
 }
 
+type YahooSymbolResolution = { isin: string; ticker: string | null }
+
+/**
+ * Yahoo's chart API accepts symbols, not ISINs. Its public search endpoint is
+ * the authoritative bridge for the index universe because it returns Yahoo's
+ * own market suffix (`005930.KS`, `7203.T`, …), rather than us guessing one
+ * from a provider exchange label.
+ */
+async function resolveYahooSymbolByIsin(isin: string): Promise<YahooSymbolResolution> {
+  const normalized = isin.trim().toUpperCase()
+  const empty = { isin: normalized, ticker: null }
+  if (!/^[A-Z]{2}[A-Z0-9]{10}$/.test(normalized)) return empty
+
+  for (const host of ['query1', 'query2']) {
+    try {
+      const response = await fetchWithTimeout(
+        `https://${host}.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(normalized)}&quotesCount=10&newsCount=0`,
+        { headers: YAHOO_API_HEADERS },
+        YAHOO_SYMBOL_SEARCH_TIMEOUT_MS,
+      )
+      if (!response.ok) continue
+      const payload = await response.json()
+      const quotes = Array.isArray(payload?.quotes) ? payload.quotes : []
+      const match = quotes.find((quote: any) =>
+        quote?.quoteType === 'EQUITY' && typeof quote?.symbol === 'string' && quote.symbol.trim().length > 0
+      )
+      if (match) return { isin: normalized, ticker: match.symbol.trim() }
+    } catch {
+      // Try Yahoo's second edge before reporting this ISIN as unresolved.
+    }
+  }
+  return empty
+}
+
 async function runWithConcurrency<T>(
   items: string[], concurrency: number, fn: (item: string) => Promise<T>
 ): Promise<T[]> {
@@ -361,6 +397,20 @@ async function runWithConcurrency<T>(
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!requireAuth(req, res)) return
+
+  const resolveIsins: unknown = req.body?.resolveIsins
+  if (Array.isArray(resolveIsins)) {
+    const isins = [...new Set(resolveIsins
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim().toUpperCase())
+      .filter((value) => /^[A-Z]{2}[A-Z0-9]{10}$/.test(value)))]
+      .slice(0, YAHOO_SYMBOL_SEARCH_BATCH_MAX)
+    if (isins.length === 0) return res.status(400).json({ error: 'resolveIsins must contain valid ISINs' })
+    const results = await runWithConcurrency(isins, 12, resolveYahooSymbolByIsin)
+    res.setHeader('Cache-Control', 'private, max-age=86400')
+    return res.status(200).json(results)
+  }
+
   const tickers: string[] = req.body?.tickers
   const includeWeekly = req.body?.includeWeekly !== false
   const profile: YahooProfile = req.body?.profile === 'fund' ? 'fund' : 'stock'

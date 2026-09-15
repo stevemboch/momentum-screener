@@ -53,6 +53,9 @@ const OPENFIGI_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const OPENFIGI_CLIENT_TIMEOUT_MS = 30_000
 const XETRA_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const YAHOO_TTL_MS = 24 * 60 * 60 * 1000
+const YAHOO_SYMBOL_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const YAHOO_SYMBOL_RESOLVE_BATCH = 100
+const YAHOO_SYMBOL_RESOLVE_CONCURRENCY = 3
 const ANALYST_TTL_MS = 2 * 24 * 60 * 60 * 1000
 const LEEWAY_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const LEEWAY_TOP_N = ANALYST_AUTO_TOP_N
@@ -151,6 +154,10 @@ function usCusipToIsin(cusip: string | null | undefined): string | null {
 
 function buildYahooCacheKey(ticker: string): string {
   return `cache:yahoo:v4:${normalizeTickerForCache(ticker)}`
+}
+
+function buildYahooSymbolCacheKey(isin: string): string {
+  return `cache:yahoo-symbol:v1:${isin.trim().toUpperCase()}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -388,6 +395,19 @@ async function apiYahooBatch(tickers: string[], options?: YahooRequestOptions): 
       includeWeekly: options?.includeWeekly,
       profile: options?.profile,
     }),
+  })
+  return Array.isArray(data) ? data : []
+}
+
+type YahooSymbolResolution = { isin: string; ticker: string | null }
+
+async function apiYahooResolveIsins(isins: string[]): Promise<YahooSymbolResolution[]> {
+  if (isins.length === 0) return []
+  const data = await apiFetchJson<YahooSymbolResolution[]>('/api/yahoo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolveIsins: isins }),
+    timeoutMs: 30_000,
   })
   return Array.isArray(data) ? data : []
 }
@@ -688,6 +708,60 @@ export function usePipeline() {
     return instruments.map((inst) =>
       enrichedMap.get(inst.isin) ?? skippedMap.get(inst.isin) ?? inst
     )
+  }, [])
+
+  const resolveIndexYahooTickers = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
+    const targets = instruments.filter((instrument) =>
+      instrument.source === 'index' &&
+      !instrument.yahooTicker &&
+      /^[A-Z]{2}[A-Z0-9]{10}$/.test(instrument.isin)
+    )
+    if (targets.length === 0) return instruments
+
+    const tickerByIsin = new Map<string, string | null>()
+    const missing: string[] = []
+    for (const instrument of targets) {
+      const cached = cacheGet<YahooSymbolResolution>(buildYahooSymbolCacheKey(instrument.isin), YAHOO_SYMBOL_TTL_MS)
+      if (cached && cached.isin === instrument.isin) tickerByIsin.set(instrument.isin, cached.ticker)
+      else missing.push(instrument.isin)
+    }
+
+    const uniqueMissing = [...new Set(missing)]
+    if (uniqueMissing.length > 0) {
+      let completed = targets.length - uniqueMissing.length
+      setStatus(`Resolving Yahoo symbols: ${completed} / ${targets.length}`, completed, targets.length)
+      const chunks: string[][] = []
+      for (let index = 0; index < uniqueMissing.length; index += YAHOO_SYMBOL_RESOLVE_BATCH) {
+        chunks.push(uniqueMissing.slice(index, index + YAHOO_SYMBOL_RESOLVE_BATCH))
+      }
+      const batches = await parallelLimit(
+        chunks.map((chunk) => async () => {
+          try {
+            return await apiYahooResolveIsins(chunk)
+          } catch (error) {
+            console.warn('[yahoo-symbols] ISIN resolution batch failed:', error)
+            return chunk.map((isin) => ({ isin, ticker: null }))
+          } finally {
+            completed += chunk.length
+            setStatus(`Resolving Yahoo symbols: ${Math.min(completed, targets.length)} / ${targets.length}`, Math.min(completed, targets.length), targets.length)
+          }
+        }),
+        YAHOO_SYMBOL_RESOLVE_CONCURRENCY,
+      )
+      for (const resolution of batches.flat()) {
+        if (!/^[A-Z]{2}[A-Z0-9]{10}$/.test(resolution.isin)) continue
+        const ticker = typeof resolution.ticker === 'string' && resolution.ticker.trim() ? resolution.ticker.trim() : null
+        tickerByIsin.set(resolution.isin, ticker)
+        // Negative results are deliberately not cached: Yahoo can add a newly
+        // listed security at any time, and the next run should retry it.
+        if (ticker) cacheSet(buildYahooSymbolCacheKey(resolution.isin), { isin: resolution.isin, ticker }, YAHOO_SYMBOL_TTL_MS)
+      }
+    }
+
+    return instruments.map((instrument) => {
+      const ticker = tickerByIsin.get(instrument.isin)
+      return ticker ? { ...instrument, yahooTicker: ticker, mnemonic: instrument.mnemonic ?? ticker } : instrument
+    })
   }, [])
 
   const ensureReferenceReturns = useCallback(async () => {
@@ -1380,8 +1454,10 @@ export function usePipeline() {
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: `Resolving ${raw.length} index constituents...`, current: 0, total: raw.length } })
     try {
       const enriched = await enrichWithOpenFIGI(raw)
-      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: `Fetching prices for ${enriched.length} constituents...`, current: 0, total: enriched.length } })
-      const withPrices = await fetchPrices(enriched)
+      const withYahooTickers = await resolveIndexYahooTickers(enriched)
+      const pricedCandidates = withYahooTickers.filter((instrument) => Boolean(instrument.yahooTicker))
+      dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'prices', message: `Fetching prices for ${pricedCandidates.length} of ${withYahooTickers.length} constituents...`, current: 0, total: pricedCandidates.length } })
+      const withPrices = await fetchPrices(withYahooTickers)
       const refs = await ensureReferenceReturns()
       // A universe switch replaces only prior universe members; manual entries persist.
       dispatch({
@@ -1402,7 +1478,7 @@ export function usePipeline() {
     } catch (error: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: error?.message ?? 'Index processing failed', current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, fetchPrices, ensureReferenceReturns, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
+  }, [enrichWithOpenFIGI, resolveIndexYahooTickers, fetchPrices, ensureReferenceReturns, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
