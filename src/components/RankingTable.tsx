@@ -1947,6 +1947,9 @@ function TableToolbar({
   isUpdating,
   activePreset,
   onPresetChange,
+  onRefreshGettexSpreads,
+  gettexSpreadsLoading,
+  gettexSpreadsError,
 }: {
   total: number
   shown: number
@@ -1956,6 +1959,9 @@ function TableToolbar({
   isUpdating: boolean
   activePreset: ViewPreset
   onPresetChange: (preset: ViewPreset) => void
+  onRefreshGettexSpreads: () => void
+  gettexSpreadsLoading: boolean
+  gettexSpreadsError: string | null
 }) {
   return (
     <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 ${
@@ -1974,6 +1980,16 @@ function TableToolbar({
           <>
             <span className="hidden xl:inline">|</span>
             <span className="text-cyan-300">BOTSI Advisor</span>
+            <button
+              type="button"
+              onClick={onRefreshGettexSpreads}
+              disabled={gettexSpreadsLoading}
+              className="focus-ring ml-2 rounded border border-cyan-400/35 px-2 py-1 text-cyan-200 transition-colors hover:bg-cyan-400/10 disabled:cursor-wait disabled:opacity-60"
+              title="Gettex-Spreads aus dem 17:00-Snapshot erneut laden"
+            >
+              {gettexSpreadsLoading ? 'Spreads laden…' : 'Spreads aktualisieren'}
+            </button>
+            {gettexSpreadsError && <span className="max-w-[220px] truncate text-red-300" title={gettexSpreadsError}>Gettex: {gettexSpreadsError}</span>}
           </>
         )}
       </div>
@@ -2274,7 +2290,7 @@ function useTableVirtualization<T extends { isin: string }>(
 export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const { state, dispatch } = useAppState()
   const isinDoubleClickAction = state.settings.isinDoubleClickAction
-  const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst, fetchSingleInstrumentTfaCatalyst } = usePipeline()
+  const { fetchSingleInstrumentPrices, fetchSingleInstrumentAnalyst, fetchSingleInstrumentTfaCatalyst, fetchBotsiGettexSpreads } = usePipeline()
   const instruments = useDisplayedInstruments()
   const isPriceUpdating = state.fetchStatus.phase === 'prices'
   const allInstruments = state.instruments   // full list incl. non-winners
@@ -2287,6 +2303,8 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const [tableWrapperEl, setTableWrapperEl] = useState<HTMLDivElement | null>(null)
   const [renderSnapshot, setRenderSnapshot] = useState<Instrument[]>(instruments)
   const [contextPreviewTick, setContextPreviewTick] = useState(0)
+  const [gettexSpreadsLoading, setGettexSpreadsLoading] = useState(false)
+  const [gettexSpreadsError, setGettexSpreadsError] = useState<string | null>(null)
   const interactionKey = [
     sortColumn,
     sortDirection,
@@ -2350,6 +2368,18 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     })
   }
 
+  const handleRefreshGettexSpreads = useCallback(async () => {
+    setGettexSpreadsLoading(true)
+    setGettexSpreadsError(null)
+    try {
+      await fetchBotsiGettexSpreads()
+    } catch (error: any) {
+      setGettexSpreadsError(error?.message ?? 'Abruf fehlgeschlagen')
+    } finally {
+      setGettexSpreadsLoading(false)
+    }
+  }, [fetchBotsiGettexSpreads])
+
   const forcedVisible = new Set<string>(CORE_STICKY_COLUMNS)
   const hiddenKeys = new Set(
     state.tableState.hiddenColumnGroups.flatMap((g) => COLUMN_GROUPS[g])
@@ -2407,6 +2437,9 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         isUpdating={isPriceUpdating}
         activePreset={isBotsiMode ? 'botsi' : viewPreset}
         onPresetChange={handlePresetChange}
+        onRefreshGettexSpreads={() => { void handleRefreshGettexSpreads() }}
+        gettexSpreadsLoading={gettexSpreadsLoading}
+        gettexSpreadsError={gettexSpreadsError}
       />
 
       <div className="lg:hidden space-y-2 p-3">

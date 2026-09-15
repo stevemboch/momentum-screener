@@ -19,6 +19,7 @@ interface SourceDefinition {
 interface Constituent {
   isin: string
   identifierType: 'ISIN' | 'LISTING'
+  cusip: string | null
   ticker: string | null
   yahooTicker: string | null
   name: string
@@ -144,7 +145,7 @@ function stableHash(input: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
-interface Candidate { isin: string | null; ticker: string | null; name: string; sourceSector: string | null; sourceCountry: string | null; exchange: string | null; weight: number | null }
+interface Candidate { isin: string | null; cusip: string | null; ticker: string | null; name: string; sourceSector: string | null; sourceCountry: string | null; exchange: string | null; weight: number | null }
 
 async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   const response = await fetch(process.env[source.urlEnv] || source.defaultUrl, { headers: { Accept: 'text/csv,text/plain,*/*', 'User-Agent': 'MomentumScreener/1.0' } })
@@ -160,7 +161,8 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
   for (const row of rows) {
     if (!isEquity(value(row, ['asset class', 'asset_class', 'assetclass', 'anlageklasse']))) continue
     const rawIsin = value(row, ['isin']).toUpperCase()
-    candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
+    const rawCusip = value(row, ['cusip']).toUpperCase()
+    candidates.push({ isin: ISIN.test(rawIsin) ? rawIsin : null, cusip: /^[A-Z0-9]{9}$/.test(rawCusip) ? rawCusip : null, ticker: value(row, ['ticker', 'symbol', 'local ticker', 'emittententicker', 'issuer ticker']) || null,
       name: value(row, ['name', 'company', 'security name', 'holding name', 'instrument']), sourceSector: value(row, ['sector', 'gics sector', 'industry', 'sektor']) || null,
       sourceCountry: value(row, ['country', 'location', 'country of risk', 'standort']) || null, exchange: value(row, ['exchange', 'börse']) || null,
       weight: numberValue(value(row, ['weight (%)', 'weight', 'weight %', 'gewichtung (%)'])) })
@@ -177,7 +179,7 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
       : [source.code, normalizedExchange(candidate.exchange ?? ''), candidate.name].map((part) => part.trim().toUpperCase()).join(':')
     const identifier = candidate.isin || `LISTING:${stableHash(listingKey)}`
     const exchange = exchangeMeta(candidate.exchange ?? '')
-    byIsin.set(identifier, { isin: identifier, identifierType: candidate.isin ? 'ISIN' : 'LISTING', ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || identifier,
+    byIsin.set(identifier, { isin: identifier, identifierType: candidate.isin ? 'ISIN' : 'LISTING', cusip: candidate.cusip, ticker: candidate.ticker, yahooTicker: yahooTicker(candidate.ticker, candidate.exchange), name: candidate.name || identifier,
       sector: candidate.sourceSector ? canonicalGicsSector(candidate.sourceSector) : null, sourceSector: candidate.sourceSector,
       primaryListingCountry: exchange.country ?? source.defaultListingCountry ?? null, sourceCountry: candidate.sourceCountry, weight: candidate.weight,
       benchmark: source.benchmark, region: source.region, source: source.code, memberships: [source.benchmark] })

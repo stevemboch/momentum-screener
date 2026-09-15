@@ -7,6 +7,8 @@ export interface Instrument {
   // Identity
   isin: string
   wkn?: string
+  /** US/Canadian security identifier retained for resolving listing-only universe rows. */
+  cusip?: string
   mnemonic?: string
   yahooTicker: string
   type: InstrumentType

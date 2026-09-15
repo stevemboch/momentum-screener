@@ -2022,22 +2022,22 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
      const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
      const needsIsin = targets.filter(inst => {
        const isValidIsin = /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
-       return !isValidIsin && (inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker)
+       return !isValidIsin && (Boolean(inst.cusip) || inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker)
      })
 
-     // Step 3: Prepare OpenFIGI jobs for needsIsin
+     // Step 3: Prepare OpenFIGI jobs for needsIsin. `instrument.isin` remains
+     // the reducer key even when it is a LISTING: identity.
      const needsIsinWithMeta = needsIsin.map(inst => {
        let job: { idType: string; idValue: string }
-       let originalId: string
-       if (inst.wkn && inst.wkn.length === 6) {
+       if (inst.cusip && /^[A-Z0-9]{9}$/i.test(inst.cusip)) {
+         job = { idType: 'ID_CUSIP', idValue: inst.cusip }
+       } else if (inst.wkn && inst.wkn.length === 6) {
          job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
-         originalId = inst.wkn
        } else {
          const ticker = inst.mnemonic || inst.yahooTicker
          job = { idType: 'TICKER', idValue: ticker }
-         originalId = ticker
        }
-       return { instrument: inst, job, originalId }
+       return { instrument: inst, job }
      })
 
      const openfigiJobs = needsIsinWithMeta.map(item => item.job)
@@ -2048,40 +2048,41 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
        })
        : []
 
-     // Step 4: Build map from original identifier to resolved ISIN (for needsIsin that succeeded)
-     const resolvedIsinMap = new Map<string, string>() // originalId -> resolvedIsin
-     needsIsinWithMeta.forEach((meta, index) => {
-       const result = openfigiResults[index]
-       if (result?.isin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(result.isin)) {
-         resolvedIsinMap.set(meta.originalId, result.isin)
-       }
-     })
-
-     // Step 5: Build queryIsin list and map from queryIsin to instrumentIsin (original identifier)
-     const queryIsinToInstrumentIsin = new Map<string, string>() // queryIsin (for xetra) -> instrumentIsin (original identifier in store)
+     // Step 4: Build the Gettex query list. Several listings can map to the
+     // same ISIN, so retain every original reducer key for each query ISIN.
+     const queryIsinToInstrumentIsins = new Map<string, string[]>()
      const queryIsins: string[] = []
+     const addQuery = (queryIsin: string, instrumentId: string) => {
+       const matchingInstrumentIds = queryIsinToInstrumentIsins.get(queryIsin) ?? []
+       if (!matchingInstrumentIds.includes(instrumentId)) matchingInstrumentIds.push(instrumentId)
+       queryIsinToInstrumentIsins.set(queryIsin, matchingInstrumentIds)
+       queryIsins.push(queryIsin)
+     }
 
      // Add withIsin: queryIsin == instrumentIsin (the valid ISIN)
      withIsin.forEach(inst => {
        const isin = inst.isin
        // TypeScript might not know isin is string, but we know from filter
-       queryIsinToInstrumentIsin.set(isin, isin)
-       queryIsins.push(isin)
+       addQuery(isin, isin)
      })
 
-     // Add needsIsin that were resolved: queryIsin is the resolved ISIN, instrumentIsin is the originalId
-     needsIsinWithMeta.forEach(meta => {
-       const resolvedIsin = resolvedIsinMap.get(meta.originalId)
-       if (resolvedIsin) {
-         queryIsinToInstrumentIsin.set(resolvedIsin, meta.originalId)
-         queryIsins.push(resolvedIsin)
+     // Add LISTING identities that OpenFIGI resolved. Crucially, updates are
+     // written back using LISTING:… (not the ticker used for the lookup).
+     needsIsinWithMeta.forEach((meta, index) => {
+       const resolvedIsin = openfigiResults[index]?.isin
+       if (resolvedIsin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(resolvedIsin)) {
+         addQuery(resolvedIsin, meta.instrument.isin)
        }
-       // Note: if not resolved, we skip (no queryIsin, no update)
      })
 
      // Remove duplicates
      const uniqueQueryIsins = [...new Set(queryIsins)]
-     if (uniqueQueryIsins.length === 0) return
+     if (uniqueQueryIsins.length === 0) {
+       if (needsIsin.length > 0) {
+         throw new Error('Keine LISTING-Werte konnten zu einer ISIN aufgelöst werden. Prüfe OPENFIGI_API_KEY in Vercel.')
+       }
+       return
+     }
 
      // Step 6: Make the xetra request
      const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
@@ -2095,14 +2096,16 @@ const fetchBotsiGettexSpreads = useCallback(async () => {
      const updates = new Map<string, Partial<Instrument>>()
      for (const queryIsin of uniqueQueryIsins) {
        const quote = data.quotes[queryIsin]
-       const instrumentIsin = queryIsinToInstrumentIsin.get(queryIsin)
-       if (!instrumentIsin) {
+       const instrumentIsins = queryIsinToInstrumentIsins.get(queryIsin)
+       if (!instrumentIsins) {
          // This should not happen if the map is built correctly
          continue
        }
-       updates.set(instrumentIsin, quote
-         ? { gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
-         : { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+       for (const instrumentIsin of instrumentIsins) {
+         updates.set(instrumentIsin, quote
+           ? { gettexBid: quote.bid, gettexAsk: quote.ask, gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time }
+           : { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+       }
      }
      dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
    }, [state.instruments, dispatch])

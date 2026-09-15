@@ -7,6 +7,7 @@ export interface UniverseConstituent {
   isin: string
   /** ISIN when supplied; otherwise a deterministic source-listing identity. */
   identifierType?: 'ISIN' | 'LISTING'
+  cusip?: string | null
   ticker: string | null
   yahooTicker?: string | null
   name: string
@@ -47,6 +48,7 @@ export const UNIVERSE_SNAPSHOT_KEY = 'universe:snapshot:index_global:v2'
 export function constituentToInstrument(constituent: UniverseConstituent): Instrument {
   return {
     isin: constituent.isin,
+    cusip: constituent.cusip ?? undefined,
     mnemonic: constituent.ticker ?? undefined,
     yahooTicker: constituent.yahooTicker ?? constituent.ticker ?? '',
     type: 'Stock',
