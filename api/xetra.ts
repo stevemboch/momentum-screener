@@ -285,6 +285,7 @@ async function getGettexWebToken(): Promise<string> {
 }
 
 async function fetchGettexWebQuotes(isins: string[]): Promise<Record<string, GettexQuote>> {
+  console.log('[fetchGettexWebQuotes] requested isins.length:', isins.length, isins)
   const token = await getGettexWebToken()
   const quotes: Record<string, GettexQuote> = {}
   const time = new Date().toISOString()
@@ -296,6 +297,7 @@ async function fetchGettexWebQuotes(isins: string[]): Promise<Record<string, Get
     })
     const response = await fetch(`${GETTEX_DATA_ORIGIN}/rest/api/find/securities?${params}`, { headers: { jwt: token } })
     const payload = await response.json().catch(() => null) as { data?: Array<Record<string, unknown>> } | null
+    console.log('[fetchGettexWebQuotes] response status:', response.status, 'payload data length:', payload?.data?.length)
     if (!response.ok || !Array.isArray(payload?.data)) throw new Error(`Gettex quote lookup unavailable (HTTP ${response.status})`)
     for (const row of payload.data) {
       const isin = typeof row['x._ISIN'] === 'string' ? row['x._ISIN'].trim().toUpperCase() : ''
@@ -306,6 +308,7 @@ async function fetchGettexWebQuotes(isins: string[]): Promise<Record<string, Get
       quotes[isin] = { bid, ask, spreadPct: ((ask - bid) / mid) * 100, time, currency: 'unknown' }
     }
   }
+  console.log('[fetchGettexWebQuotes] found quotes count:', Object.keys(quotes).length)
   return quotes
 }
 

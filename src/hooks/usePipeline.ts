@@ -2200,8 +2200,10 @@ export function usePipeline() {
       // Fetch all stock instruments so that missing ISINs are resolved and
       // Gettex spreads are available across the universe.
       const targets = state.instruments.filter((inst) =>
-        inst.type === 'Stock'
+        inst.type === 'Stock' &&
+        inst.botsiQualified === true
       )
+      console.log('[fetchBotsiGettexSpreads] targets.length:', targets.length)
       if (targets.length === 0) return
 
       // Split into with-ISIN and needs-ISIN instruments.
@@ -2210,6 +2212,7 @@ export function usePipeline() {
         const isValidIsin = /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
         return !isValidIsin && (Boolean(inst.cusip) || inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker || Boolean(inst.displayName || inst.longName || inst.yahooLongName))
       })
+      console.log('[fetchBotsiGettexSpreads] needsIsin.length:', needsIsin.length)
 
       setStatus('Resolving missing ISINs (Deutsche Börse / OpenFIGI)...', 0, needsIsin.length)
 
@@ -2224,6 +2227,7 @@ export function usePipeline() {
         if (isin) resolvedByInstrumentId.set(instrument.isin, isin)
         else unresolvedForRemote.push(instrument)
       }
+      console.log('[fetchBotsiGettexSpreads] unresolvedForRemote.length:', unresolvedForRemote.length)
 
       if (unresolvedForRemote.length > 0) {
         setStatus(`Resolving ${unresolvedForRemote.length} missing ISINs via Deutsche Börse / OpenFIGI...`, 0, unresolvedForRemote.length)
@@ -2239,8 +2243,9 @@ export function usePipeline() {
               ticker: instrument.mnemonic || instrument.yahooTicker,
               name: instrument.longName || instrument.yahooLongName || instrument.displayName,
             })) }),
-            timeoutMs: 55_000,
-          })
+        timeoutMs: 55_000,
+      })
+      console.log('[fetchBotsiGettexSpreads] Gettex response data:', data)
           for (const instrument of batch) {
             const isin = data.resolutions?.[instrument.isin]?.isin
             if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
@@ -2261,6 +2266,7 @@ export function usePipeline() {
         .filter((item): item is { instrument: Instrument; resolvedIsin: string } => item.resolvedIsin != null)
       cusipResolved.forEach(({ instrument, resolvedIsin }) => resolvedByInstrumentId.set(instrument.isin, resolvedIsin))
       const needsOpenFigi = needsIsin.filter((instrument) => !resolvedByInstrumentId.has(instrument.isin))
+      console.log('[fetchBotsiGettexSpreads] needsOpenFigi.length (after cusip):', needsOpenFigi.length)
 
       // Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
       // the reducer key even when it is a LISTING: identity.
@@ -2279,6 +2285,7 @@ export function usePipeline() {
       })
 
       const openfigiJobs = needsIsinWithMeta.map(item => item.job)
+      console.log('[fetchBotsiGettexSpreads] openfigiJobs.length:', openfigiJobs.length)
       const openfigiResults: Array<OpenFIGIResult | null> = openfigiJobs.length > 0
         ? await apiOpenFIGI(openfigiJobs).catch(err => {
           console.warn('[fetchBotsiGettexSpreads] OpenFIGI batch failed:', err)
@@ -2317,6 +2324,7 @@ export function usePipeline() {
 
       // Remove duplicates
       const uniqueQueryIsins = [...new Set(queryIsins)]
+      console.log('[fetchBotsiGettexSpreads] uniqueQueryIsins for Gettex:', uniqueQueryIsins)
       if (uniqueQueryIsins.length === 0) {
         setStatus('No valid ISINs found for Gettex quotes', 0, 0)
         return
@@ -2336,6 +2344,7 @@ export function usePipeline() {
       const updates = new Map<string, Partial<Instrument>>()
       for (const queryIsin of uniqueQueryIsins) {
         const quote = data.quotes[queryIsin]
+        console.log(`[fetchBotsiGettexSpreads] Processing ISIN: ${queryIsin}, quote:`, quote)
         const instrumentIsins = queryIsinToInstrumentIsins.get(queryIsin)
         if (!instrumentIsins) {
           // This should not happen if the map is built correctly
@@ -2362,18 +2371,19 @@ export function usePipeline() {
    }, [state.instruments, dispatch, setStatus])
 
    useEffect(() => {
+     if (!state.tableState.botsiMode) return
      const signature = state.instruments
-       .filter((inst) => inst.type === 'Stock')
+       .filter((inst) => inst.type === 'Stock' && inst.botsiQualified === true)
        .map((inst) => inst.isin)
        .sort()
        .join(',')
      if (!signature || loadedGettexSpreadSetRef.current === signature) return
      loadedGettexSpreadSetRef.current = signature
      fetchBotsiGettexSpreads().catch(() => {
-       // A missing Gettex quote should not interrupt execution. The table
+       // A missing Gettex quote should not interrupt the BOTSI scan. The table
        // keeps an em dash for unavailable instruments.
      })
-   }, [state.instruments, fetchBotsiGettexSpreads])
+   }, [state.tableState.botsiMode, state.instruments, fetchBotsiGettexSpreads])
 
   return {
     processManualInput,
