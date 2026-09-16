@@ -162,7 +162,7 @@ function buildYahooSymbolCacheKey(isin: string): string {
 }
 
 function buildIsinResolutionCacheKey(identity: string): string {
-  return `cache:isin-resolution:v1:${identity.trim().toUpperCase()}`
+  return `cache:isin-resolution:v2:${identity.trim().toUpperCase()}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -2150,13 +2150,13 @@ export function usePipeline() {
   }, [state.instruments, fetchPrices])
 
   const loadedGettexSpreadSetRef = useRef<string | null>(null)
-  const fetchBotsiGettexSpreads = useCallback(async () => {
-     // Fetch exactly the investable BOTSI selection. This keeps the Gettex
-     // request small and guarantees that every qualified instrument is asked.
-     const targets = state.instruments.filter((inst) =>
-       inst.type === 'Stock' &&
-       inst.botsiQualified === true
-     )
+   const fetchBotsiGettexSpreads = useCallback(async () => {
+      // Fetch exactly the investable BOTSI selection. This keeps the Gettex
+      // request small and guarantees that every qualified instrument is asked.
+      const targets = state.instruments.filter((inst) =>
+        inst.type === 'Stock' &&
+        inst.botsiQualified === true
+      )
 
       // Split into with-ISIN and needs-ISIN instruments.
       const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
@@ -2300,20 +2300,20 @@ export function usePipeline() {
      dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
    }, [state.instruments, dispatch])
 
-  useEffect(() => {
-    if (!state.tableState.botsiMode) return
-    const signature = state.instruments
-      .filter((inst) => inst.type === 'Stock' && inst.botsiQualified === true)
-      .map((inst) => inst.isin)
-      .sort()
-      .join(',')
-    if (!signature || loadedGettexSpreadSetRef.current === signature) return
-    loadedGettexSpreadSetRef.current = signature
-    fetchBotsiGettexSpreads().catch(() => {
-      // A missing Gettex quote should not interrupt the BOTSI scan. The table
-      // keeps an em dash for unavailable instruments.
-    })
-  }, [state.tableState.botsiMode, state.instruments, fetchBotsiGettexSpreads])
+   useEffect(() => {
+     if (!state.tableState.botsiMode) return
+     const signature = state.instruments
+       .filter((inst) => inst.type === 'Stock' && inst.botsiQualified === true)
+       .map((inst) => inst.isin)
+       .sort()
+       .join(',')
+     if (!signature || loadedGettexSpreadSetRef.current === signature) return
+     loadedGettexSpreadSetRef.current = signature
+     fetchBotsiGettexSpreads().catch(() => {
+       // A missing Gettex quote should not interrupt the BOTSI scan. The table
+       // keeps an em dash for unavailable instruments.
+     })
+   }, [state.tableState.botsiMode, state.instruments, fetchBotsiGettexSpreads])
 
   return {
     processManualInput,
