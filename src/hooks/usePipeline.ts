@@ -1540,8 +1540,7 @@ export function usePipeline() {
     dispatch({ type: 'SET_ACTIVE_UNIVERSE', universe: 'index_global', snapshot })
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: `Resolving ${raw.length} index constituents...`, current: 0, total: raw.length } })
     try {
-      const withResolved = await resolveUniverseIsins(raw, setStatus)
-      const enriched = await enrichWithOpenFIGI(withResolved)
+      const enriched = await enrichWithOpenFIGI(raw)
       const withYahooTickers = await resolveIndexYahooTickers(enriched)
       const mergedListings = mergeResolvedIndexListings(withYahooTickers)
       const pricedCandidates = mergedListings.filter((instrument) => Boolean(instrument.yahooTicker))

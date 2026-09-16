@@ -31,7 +31,7 @@ function readRequestedGettexIsins(body: unknown): string[] {
     .filter((value): value is string => typeof value === 'string')
     .map((value) => value.trim().toUpperCase())
     .filter((value) => /^[A-Z]{2}[A-Z0-9]{10}$/.test(value)))]
-    .slice(0, 100)
+    .slice(0, 500)
 }
 
 function normalizeIsin(value: unknown): string | null {
