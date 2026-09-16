@@ -2283,19 +2283,18 @@ export function usePipeline() {
          // This should not happen if the map is built correctly
          continue
        }
-       for (const instrumentIsin of instrumentIsins) {
-         if (quote) {
-           // The immutable reducer key must remain the original source identity.
-           // Replacing LISTING:… by an ISIN here can collide with a constituent
-           // which already has that ISIN and produces duplicate table rows.
-           updates.set(instrumentIsin, {
-             gettexBid: quote.bid, gettexAsk: quote.ask,
-             gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time,
-           })
-         } else {
-           updates.set(instrumentIsin, { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
-         }
-       }
+        for (const instrumentIsin of instrumentIsins) {
+          if (quote) {
+            const isinToSet = /^[A-Z]{2}[A-Z0-9]{10}$/.test(queryIsin) ? queryIsin : instrumentIsin
+            updates.set(instrumentIsin, {
+              isin: isinToSet,
+              gettexBid: quote.bid, gettexAsk: quote.ask,
+              gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time,
+            })
+          } else {
+            updates.set(instrumentIsin, { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+          }
+        }
      }
      dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
    }, [state.instruments, dispatch])

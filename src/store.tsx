@@ -349,9 +349,15 @@ function reducer(state: AppState, action: Action): AppState {
         ])
       )
       const needsRecalc = Array.from(cleanUpdates.values()).some((u) => updatesAffectScores(u))
-      const instruments = state.instruments.map((inst) => {
+      const mapped = state.instruments.map((inst) => {
         const updates = cleanUpdates.get(inst.isin)
         return updates ? { ...inst, ...updates } : inst
+      })
+      const seen = new Set<string>()
+      const instruments = mapped.filter((i) => {
+        if (seen.has(i.isin)) return false
+        seen.add(i.isin)
+        return true
       })
       if (!needsRecalc) {
         return { ...state, instruments }
