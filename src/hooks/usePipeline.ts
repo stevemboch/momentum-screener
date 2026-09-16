@@ -420,6 +420,51 @@ async function apiYahooResolveIsins(isins: string[]): Promise<YahooSymbolResolut
   return Array.isArray(data) ? data : []
 }
 
+async function resolveUniverseIsins(
+  instruments: Instrument[],
+  setStatus: (msg: string, current?: number, total?: number) => void
+): Promise<Instrument[]> {
+  const needsResolution = instruments.filter(inst => !/^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
+  if (needsResolution.length === 0) return instruments
+
+  setStatus(`Resolving ISINs for ${needsResolution.length} index constituents...`, 0, needsResolution.length)
+
+  const resolvedMap = new Map<string, string>()
+
+  for (let start = 0; start < needsResolution.length; start += 100) {
+    const batch = needsResolution.slice(start, start + 100)
+    try {
+      setStatus(`Resolving ISINs: batch ${Math.floor(start / 100) + 1} / ${Math.ceil(needsResolution.length / 100)}...`, start, needsResolution.length)
+      const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveIsins=1', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruments: batch.map((instrument) => ({
+          key: instrument.isin,
+          ticker: instrument.mnemonic || instrument.yahooTicker,
+          name: instrument.longName || instrument.yahooLongName || instrument.displayName,
+        })) }),
+        timeoutMs: 55_000,
+      })
+      for (const instrument of batch) {
+        const isin = data.resolutions?.[instrument.isin]?.isin
+        if (typeof isin === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) {
+          resolvedMap.set(instrument.isin, isin)
+          cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
+        }
+      }
+    } catch (error) {
+      console.warn('[resolveUniverseIsins] batch failed:', error)
+    }
+  }
+
+  return instruments.map(inst => {
+    const resolved = resolvedMap.get(inst.isin)
+    if (resolved) {
+      return { ...inst, isin: resolved }
+    }
+    return inst
+  })
+}
+
 async function apiYahooSingle(ticker: string, options?: YahooRequestOptions): Promise<any> {
   const data = await apiYahooBatch([ticker], options)
   return data[0] ?? null
@@ -1495,7 +1540,8 @@ export function usePipeline() {
     dispatch({ type: 'SET_ACTIVE_UNIVERSE', universe: 'index_global', snapshot })
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: `Resolving ${raw.length} index constituents...`, current: 0, total: raw.length } })
     try {
-      const enriched = await enrichWithOpenFIGI(raw)
+      const withResolved = await resolveUniverseIsins(raw, setStatus)
+      const enriched = await enrichWithOpenFIGI(withResolved)
       const withYahooTickers = await resolveIndexYahooTickers(enriched)
       const mergedListings = mergeResolvedIndexListings(withYahooTickers)
       const pricedCandidates = mergedListings.filter((instrument) => Boolean(instrument.yahooTicker))
@@ -2296,15 +2342,18 @@ export function usePipeline() {
           continue
         }
         for (const instrumentIsin of instrumentIsins) {
+          const isinToSet = /^[A-Z]{2}[A-Z0-9]{10}$/.test(queryIsin) ? queryIsin : instrumentIsin
           if (quote) {
-            const isinToSet = /^[A-Z]{2}[A-Z0-9]{10}$/.test(queryIsin) ? queryIsin : instrumentIsin
             updates.set(instrumentIsin, {
               isin: isinToSet,
               gettexBid: quote.bid, gettexAsk: quote.ask,
               gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time,
             })
           } else {
-            updates.set(instrumentIsin, { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
+            updates.set(instrumentIsin, {
+              isin: isinToSet,
+              gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null,
+            })
           }
         }
       }
