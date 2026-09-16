@@ -2151,11 +2151,10 @@ export function usePipeline() {
 
   const loadedGettexSpreadSetRef = useRef<string | null>(null)
    const fetchBotsiGettexSpreads = useCallback(async (force = false) => {
-      // Fetch exactly the investable BOTSI selection. This keeps the Gettex
-      // request small and guarantees that every qualified instrument is asked.
+      // Fetch all stock instruments so that missing ISINs are resolved and
+      // Gettex spreads are available across the universe.
       const targets = state.instruments.filter((inst) =>
-        inst.type === 'Stock' &&
-        inst.botsiQualified === true
+        inst.type === 'Stock'
       )
       if (targets.length === 0) return
 
@@ -2314,19 +2313,18 @@ export function usePipeline() {
    }, [state.instruments, dispatch, setStatus])
 
    useEffect(() => {
-     if (!state.tableState.botsiMode) return
      const signature = state.instruments
-       .filter((inst) => inst.type === 'Stock' && inst.botsiQualified === true)
+       .filter((inst) => inst.type === 'Stock')
        .map((inst) => inst.isin)
        .sort()
        .join(',')
      if (!signature || loadedGettexSpreadSetRef.current === signature) return
      loadedGettexSpreadSetRef.current = signature
      fetchBotsiGettexSpreads().catch(() => {
-       // A missing Gettex quote should not interrupt the BOTSI scan. The table
+       // A missing Gettex quote should not interrupt execution. The table
        // keeps an em dash for unavailable instruments.
      })
-   }, [state.tableState.botsiMode, state.instruments, fetchBotsiGettexSpreads])
+   }, [state.instruments, fetchBotsiGettexSpreads])
 
   return {
     processManualInput,
