@@ -2368,17 +2368,17 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     })
   }
 
-  const handleRefreshGettexSpreads = useCallback(async () => {
-    setGettexSpreadsLoading(true)
-    setGettexSpreadsError(null)
-    try {
-      await fetchBotsiGettexSpreads()
-    } catch (error: any) {
-      setGettexSpreadsError(error?.message ?? 'Abruf fehlgeschlagen')
-    } finally {
-      setGettexSpreadsLoading(false)
-    }
-  }, [fetchBotsiGettexSpreads])
+   const handleRefreshGettexSpreads = useCallback(async () => {
+     setGettexSpreadsLoading(true)
+     setGettexSpreadsError(null)
+     try {
+       await fetchBotsiGettexSpreads(true)
+     } catch (error: any) {
+       setGettexSpreadsError(error?.message ?? 'Abruf fehlgeschlagen')
+     } finally {
+       setGettexSpreadsLoading(false)
+     }
+   }, [fetchBotsiGettexSpreads])
 
   const forcedVisible = new Set<string>(CORE_STICKY_COLUMNS)
   const hiddenKeys = new Set(

@@ -2150,13 +2150,14 @@ export function usePipeline() {
   }, [state.instruments, fetchPrices])
 
   const loadedGettexSpreadSetRef = useRef<string | null>(null)
-   const fetchBotsiGettexSpreads = useCallback(async () => {
+   const fetchBotsiGettexSpreads = useCallback(async (force = false) => {
       // Fetch exactly the investable BOTSI selection. This keeps the Gettex
       // request small and guarantees that every qualified instrument is asked.
       const targets = state.instruments.filter((inst) =>
         inst.type === 'Stock' &&
         inst.botsiQualified === true
       )
+      if (targets.length === 0) return
 
       // Split into with-ISIN and needs-ISIN instruments.
       const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
@@ -2165,124 +2166,136 @@ export function usePipeline() {
         return !isValidIsin && (Boolean(inst.cusip) || inst.wkn?.length === 6 || inst.mnemonic || inst.yahooTicker || Boolean(inst.displayName || inst.longName || inst.yahooLongName))
       })
 
-     // Resolve only the qualified remainder, never the entire index universe.
-     // Browser caching makes successful ticker/name lookups a one-time cost.
-     const resolvedByInstrumentId = new Map<string, string>()
-     const unresolvedForRemote: Instrument[] = []
-     for (const instrument of needsIsin) {
-       const cached = cacheGet<{ isin?: unknown }>(buildIsinResolutionCacheKey(instrument.isin), ISIN_RESOLUTION_TTL_MS)
-       const isin = typeof cached?.isin === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(cached.isin)
-         ? cached.isin : null
-       if (isin) resolvedByInstrumentId.set(instrument.isin, isin)
-       else unresolvedForRemote.push(instrument)
-     }
-     for (let start = 0; start < unresolvedForRemote.length; start += 100) {
-       const batch = unresolvedForRemote.slice(start, start + 100)
-       try {
-         const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveIsins=1', {
-           method: 'POST', headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ instruments: batch.map((instrument) => ({
-             key: instrument.isin,
-             ticker: instrument.mnemonic || instrument.yahooTicker,
-             name: instrument.longName || instrument.yahooLongName || instrument.displayName,
-           })) }),
-           timeoutMs: 55_000,
-         })
-         for (const instrument of batch) {
-           const isin = data.resolutions?.[instrument.isin]?.isin
-           if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
-           resolvedByInstrumentId.set(instrument.isin, isin)
-           cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
-         }
-       } catch (error) {
-         // A resolver outage must never hide a qualified candidate or prevent
-         // the normal CUSIP/OpenFIGI fallbacks below.
-         console.warn('[fetchBotsiGettexSpreads] ISIN resolver batch failed:', error)
-       }
-     }
+      setStatus('Resolving missing ISINs (Deutsche Börse / OpenFIGI)...', 0, needsIsin.length)
 
-     // Prefer a deterministic US-CUSIP conversion. Gettex itself validates it
-     // by returning a quote, so a non-US exception simply remains without one.
-     const cusipResolved = needsIsin
-       .map((instrument) => ({ instrument, resolvedIsin: usCusipToIsin(instrument.cusip) }))
-       .filter((item): item is { instrument: Instrument; resolvedIsin: string } => item.resolvedIsin != null)
-     cusipResolved.forEach(({ instrument, resolvedIsin }) => resolvedByInstrumentId.set(instrument.isin, resolvedIsin))
-     const needsOpenFigi = needsIsin.filter((instrument) => !resolvedByInstrumentId.has(instrument.isin))
+      // Resolve only the qualified remainder, never the entire index universe.
+      // Browser caching makes successful ticker/name lookups a one-time cost.
+      const resolvedByInstrumentId = new Map<string, string>()
+      const unresolvedForRemote: Instrument[] = []
+      for (const instrument of needsIsin) {
+        const cached = cacheGet<{ isin?: unknown }>(buildIsinResolutionCacheKey(instrument.isin), ISIN_RESOLUTION_TTL_MS)
+        const isin = typeof cached?.isin === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(cached.isin)
+          ? cached.isin : null
+        if (isin) resolvedByInstrumentId.set(instrument.isin, isin)
+        else unresolvedForRemote.push(instrument)
+      }
 
-     // Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
-     // the reducer key even when it is a LISTING: identity.
-     const needsIsinWithMeta = needsOpenFigi.map(inst => {
-       let job: { idType: string; idValue: string }
-       if (inst.cusip && /^[A-Z0-9]{9}$/i.test(inst.cusip)) {
-         job = { idType: 'ID_CUSIP', idValue: inst.cusip }
-       } else if (inst.wkn && inst.wkn.length === 6) {
-         job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
-         } else {
-           const rawTicker = inst.mnemonic || inst.yahooTicker
-           const ticker = rawTicker ? rawTicker.replace(/\.[A-Z]{1,5}$/, '').trim() : ''
-           job = { idType: 'TICKER', idValue: ticker || inst.displayName }
-         }
-       return { instrument: inst, job }
-     })
+      if (unresolvedForRemote.length > 0) {
+        setStatus(`Resolving ${unresolvedForRemote.length} missing ISINs via Deutsche Börse / OpenFIGI...`, 0, unresolvedForRemote.length)
+      }
 
-     const openfigiJobs = needsIsinWithMeta.map(item => item.job)
-     const openfigiResults: Array<OpenFIGIResult | null> = openfigiJobs.length > 0
-       ? await apiOpenFIGI(openfigiJobs).catch(err => {
-         console.warn('[fetchBotsiGettexSpreads] OpenFIGI batch failed:', err)
-         return new Array<OpenFIGIResult | null>(openfigiJobs.length).fill(null)
-       })
-       : []
+      for (let start = 0; start < unresolvedForRemote.length; start += 100) {
+        const batch = unresolvedForRemote.slice(start, start + 100)
+        try {
+          const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveIsins=1', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instruments: batch.map((instrument) => ({
+              key: instrument.isin,
+              ticker: instrument.mnemonic || instrument.yahooTicker,
+              name: instrument.longName || instrument.yahooLongName || instrument.displayName,
+            })) }),
+            timeoutMs: 55_000,
+          })
+          for (const instrument of batch) {
+            const isin = data.resolutions?.[instrument.isin]?.isin
+            if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
+            resolvedByInstrumentId.set(instrument.isin, isin)
+            cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
+          }
+        } catch (error) {
+          // A resolver outage must never hide a qualified candidate or prevent
+          // the normal CUSIP/OpenFIGI fallbacks below.
+          console.warn('[fetchBotsiGettexSpreads] ISIN resolver batch failed:', error)
+        }
+      }
 
-     // Build the Gettex query list. Several listings can map to the
-     // same ISIN, so retain every original reducer key for each query ISIN.
-     const queryIsinToInstrumentIsins = new Map<string, string[]>()
-     const queryIsins: string[] = []
-     const addQuery = (queryIsin: string, instrumentId: string) => {
-       const matchingInstrumentIds = queryIsinToInstrumentIsins.get(queryIsin) ?? []
-       if (!matchingInstrumentIds.includes(instrumentId)) matchingInstrumentIds.push(instrumentId)
-       queryIsinToInstrumentIsins.set(queryIsin, matchingInstrumentIds)
-       queryIsins.push(queryIsin)
-     }
+      // Prefer a deterministic US-CUSIP conversion. Gettex itself validates it
+      // by returning a quote, so a non-US exception simply remains without one.
+      const cusipResolved = needsIsin
+        .map((instrument) => ({ instrument, resolvedIsin: usCusipToIsin(instrument.cusip) }))
+        .filter((item): item is { instrument: Instrument; resolvedIsin: string } => item.resolvedIsin != null)
+      cusipResolved.forEach(({ instrument, resolvedIsin }) => resolvedByInstrumentId.set(instrument.isin, resolvedIsin))
+      const needsOpenFigi = needsIsin.filter((instrument) => !resolvedByInstrumentId.has(instrument.isin))
 
-     // Add withIsin: queryIsin == instrumentIsin (the valid ISIN)
-     withIsin.forEach(inst => {
-       const isin = inst.isin
-       // TypeScript might not know isin is string, but we know from filter
-       addQuery(isin, isin)
-     })
+      // Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
+      // the reducer key even when it is a LISTING: identity.
+      const needsIsinWithMeta = needsOpenFigi.map(inst => {
+        let job: { idType: string; idValue: string }
+        if (inst.cusip && /^[A-Z0-9]{9}$/i.test(inst.cusip)) {
+          job = { idType: 'ID_CUSIP', idValue: inst.cusip }
+        } else if (inst.wkn && inst.wkn.length === 6) {
+          job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
+          } else {
+            const rawTicker = inst.mnemonic || inst.yahooTicker
+            const ticker = rawTicker ? rawTicker.replace(/\.[A-Z]{1,5}$/, '').trim() : ''
+            job = { idType: 'TICKER', idValue: ticker || inst.displayName }
+          }
+        return { instrument: inst, job }
+      })
 
-     resolvedByInstrumentId.forEach((resolvedIsin, instrumentId) => addQuery(resolvedIsin, instrumentId))
+      const openfigiJobs = needsIsinWithMeta.map(item => item.job)
+      const openfigiResults: Array<OpenFIGIResult | null> = openfigiJobs.length > 0
+        ? await apiOpenFIGI(openfigiJobs).catch(err => {
+          console.warn('[fetchBotsiGettexSpreads] OpenFIGI batch failed:', err)
+          return new Array<OpenFIGIResult | null>(openfigiJobs.length).fill(null)
+        })
+        : []
 
-     // Add LISTING identities that OpenFIGI resolved. Crucially, updates are
-     // written back using LISTING:… (not the ticker used for the lookup).
-     needsIsinWithMeta.forEach((meta, index) => {
-       const resolvedIsin = openfigiResults[index]?.isin
-       if (resolvedIsin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(resolvedIsin)) {
-         addQuery(resolvedIsin, meta.instrument.isin)
-       }
-     })
+      // Build the Gettex query list. Several listings can map to the
+      // same ISIN, so retain every original reducer key for each query ISIN.
+      const queryIsinToInstrumentIsins = new Map<string, string[]>()
+      const queryIsins: string[] = []
+      const addQuery = (queryIsin: string, instrumentId: string) => {
+        const matchingInstrumentIds = queryIsinToInstrumentIsins.get(queryIsin) ?? []
+        if (!matchingInstrumentIds.includes(instrumentId)) matchingInstrumentIds.push(instrumentId)
+        queryIsinToInstrumentIsins.set(queryIsin, matchingInstrumentIds)
+        queryIsins.push(queryIsin)
+      }
 
-     // Remove duplicates
-     const uniqueQueryIsins = [...new Set(queryIsins)]
-     if (uniqueQueryIsins.length === 0) return
+      // Add withIsin: queryIsin == instrumentIsin (the valid ISIN)
+      withIsin.forEach(inst => {
+        const isin = inst.isin
+        // TypeScript might not know isin is string, but we know from filter
+        addQuery(isin, isin)
+      })
 
-     // Request Gettex quotes.
-     const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ isins: uniqueQueryIsins }),
-       timeoutMs: 55_000,
-     })
+      resolvedByInstrumentId.forEach((resolvedIsin, instrumentId) => addQuery(resolvedIsin, instrumentId))
 
-     // Update instruments using the map.
-     const updates = new Map<string, Partial<Instrument>>()
-     for (const queryIsin of uniqueQueryIsins) {
-       const quote = data.quotes[queryIsin]
-       const instrumentIsins = queryIsinToInstrumentIsins.get(queryIsin)
-       if (!instrumentIsins) {
-         // This should not happen if the map is built correctly
-         continue
-       }
+      // Add LISTING identities that OpenFIGI resolved. Crucially, updates are
+      // written back using LISTING:… (not the ticker used for the lookup).
+      needsIsinWithMeta.forEach((meta, index) => {
+        const resolvedIsin = openfigiResults[index]?.isin
+        if (resolvedIsin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(resolvedIsin)) {
+          addQuery(resolvedIsin, meta.instrument.isin)
+        }
+      })
+
+      // Remove duplicates
+      const uniqueQueryIsins = [...new Set(queryIsins)]
+      if (uniqueQueryIsins.length === 0) {
+        setStatus('No valid ISINs found for Gettex quotes', 0, 0)
+        return
+      }
+
+      setStatus('Fetching Gettex spreads...', 0, uniqueQueryIsins.length)
+
+      // Request Gettex quotes.
+      const data = await apiFetchJson<{ quotes: Record<string, { bid: number; ask: number; spreadPct: number; time: string }> }>('/api/xetra?gettexSpreads=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isins: uniqueQueryIsins }),
+        timeoutMs: 55_000,
+      })
+
+      // Update instruments using the map.
+      const updates = new Map<string, Partial<Instrument>>()
+      for (const queryIsin of uniqueQueryIsins) {
+        const quote = data.quotes[queryIsin]
+        const instrumentIsins = queryIsinToInstrumentIsins.get(queryIsin)
+        if (!instrumentIsins) {
+          // This should not happen if the map is built correctly
+          continue
+        }
         for (const instrumentIsin of instrumentIsins) {
           if (quote) {
             const isinToSet = /^[A-Z]{2}[A-Z0-9]{10}$/.test(queryIsin) ? queryIsin : instrumentIsin
@@ -2295,9 +2308,10 @@ export function usePipeline() {
             updates.set(instrumentIsin, { gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null })
           }
         }
-     }
-     dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
-   }, [state.instruments, dispatch])
+      }
+      dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
+      setStatus('Gettex spreads updated', uniqueQueryIsins.length, uniqueQueryIsins.length)
+   }, [state.instruments, dispatch, setStatus])
 
    useEffect(() => {
      if (!state.tableState.botsiMode) return
