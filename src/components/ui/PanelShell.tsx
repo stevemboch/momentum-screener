@@ -36,7 +36,7 @@ export function PanelShell({
   )
 
   return (
-    <section className="panel-shell overflow-hidden">
+    <section className="panel-shell">
       {collapsible ? (
         <button
           type="button"

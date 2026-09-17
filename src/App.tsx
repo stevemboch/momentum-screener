@@ -57,7 +57,7 @@ export default function App() {
 
       <div className="flex flex-1 min-h-0">
         <aside
-          className={`border-r border-border bg-surface flex flex-col shrink-0 transition-all duration-200 ${
+          className={`border-r border-border bg-surface flex flex-col flex-1 shrink-0 transition-all duration-200 ${
             sidebarOpen ? 'w-64' : 'w-0 overflow-hidden'
           }`}
         >
