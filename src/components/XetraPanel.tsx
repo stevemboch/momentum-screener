@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Database, Loader, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { StatusBadge } from './ui/StatusBadge'
+import { PanelShell } from './ui/PanelShell'
 
 export function XetraPanel() {
   const { state, dispatch } = useAppState()
   const { loadXetraBackground, activateXetra, loadFrankfurtBackground, activateFrankfurt, activateIndexUniverse } = usePipeline()
   const [showGroups, setShowGroups] = useState(false)
   const [showFrankfurtGroups, setShowFrankfurtGroups] = useState(false)
+  const [showIndexGroups, setShowIndexGroups] = useState(false)
   const [nasdaqVariant, setNasdaqVariant] = useState<'100' | 'composite'>('100')
 
   const isLoading = ['openfigi', 'prices', 'justetf', 'dedup', 'parsing'].includes(state.fetchStatus.phase)
@@ -35,43 +37,99 @@ export function XetraPanel() {
     .filter((g) => g.enabled)
     .reduce((s, g) => s + g.count, 0)
 
-  const enabledFrankfurtCount = state.frankfurtGroups
+const enabledFrankfurtCount = state.frankfurtGroups
     .filter((g) => g.enabled)
     .reduce((s, g) => s + g.count, 0)
 
+  const indexGroups = useMemo(() => {
+    if (!state.universeSnapshot?.constituents) return [];
+    const map = new Map<string, {label: string; count: number}>();
+    state.universeSnapshot.constituents.forEach((c) => {
+      const region = c.region ?? 'Unknown';
+      const existing = map.get(region) ?? {label: region, count: 0};
+      map.set(region, {...existing, count: existing.count + 1});
+    });
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count);
+  }, [state.universeSnapshot?.constituents]);
+
+  const sectorGroups = useMemo(() => {
+    if (!state.universeSnapshot?.constituents) return [];
+    const map = new Map<string, {label: string; count: number}>();
+    state.universeSnapshot.constituents.forEach((c) => {
+      const sector = c.sector ?? 'Unknown';
+      const existing = map.get(sector) ?? {label: sector, count: 0};
+      map.set(sector, {...existing, count: existing.count + 1});
+    });
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count);
+  }, [state.universeSnapshot?.constituents]);
+
   return (
     <div className="flex flex-col gap-2">
-<div className="border-b border-border pb-3">
-         <div className="mb-1 font-mono text-ui-xs uppercase tracking-widest text-muted">Index Global <span className="text-accent">DEFAULT</span></div>
-<p className="mb-2 text-ui-xs leading-relaxed text-muted">
-            STOXX Europe 600 · S&P 500 · S&P 400/600 · MSCI Japan · MSCI EM
-          </p>
-<label className="mb-2 block text-ui-xs text-muted">
-           Nasdaq component
-           <select
-             value={nasdaqVariant}
-             onChange={(event) => setNasdaqVariant(event.target.value as '100' | 'composite')}
-             disabled={isLoading}
-             className="focus-ring mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-ui-sm text-muted"
-           >
-             <option value="100" title="Nasdaq 100 — focused, faster">Nasdaq 100</option>
-             <option value="composite" title="Nasdaq Composite — broad listing proxy, slower">Nasdaq Comp</option>
-           </select>
-         </label>
+      <PanelShell
+        title="Index Global"
+        collapsible
+        open={showIndexGroups}
+        onToggle={() => setShowIndexGroups(!showIndexGroups)}
+      >
+        <div className="mb-2 flex items-center gap-2">
+          <div className="text-ui-xs font-mono">Nasdaq component</div>
+          <select
+            value={nasdaqVariant}
+            onChange={(event) => setNasdaqVariant(event.target.value as '100' | 'composite')}
+            disabled={isLoading}
+            className="focus-ring mt-1 w-auto rounded border border-border bg-bg px-2 py-1 text-ui-sm text-muted"
+          >
+            <option value="100" title="Nasdaq 100 — focused, faster">Nasdaq 100</option>
+            <option value="composite" title="Nasdaq Composite — broad listing proxy, slower">Nasdaq Comp</option>
+          </select>
+        </div>
         <button
           type="button"
           onClick={() => activateIndexUniverse(nasdaqVariant)}
           disabled={isLoading}
-          className="btn btn-md btn-primary focus-ring w-full font-semibold"
+          className="btn btn-md btn-primary focus-ring w-full font-semibold mt-2"
         >
           {isLoading ? <><Loader size={12} className="animate-spin" /> Processing...</> : <><Database size={12} /> Load Index Universe</>}
         </button>
         {state.universeSnapshot && state.activeUniverse === 'index_global' && (
-          <div className={`mt-2 text-ui-xs font-mono ${state.universeSnapshot.status === 'stale' ? 'text-amber-400' : 'text-green-500'}`}>
+          <div className="mt-2 text-ui-xs font-mono">
             {state.universeSnapshot.status === 'stale' ? '● STALE fallback' : '● Snapshot'} · {state.universeSnapshot.asOfDate} · v{state.universeSnapshot.version}
           </div>
         )}
-      </div>
+        {showIndexGroups && state.universeSnapshot && (
+          <div className="mt-3">
+            <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Index Groups</div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              <div>
+                <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Regions</div>
+                {indexGroups.map((g) => (
+                  <GroupCheckbox
+                    key={g.label}
+                    label={g.label}
+                    count={g.count}
+                    enabled={true}
+                    onChange={() => {}}
+                  />
+                ))}
+              </div>
+              <div>
+                <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Sectors</div>
+                {sectorGroups.map((g) => (
+                  <GroupCheckbox
+                    key={g.label}
+                    label={g.label}
+                    count={g.count}
+                    enabled={true}
+                    onChange={() => {}}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </PanelShell>
 
       <div className="border-b border-border pb-2">
         <div className="mb-1 font-mono text-ui-xs uppercase tracking-wider text-muted">Legacy: Xetra listings</div>
