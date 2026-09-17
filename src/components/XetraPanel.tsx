@@ -110,25 +110,19 @@ const enabledFrankfurtCount = state.frankfurtGroups
               <div>
                 <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Regions</div>
                 {indexGroups.map((g) => (
-                  <GroupCheckbox
-                    key={g.label}
-                    label={g.label}
-                    count={g.count}
-                    enabled={true}
-                    onChange={() => {}}
-                  />
+                  <div key={g.label} className="flex items-center justify-between text-ui-xs font-mono">
+                    <span>{g.label}</span>
+                    <span className="text-muted">{g.count.toLocaleString()}</span>
+                  </div>
                 ))}
               </div>
               <div>
                 <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Sectors</div>
                 {sectorGroups.map((g) => (
-                  <GroupCheckbox
-                    key={g.label}
-                    label={g.label}
-                    count={g.count}
-                    enabled={true}
-                    onChange={() => {}}
-                  />
+                  <div key={g.label} className="flex items-center justify-between text-ui-xs font-mono">
+                    <span>{g.label}</span>
+                    <span className="text-muted">{g.count.toLocaleString()}</span>
+                  </div>
                 ))}
               </div>
             </div>
