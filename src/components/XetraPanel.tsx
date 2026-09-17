@@ -41,23 +41,23 @@ export function XetraPanel() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="border-b border-border pb-3">
-        <div className="mb-1 font-mono text-ui-sm text-gray-200">Index Global <span className="text-accent">DEFAULT</span></div>
-        <p className="mb-2 text-ui-xs leading-relaxed text-muted">
-          STOXX Europe 600 · S&amp;P 500 · S&amp;P 400/600 · MSCI Japan · MSCI Emerging Markets
-        </p>
-        <label className="mb-2 block text-ui-xs text-muted">
-          Nasdaq component
-          <select
-            value={nasdaqVariant}
-            onChange={(event) => setNasdaqVariant(event.target.value as '100' | 'composite')}
-            disabled={isLoading}
-            className="focus-ring mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-ui-sm text-gray-200"
-          >
-            <option value="100">Nasdaq 100 — focused, faster</option>
-            <option value="composite">Nasdaq Composite — broad listing proxy, slower</option>
-          </select>
-        </label>
+<div className="border-b border-border pb-3">
+         <div className="mb-1 font-mono text-ui-xs uppercase tracking-widest text-muted">Index Global <span className="text-accent">DEFAULT</span></div>
+<p className="mb-2 text-ui-xs leading-relaxed text-muted">
+            STOXX Europe 600 · S&P 500 · S&P 400/600 · MSCI Japan · MSCI EM
+          </p>
+<label className="mb-2 block text-ui-xs text-muted">
+           Nasdaq component
+           <select
+             value={nasdaqVariant}
+             onChange={(event) => setNasdaqVariant(event.target.value as '100' | 'composite')}
+             disabled={isLoading}
+             className="focus-ring mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-ui-sm text-muted"
+           >
+             <option value="100" title="Nasdaq 100 — focused, faster">Nasdaq 100</option>
+             <option value="composite" title="Nasdaq Composite — broad listing proxy, slower">Nasdaq Comp</option>
+           </select>
+         </label>
         <button
           type="button"
           onClick={() => activateIndexUniverse(nasdaqVariant)}
@@ -188,18 +188,18 @@ export function XetraPanel() {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={activateFrankfurt}
-          disabled={!state.frankfurtReady || isLoading}
-          className="btn btn-md btn-secondary focus-ring w-full font-semibold"
-        >
-          {isLoading ? (
-            <><Loader size={12} className="animate-spin" /> Processing...</>
-          ) : (
-            <><Database size={12} /> Load Frankfurt Equities</>
-          )}
-        </button>
+<button
+    type="button"
+    onClick={activateFrankfurt}
+    disabled={!state.frankfurtReady || isLoading}
+    className="btn btn-md btn-secondary focus-ring w-full font-semibold"
+  >
+    {isLoading ? (
+      <><Loader size={12} className="animate-spin" /> Processing...</>
+    ) : (
+      <><Database size={12} /> Load Frankfurt Universe</>
+    )}
+  </button>
 
         {state.frankfurtActive && !isLoading && (
           <button
