@@ -67,13 +67,9 @@ const enabledFrankfurtCount = state.frankfurtGroups
 
   return (
     <div className="flex flex-col gap-2">
-      <PanelShell
-        title="Index Global"
-        collapsible
-        open={showIndexGroups}
-        onToggle={() => setShowIndexGroups(!showIndexGroups)}
-      >
-        <div className="mb-2 flex items-center gap-2">
+      {/* Index Global - Always visible controls */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
           <div className="text-ui-xs font-mono">Nasdaq component</div>
           <select
             value={nasdaqVariant}
@@ -89,7 +85,7 @@ const enabledFrankfurtCount = state.frankfurtGroups
           type="button"
           onClick={() => activateIndexUniverse(nasdaqVariant)}
           disabled={isLoading}
-          className="btn btn-md btn-primary focus-ring w-full font-semibold mt-2"
+          className="btn btn-md btn-primary focus-ring w-full font-semibold"
         >
           {isLoading ? <><Loader size={12} className="animate-spin" /> Processing...</> : <><Database size={12} /> Load Index Universe</>}
         </button>
@@ -98,6 +94,15 @@ const enabledFrankfurtCount = state.frankfurtGroups
             {state.universeSnapshot.status === 'stale' ? '● STALE fallback' : '● Snapshot'} · {state.universeSnapshot.asOfDate} · v{state.universeSnapshot.version}
           </div>
         )}
+      </div>
+      
+      {/* Index Global - Collapsible group filters */}
+      <PanelShell
+        title="Index Global"
+        collapsible
+        open={showIndexGroups}
+        onToggle={() => setShowIndexGroups(!showIndexGroups)}
+      >
         {showIndexGroups && state.universeSnapshot && (
           <div className="mt-3">
             <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Index Groups</div>
@@ -156,55 +161,57 @@ const enabledFrankfurtCount = state.frankfurtGroups
         </button>
 
         {showGroups && state.xetraReady && (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 pb-2">
-            <div>
-              <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">ETF groups</div>
-              {state.etfGroups.map((g) => (
-                <GroupCheckbox
-                  key={g.groupKey}
-                  label={g.label}
-                  count={g.count}
-                  enabled={g.enabled}
-                  onChange={(v) => dispatch({ type: 'SET_ETF_GROUP', groupKey: g.groupKey, enabled: v })}
-                />
-              ))}
+          <>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 pb-2">
+              <div>
+                <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">ETF groups</div>
+                {state.etfGroups.map((g) => (
+                  <GroupCheckbox
+                    key={g.groupKey}
+                    label={g.label}
+                    count={g.count}
+                    enabled={g.enabled}
+                    onChange={(v) => dispatch({ type: 'SET_ETF_GROUP', groupKey: g.groupKey, enabled: v })}
+                  />
+                ))}
+              </div>
+              <div>
+                <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Stock groups</div>
+                {state.stockGroups.map((g) => (
+                  <GroupCheckbox
+                    key={g.groupKey}
+                    label={g.label}
+                    count={g.count}
+                    enabled={g.enabled}
+                    onChange={(v) => dispatch({ type: 'SET_STOCK_GROUP', groupKey: g.groupKey, enabled: v })}
+                  />
+                ))}
+              </div>
             </div>
-            <div>
-              <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Stock groups</div>
-              {state.stockGroups.map((g) => (
-                <GroupCheckbox
-                  key={g.groupKey}
-                  label={g.label}
-                  count={g.count}
-                  enabled={g.enabled}
-                  onChange={(v) => dispatch({ type: 'SET_STOCK_GROUP', groupKey: g.groupKey, enabled: v })}
-                />
-              ))}
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={activateXetra}
+                disabled={!state.xetraReady || isLoading}
+                className="btn btn-md btn-secondary focus-ring w-full font-semibold"
+              >
+                {isLoading ? (
+                  <><Loader size={12} className="animate-spin" /> Processing...</>
+                ) : (
+                  <><Database size={12} /> Load Xetra Universe</>
+                )}
+              </button>
+              {state.xetraActive && !isLoading && (
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: 'CLEAR_XETRA' })}
+                  className="btn btn-sm btn-ghost focus-ring w-full mt-1"
+                >
+                  Clear legacy Xetra data
+                </button>
+              )}
             </div>
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={activateXetra}
-          disabled={!state.xetraReady || isLoading}
-          className="btn btn-md btn-secondary focus-ring w-full font-semibold"
-        >
-          {isLoading ? (
-            <><Loader size={12} className="animate-spin" /> Processing...</>
-          ) : (
-            <><Database size={12} /> Load Xetra Universe</>
-          )}
-        </button>
-
-        {state.xetraActive && !isLoading && (
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'CLEAR_XETRA' })}
-            className="btn btn-sm btn-ghost focus-ring w-full mt-1"
-          >
-            Clear legacy Xetra data
-          </button>
+          </>
         )}
       </div>
 
@@ -231,42 +238,44 @@ const enabledFrankfurtCount = state.frankfurtGroups
           {showFrankfurtGroups ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
 
-        {showFrankfurtGroups && state.frankfurtReady && (
-          <div className="pb-2">
-            <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Frankfurt groups</div>
-            {state.frankfurtGroups.map((g) => (
-              <GroupCheckbox
-                key={g.groupKey}
-                label={g.label}
-                count={g.count}
-                enabled={g.enabled}
-                onChange={(v) => dispatch({ type: 'SET_FRANKFURT_GROUP', groupKey: g.groupKey, enabled: v })}
-              />
-            ))}
-          </div>
-        )}
-
-<button
-    type="button"
-    onClick={activateFrankfurt}
-    disabled={!state.frankfurtReady || isLoading}
-    className="btn btn-md btn-secondary focus-ring w-full font-semibold"
-  >
-    {isLoading ? (
-      <><Loader size={12} className="animate-spin" /> Processing...</>
-    ) : (
-      <><Database size={12} /> Load Frankfurt Universe</>
-    )}
-  </button>
-
-        {state.frankfurtActive && !isLoading && (
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'CLEAR_FRANKFURT' })}
-            className="btn btn-sm btn-ghost focus-ring w-full mt-1"
-          >
-            Clear loaded data
-          </button>
+{showFrankfurtGroups && state.frankfurtReady && (
+          <>
+            <div className="pb-2">
+              <div className="mb-1 text-ui-xs font-mono uppercase tracking-wider text-muted">Frankfurt groups</div>
+              {state.frankfurtGroups.map((g) => (
+                <GroupCheckbox
+                  key={g.groupKey}
+                  label={g.label}
+                  count={g.count}
+                  enabled={g.enabled}
+                  onChange={(v) => dispatch({ type: 'SET_FRANKFURT_GROUP', groupKey: g.groupKey, enabled: v })}
+                />
+              ))}
+            </div>
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={activateFrankfurt}
+                disabled={!state.frankfurtReady || isLoading}
+                className="btn btn-md btn-secondary focus-ring w-full font-semibold"
+              >
+                {isLoading ? (
+                  <><Loader size={12} className="animate-spin" /> Processing...</>
+                ) : (
+                  <><Database size={12} /> Load Frankfurt Universe</>
+                )}
+              </button>
+              {state.frankfurtActive && !isLoading && (
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: 'CLEAR_FRANKFURT' })}
+                  className="btn btn-sm btn-ghost focus-ring w-full mt-1"
+                >
+                  Clear loaded data
+                </button>
+              )}
+            </div>
+          </>
         )}
       </div>
 
