@@ -56,39 +56,41 @@ export default function App() {
       </header>
 
       <div className="flex flex-1 min-h-0">
-        <aside
-          className={`border-r border-border bg-surface flex flex-col shrink-0 transition-all duration-200 ${
-            sidebarOpen ? 'w-64' : 'w-0'
-          }`}
-        >
-          <div className="flex flex-col gap-4 p-4 overflow-y-auto flex-1 min-w-[256px]">
-            <div className="px-1">
-              <div className="panel-title">Workspace</div>
-              <div className="mt-1 text-ui-xs text-muted">Select data sources and manage your watchlist.</div>
-            </div>
-            <PanelShell title="Data sources">
-              <XetraPanel />
-            </PanelShell>
-
-            <PanelShell
-              title="Portfolio"
-              collapsible
-              open={portfolioOpen}
-              onToggle={() => setPortfolioOpen((v) => !v)}
-            >
-              <PortfolioPanel />
-            </PanelShell>
-
-            <PanelShell
-              title="Manual Input"
-              collapsible
-              open={manualOpen}
-              onToggle={() => setManualOpen((v) => !v)}
-            >
-              <ManualInput />
-            </PanelShell>
-          </div>
-        </aside>
+<aside
+           className=`flex flex-col shrink-0 transition-all duration-200 ${
+            sidebarOpen
+              ? 'w-64 bg-surface border-r border-border'
+              : 'w-0'
+           }`
+         >
+           <div className=`flex flex-col gap-4 p-4 overflow-y-auto ${sidebarOpen ? 'flex-1' : 'w-0'`}>
+             <div className=`px-1`>
+               <div className=`panel-title`>Workspace</div>
+               <div className=`text-ui-xs text-muted`>Select data sources and manage your watchlist.</div>
+             </div>
+             <PanelShell title="Data sources">
+               <XetraPanel />
+             </PanelShell>
+             
+             <PanelShell
+               title="Portfolio"
+               collapsible
+               open={portfolioOpen}
+               onToggle={() => setPortfolioOpen((v) => !v)}
+             >
+               <PortfolioPanel />
+             </PanelShell>
+             
+             <PanelShell
+               title="Manual Input"
+               collapsible
+               open={manualOpen}
+               onToggle={() => setManualOpen((v) => !v)}
+             >
+               <ManualInput />
+             </PanelShell>
+           </div>
+         </aside>
 
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
