@@ -57,42 +57,40 @@ export default function App() {
 
       <div className="flex flex-1 min-h-0">
 <aside
-           className=`flex flex-col shrink-0 transition-all duration-200 ${
-            sidebarOpen
-              ? 'w-64 bg-surface border-r border-border'
-              : 'w-0'
-           }`
-         >
-           <div className=`flex flex-col gap-4 p-4 overflow-y-auto ${sidebarOpen ? 'flex-1' : 'w-0'`}>
-             <div className=`px-1`>
-               <div className=`panel-title`>Workspace</div>
-               <div className=`text-ui-xs text-muted`>Select data sources and manage your watchlist.</div>
-             </div>
-             <PanelShell title="Data sources">
-               <XetraPanel />
-             </PanelShell>
-             
-             <PanelShell
-               title="Portfolio"
-               collapsible
-               open={portfolioOpen}
-               onToggle={() => setPortfolioOpen((v) => !v)}
-             >
-               <PortfolioPanel />
-             </PanelShell>
-             
-             <PanelShell
-               title="Manual Input"
-               collapsible
-               open={manualOpen}
-               onToggle={() => setManualOpen((v) => !v)}
-             >
-               <ManualInput />
-             </PanelShell>
-           </div>
-         </aside>
+          className={sidebarOpen
+            ? 'w-64 bg-surface border-r border-border flex flex-col shrink-0 transition-all duration-200'
+            : 'w-0'}
+        >
+          <div className={`${sidebarOpen ? 'flex-1' : 'w-0'} flex flex-col gap-4 p-4 overflow-y-auto`}>
+            <div className="px-1">
+              <div className="panel-title">Workspace</div>
+              <div className="text-ui-xs text-muted">Select data sources and manage your watchlist.</div>
+            </div>
+            <PanelShell title="Data sources">
+              <XetraPanel />
+            </PanelShell>
+            
+            <PanelShell
+              title="Portfolio"
+              collapsible
+              open={portfolioOpen}
+              onToggle={() => setPortfolioOpen((v) => !v)}
+            >
+              <PortfolioPanel />
+            </PanelShell>
+            
+            <PanelShell
+              title="Manual Input"
+              collapsible
+              open={manualOpen}
+              onToggle={() => setManualOpen((v) => !v)}
+            >
+              <ManualInput />
+            </PanelShell>
+</div>
+          </aside>
 
-        <button
+          <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="focus-ring flex items-center justify-center w-5 bg-surface border-r border-border text-muted hover:text-gray-300 hover:bg-surface2 shrink-0 transition-colors"
           title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
