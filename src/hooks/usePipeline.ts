@@ -156,8 +156,10 @@ function usCusipToIsin(cusip: string | null | undefined): string | null {
   return `${body}${(10 - (sum % 10)) % 10}`
 }
 
-function buildYahooCacheKey(ticker: string): string {
-  return `cache:yahoo:v4:${normalizeTickerForCache(ticker)}`
+function buildYahooCacheKey(ticker: string, includeQuoteSummary = true): string {
+  // A price-only scan must not satisfy an explicit detail refresh: it does
+  // not contain the quote-summary fundamentals or Yahoo analyst fields.
+  return `cache:yahoo:v5:${includeQuoteSummary ? 'full' : 'prices'}:${normalizeTickerForCache(ticker)}`
 }
 
 function buildYahooSymbolCacheKey(isin: string): string {
@@ -306,11 +308,12 @@ interface OpenFIGIEmptyCache { __empty: true }
 type OpenFIGICacheEntry = OpenFIGIResult | OpenFIGIEmptyCache
 interface StatsResult { isin: string; name: string | null; aum: number | null; ter: null }
 type YahooProfile = 'stock' | 'fund'
-interface YahooRequestOptions { includeWeekly?: boolean; profile?: YahooProfile }
+interface YahooRequestOptions { includeWeekly?: boolean; includeQuoteSummary?: boolean; profile?: YahooProfile }
 interface YahooFetchTask {
   ticker: string
   profile: YahooProfile
   includeWeekly: boolean
+  includeQuoteSummary: boolean
   resultIndices: number[]
 }
 
@@ -388,10 +391,18 @@ async function apiOpenFIGI(jobs: { idType: string; idValue: string }[]): Promise
   })
 }
 
-function getYahooRequestOptions(inst: Instrument): Required<YahooRequestOptions> {
+function getYahooRequestOptions(
+  inst: Instrument,
+  options?: { includeQuoteSummary?: boolean },
+): Required<YahooRequestOptions> {
   const isFundLike = inst.type === 'ETF' || inst.type === 'ETC' || inst.type === 'ETN'
   return {
     includeWeekly: !isFundLike,
+    // The initial stock scan only needs price series. Fundamentals and
+    // analyst data are fetched by the existing Top-200 background pipeline.
+    // Fund products retain their summary because their AUM/TER are needed
+    // directly in the initial result.
+    includeQuoteSummary: options?.includeQuoteSummary ?? isFundLike,
     profile: isFundLike ? 'fund' : 'stock',
   }
 }
@@ -404,6 +415,7 @@ async function apiYahooBatch(tickers: string[], options?: YahooRequestOptions): 
     body: JSON.stringify({
       tickers,
       includeWeekly: options?.includeWeekly,
+      includeQuoteSummary: options?.includeQuoteSummary,
       profile: options?.profile,
     }),
   })
@@ -882,15 +894,15 @@ export function usePipeline() {
     const tasksByKey = new Map<string, YahooFetchTask>()
     let cachedCount = 0
     withTickers.forEach((inst, idx) => {
-      const key = buildYahooCacheKey(inst.yahooTicker)
+      const options = getYahooRequestOptions(inst)
+      const key = buildYahooCacheKey(inst.yahooTicker, options.includeQuoteSummary)
       const cached = sanitizeYahooResult(cacheGet<any>(key, YAHOO_TTL_MS))
       if (cached) {
         cachedResults[idx] = cached
         cachedCount++
       }
       else {
-        const options = getYahooRequestOptions(inst)
-        const taskKey = `${inst.yahooTicker}|${options.profile}|${options.includeWeekly ? '1' : '0'}`
+        const taskKey = `${inst.yahooTicker}|${options.profile}|${options.includeWeekly ? '1' : '0'}|${options.includeQuoteSummary ? '1' : '0'}`
         const existing = tasksByKey.get(taskKey)
         if (existing) {
           existing.resultIndices.push(idx)
@@ -899,6 +911,7 @@ export function usePipeline() {
             ticker: inst.yahooTicker,
             profile: options.profile,
             includeWeekly: options.includeWeekly,
+            includeQuoteSummary: options.includeQuoteSummary,
             resultIndices: [idx],
           })
         }
@@ -950,6 +963,7 @@ export function usePipeline() {
               const payload = await apiYahooBatch(tickers, {
                 profile: job.profile,
                 includeWeekly: job.includeWeekly,
+                includeQuoteSummary: batch[0].includeQuoteSummary,
               })
               return batch.map((task, idx) => ({
                 task,
@@ -976,7 +990,13 @@ export function usePipeline() {
       for (const resultIdx of task.resultIndices) {
         results[resultIdx] = result
       }
-      if (result) cacheSet(buildYahooCacheKey(task.ticker), sanitizeYahooResult(result) ?? result, YAHOO_TTL_MS)
+      if (result) {
+        cacheSet(
+          buildYahooCacheKey(task.ticker, task.includeQuoteSummary),
+          sanitizeYahooResult(result) ?? result,
+          YAHOO_TTL_MS,
+        )
+      }
     })
 
     const errorCount = fetched.filter(({ result }) => !result || result.error).length
@@ -1105,7 +1125,11 @@ export function usePipeline() {
           yahooLongName: r.longName ?? updated[idx].yahooLongName,
           longName: nextLongName,
           displayName: nextLongName ? toDisplayName(nextLongName, updated[idx].displayName) : updated[idx].displayName,
-          priceFetched: true, priceError: r.error, fundamentalsFetched: true,
+          priceFetched: true,
+          priceError: r.error,
+          fundamentalsFetched: getYahooRequestOptions(updated[idx]).includeQuoteSummary
+            ? true
+            : updated[idx].fundamentalsFetched ?? false,
         }
       }
     })
@@ -1596,7 +1620,10 @@ export function usePipeline() {
       const cacheKey = buildYahooCacheKey(inst.yahooTicker)
       let r = sanitizeYahooResult(cacheGet<any>(cacheKey, YAHOO_TTL_MS))
       if (!r) {
-        r = sanitizeYahooResult(await apiYahooSingle(inst.yahooTicker, getYahooRequestOptions(inst)))
+        r = sanitizeYahooResult(await apiYahooSingle(
+          inst.yahooTicker,
+          getYahooRequestOptions(inst, { includeQuoteSummary: true }),
+        ))
         if (r) cacheSet(cacheKey, r, YAHOO_TTL_MS)
       }
       if (!r) return

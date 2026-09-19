@@ -194,9 +194,10 @@ async function fetchQuoteSummary(ticker: string, quoteModules: string): Promise<
 
 async function fetchOneTicker(
   ticker: string,
-  options?: { includeWeekly?: boolean; profile?: YahooProfile }
+  options?: { includeWeekly?: boolean; includeQuoteSummary?: boolean; profile?: YahooProfile }
 ): Promise<PriceResult> {
   const includeWeekly = options?.includeWeekly !== false
+  const includeQuoteSummary = options?.includeQuoteSummary !== false
   const profile: YahooProfile = options?.profile ?? 'stock'
   const quoteModules =
     profile === 'fund'
@@ -219,7 +220,7 @@ async function fetchOneTicker(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${profile === 'stock' ? '2y' : '1y'}&interval=1d&includePrePost=false`,
         { headers: YAHOO_API_HEADERS }
       ),
-      fetchQuoteSummary(ticker, quoteModules),
+      includeQuoteSummary ? fetchQuoteSummary(ticker, quoteModules) : Promise.resolve(null),
       includeWeekly
         ? fetchWithTimeout(
             `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=7y&interval=1wk&includePrePost=false`,
@@ -319,7 +320,7 @@ async function fetchOneTicker(
     }
 
     // v7/finance/quote fallback only when summary data is missing
-    if (profile !== 'fund' && (!base.sector || !base.industry || !base.longName)) {
+    if (includeQuoteSummary && profile !== 'fund' && (!base.sector || !base.industry || !base.longName)) {
       try {
         const v7Res = await fetchWithTimeout(
           `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=sector,industry,longName`,
@@ -413,6 +414,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const tickers: string[] = req.body?.tickers
   const includeWeekly = req.body?.includeWeekly !== false
+  const includeQuoteSummary = req.body?.includeQuoteSummary !== false
   const profile: YahooProfile = req.body?.profile === 'fund' ? 'fund' : 'stock'
   if (!Array.isArray(tickers) || tickers.length === 0)
     return res.status(400).json({ error: 'tickers array required' })
@@ -421,7 +423,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const results = await runWithConcurrency(
     tickers,
     concurrency,
-    (ticker) => fetchOneTicker(ticker, { includeWeekly, profile })
+    (ticker) => fetchOneTicker(ticker, { includeWeekly, includeQuoteSummary, profile })
   )
   return res.status(200).json(results)
 }
