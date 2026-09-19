@@ -46,6 +46,17 @@ export interface UniverseSnapshot {
 
 export const UNIVERSE_SNAPSHOT_KEY = 'universe:snapshot:index_global:v4'
 
+/**
+ * Nasdaq 100 and Nasdaq Composite are interchangeable variants of the same
+ * user-facing universe component. Their source code changes with the picker,
+ * but their checkbox selection must not.
+ */
+export function indexFilterGroupKey(sourceCode: string): string {
+  return sourceCode === 'NASDAQ_100' || sourceCode === 'NASDAQ_COMPOSITE'
+    ? 'NASDAQ_COMPONENT'
+    : sourceCode
+}
+
 export function constituentToInstrument(constituent: UniverseConstituent): Instrument {
   return {
     isin: constituent.isin,

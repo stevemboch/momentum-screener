@@ -7,7 +7,7 @@ import { calculateReturns, recalculateAll, calculateTfaPhase1Gate, calculateTfaP
 import { apiFetchJson, apiFetchText } from '../api/client'
 import { ANALYST_AUTO_CONCURRENCY, ANALYST_AUTO_EXTENDED_N, ANALYST_AUTO_TOP_N } from '../constants/analyst'
 import { selectTopAnalystStocks } from '../utils/analystTopN'
-import { cacheSnapshot, constituentToInstrument, readCachedSnapshot, type UniverseSnapshot } from '../universe'
+import { cacheSnapshot, constituentToInstrument, indexFilterGroupKey, readCachedSnapshot, type UniverseSnapshot } from '../universe'
 
 /**
  * Leitet die Financial Currency (Berichtswährung) aus dem ISIN-Prefix ab.
@@ -1533,7 +1533,7 @@ export function usePipeline() {
       snapshot = cached
     }
 
-    const enabledIndexBenchmarks = new Set(
+    const enabledIndexGroups = new Set(
       state.indexGroups.filter((group) => group.enabled).map((group) => group.groupKey)
     )
     // Before a snapshot has been loaded there are no groups to configure, so
@@ -1543,7 +1543,10 @@ export function usePipeline() {
       ? snapshot.constituents
       : snapshot.constituents.filter((constituent) => {
         const memberships = constituent.memberships?.length ? constituent.memberships : [constituent.benchmark]
-        return memberships.some((benchmark) => enabledIndexBenchmarks.has(benchmark))
+        return memberships.some((benchmark) => {
+          const source = snapshot.sources.find((candidate) => candidate.benchmark === benchmark)
+          return source != null && enabledIndexGroups.has(indexFilterGroupKey(source.code))
+        })
       })
     const raw = selectedConstituents.map(constituentToInstrument)
     // Publish the constituent list before the slow enrichment and price calls.

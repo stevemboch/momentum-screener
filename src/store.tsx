@@ -5,7 +5,7 @@ import type {
 import { ETF_GROUPS, STOCK_GROUPS, FRANKFURT_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS, DEFAULT_FRANKFURT_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
 import { applyAiFilterPlan } from './utils/aiFilter'
-import { constituentToInstrument, readCachedSnapshot, type UniverseCode, type UniverseSnapshot } from './universe'
+import { constituentToInstrument, indexFilterGroupKey, readCachedSnapshot, type UniverseCode, type UniverseSnapshot } from './universe'
 
 interface AppState {
   instruments: Instrument[]
@@ -201,9 +201,9 @@ function indexGroupsForSnapshot(snapshot: UniverseSnapshot | null, enabledByKey?
   }
   return snapshot.sources.map((source) => ({
     label: source.benchmark,
-    groupKey: source.benchmark,
+    groupKey: indexFilterGroupKey(source.code),
     count: counts.get(source.benchmark) ?? 0,
-    enabled: enabledByKey?.get(source.benchmark) ?? true,
+    enabled: enabledByKey?.get(indexFilterGroupKey(source.code)) ?? true,
   }))
 }
 
@@ -263,7 +263,13 @@ const DEFAULT_STATE: AppState = {
   indexGroups: indexGroupsForSnapshot(
     cachedUniverseSnapshot,
     persistedGroups?.index
-      ? new Map(cachedUniverseSnapshot?.sources.map((source) => [source.benchmark, persistedGroups.index!.includes(source.benchmark)]))
+      ? new Map(cachedUniverseSnapshot?.sources.map((source) => {
+        const groupKey = indexFilterGroupKey(source.code)
+        // Accept preferences written by the prior benchmark-name-based UI.
+        const legacyNasdaqSelection = groupKey === 'NASDAQ_COMPONENT' &&
+          persistedGroups.index!.some((value) => value === 'Nasdaq 100' || value.startsWith('Nasdaq Composite'))
+        return [groupKey, persistedGroups.index!.includes(groupKey) || persistedGroups.index!.includes(source.benchmark) || legacyNasdaqSelection]
+      }))
       : undefined,
   ),
   fetchStatus: { phase: 'idle', message: '', current: 0, total: 0 },
@@ -562,7 +568,12 @@ function reducer(state: AppState, action: Action): AppState {
       const previousSelections = state.indexGroups.length > 0
         ? new Map(state.indexGroups.map((g) => [g.groupKey, g.enabled]))
         : persistedGroups?.index
-          ? new Map(action.snapshot?.sources.map((source) => [source.benchmark, persistedGroups.index!.includes(source.benchmark)]))
+          ? new Map(action.snapshot?.sources.map((source) => {
+            const groupKey = indexFilterGroupKey(source.code)
+            const legacyNasdaqSelection = groupKey === 'NASDAQ_COMPONENT' &&
+              persistedGroups.index!.some((value) => value === 'Nasdaq 100' || value.startsWith('Nasdaq Composite'))
+            return [groupKey, persistedGroups.index!.includes(groupKey) || persistedGroups.index!.includes(source.benchmark) || legacyNasdaqSelection]
+          }))
           : undefined
       return {
         ...state,
