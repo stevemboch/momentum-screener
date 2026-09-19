@@ -21,6 +21,7 @@ interface AppState {
   frankfurtLoading: boolean
   frankfurtActive: boolean
   frankfurtGroups: ETFGroup[]
+  indexGroups: ETFGroup[]
   fetchStatus: FetchStatus
   xetraActive: boolean
   portfolioIsins: string[]
@@ -36,7 +37,7 @@ const PORTFOLIO_STORAGE_KEY = 'portfolio:isins'
 const SETTINGS_STORAGE_KEY = 'app:settings'
 const HIDDEN_COLUMNS_KEY = 'ui:hiddenColumnGroups'
 
-function loadGroupPrefs(): { etf: string[]; stock: string[]; frankfurt: string[] } | null {
+function loadGroupPrefs(): { etf: string[]; stock: string[]; frankfurt: string[]; index?: string[] } | null {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null
   try {
     const raw = localStorage.getItem(GROUPS_STORAGE_KEY)
@@ -47,19 +48,30 @@ function loadGroupPrefs(): { etf: string[]; stock: string[]; frankfurt: string[]
       etf: Array.isArray(parsed.etf) ? parsed.etf : [],
       stock: Array.isArray(parsed.stock) ? parsed.stock : [],
       frankfurt: Array.isArray(parsed.frankfurt) ? parsed.frankfurt : [],
+      // `undefined` means this browser has not configured index filters yet;
+      // newly available indexes should then start enabled.
+      index: Array.isArray(parsed.index) ? parsed.index : undefined,
     }
   } catch {
     return null
   }
 }
 
-function saveGroupPrefs(etfGroups: ETFGroup[], stockGroups: ETFGroup[], frankfurtGroups: ETFGroup[]) {
+function saveGroupPrefs(etfGroups: ETFGroup[], stockGroups: ETFGroup[], frankfurtGroups: ETFGroup[], indexGroups: ETFGroup[] = []) {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
   try {
     const etf = etfGroups.filter((g) => g.enabled).map((g) => g.groupKey)
     const stock = stockGroups.filter((g) => g.enabled).map((g) => g.groupKey)
     const frankfurt = frankfurtGroups.filter((g) => g.enabled).map((g) => g.groupKey)
-    localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify({ etf, stock, frankfurt }))
+    const index = indexGroups.filter((g) => g.enabled).map((g) => g.groupKey)
+    localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify({
+      etf,
+      stock,
+      frankfurt,
+      // Do not turn an unrelated legacy-group change into an explicit empty
+      // index selection before the index snapshot has been seen.
+      ...(indexGroups.length > 0 ? { index } : {}),
+    }))
   } catch {
     // ignore storage errors
   }
@@ -179,6 +191,22 @@ const persistedHiddenColumns = loadHiddenColumnGroups()
 // quote/enrichment run has completed.
 const cachedUniverseSnapshot = readCachedSnapshot()
 
+function indexGroupsForSnapshot(snapshot: UniverseSnapshot | null, enabledByKey?: ReadonlyMap<string, boolean>): ETFGroup[] {
+  if (!snapshot) return []
+  const counts = new Map<string, number>()
+  for (const constituent of snapshot.constituents) {
+    for (const benchmark of constituent.memberships?.length ? constituent.memberships : [constituent.benchmark]) {
+      counts.set(benchmark, (counts.get(benchmark) ?? 0) + 1)
+    }
+  }
+  return snapshot.sources.map((source) => ({
+    label: source.benchmark,
+    groupKey: source.benchmark,
+    count: counts.get(source.benchmark) ?? 0,
+    enabled: enabledByKey?.get(source.benchmark) ?? true,
+  }))
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   weights: DEFAULT_WEIGHTS,
   aumFloor: 100_000_000,
@@ -232,6 +260,12 @@ const DEFAULT_STATE: AppState = {
     count: 0,
     enabled: persistedGroups ? persistedGroups.frankfurt.includes(g.groupKey) : DEFAULT_FRANKFURT_GROUPS.includes(g.groupKey),
   })),
+  indexGroups: indexGroupsForSnapshot(
+    cachedUniverseSnapshot,
+    persistedGroups?.index
+      ? new Map(cachedUniverseSnapshot?.sources.map((source) => [source.benchmark, persistedGroups.index!.includes(source.benchmark)]))
+      : undefined,
+  ),
   fetchStatus: { phase: 'idle', message: '', current: 0, total: 0 },
   xetraActive: false,
   frankfurtReady: false,
@@ -280,6 +314,7 @@ type Action =
   | { type: 'SET_ETF_GROUP'; groupKey: string; enabled: boolean }
   | { type: 'SET_STOCK_GROUP'; groupKey: string; enabled: boolean }
   | { type: 'SET_FRANKFURT_GROUP'; groupKey: string; enabled: boolean }
+  | { type: 'SET_INDEX_GROUP'; groupKey: string; enabled: boolean }
   | { type: 'SET_GROUP_COUNTS'; etf: Record<string, number>; stock: Record<string, number>; frankfurt: Record<string, number> }
   | { type: 'SET_XETRA_READY'; ready: boolean }
   | { type: 'SET_XETRA_LOADING'; loading: boolean }
@@ -449,7 +484,7 @@ function reducer(state: AppState, action: Action): AppState {
         const etfGroups = state.etfGroups.map((g) =>
           g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
         )
-        saveGroupPrefs(etfGroups, state.stockGroups, state.frankfurtGroups)
+        saveGroupPrefs(etfGroups, state.stockGroups, state.frankfurtGroups, state.indexGroups)
         return { ...state, etfGroups }
       }
     case 'SET_STOCK_GROUP':
@@ -457,7 +492,7 @@ function reducer(state: AppState, action: Action): AppState {
         const stockGroups = state.stockGroups.map((g) =>
           g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
         )
-        saveGroupPrefs(state.etfGroups, stockGroups, state.frankfurtGroups)
+        saveGroupPrefs(state.etfGroups, stockGroups, state.frankfurtGroups, state.indexGroups)
         return { ...state, stockGroups }
       }
     case 'SET_FRANKFURT_GROUP':
@@ -465,9 +500,16 @@ function reducer(state: AppState, action: Action): AppState {
         const frankfurtGroups = state.frankfurtGroups.map((g) =>
           g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
         )
-        saveGroupPrefs(state.etfGroups, state.stockGroups, frankfurtGroups)
+        saveGroupPrefs(state.etfGroups, state.stockGroups, frankfurtGroups, state.indexGroups)
         return { ...state, frankfurtGroups }
       }
+    case 'SET_INDEX_GROUP': {
+      const indexGroups = state.indexGroups.map((g) =>
+        g.groupKey === action.groupKey ? { ...g, enabled: action.enabled } : g
+      )
+      saveGroupPrefs(state.etfGroups, state.stockGroups, state.frankfurtGroups, indexGroups)
+      return { ...state, indexGroups }
+    }
     case 'SET_GROUP_COUNTS':
       return {
         ...state,
@@ -516,8 +558,21 @@ function reducer(state: AppState, action: Action): AppState {
         ),
       }
     }
-    case 'SET_ACTIVE_UNIVERSE':
-      return { ...state, activeUniverse: action.universe, universeSnapshot: action.snapshot }
+    case 'SET_ACTIVE_UNIVERSE': {
+      const previousSelections = state.indexGroups.length > 0
+        ? new Map(state.indexGroups.map((g) => [g.groupKey, g.enabled]))
+        : persistedGroups?.index
+          ? new Map(action.snapshot?.sources.map((source) => [source.benchmark, persistedGroups.index!.includes(source.benchmark)]))
+          : undefined
+      return {
+        ...state,
+        activeUniverse: action.universe,
+        universeSnapshot: action.snapshot,
+        indexGroups: action.universe === 'index_global'
+          ? indexGroupsForSnapshot(action.snapshot, previousSelections)
+          : state.indexGroups,
+      }
+    }
     case 'CLEAR_INDEX_UNIVERSE':
       return {
         ...state,

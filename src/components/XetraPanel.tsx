@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Database, Loader, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
@@ -41,29 +41,9 @@ const enabledFrankfurtCount = state.frankfurtGroups
     .filter((g) => g.enabled)
     .reduce((s, g) => s + g.count, 0)
 
-  const indexGroups = useMemo(() => {
-    if (!state.universeSnapshot?.constituents) return [];
-    const map = new Map<string, {label: string; count: number}>();
-    state.universeSnapshot.constituents.forEach((c) => {
-      const region = c.region ?? 'Unknown';
-      const existing = map.get(region) ?? {label: region, count: 0};
-      map.set(region, {...existing, count: existing.count + 1});
-    });
-    return Array.from(map.values())
-      .sort((a, b) => b.count - a.count);
-  }, [state.universeSnapshot?.constituents]);
-
-  const sectorGroups = useMemo(() => {
-    if (!state.universeSnapshot?.constituents) return [];
-    const map = new Map<string, {label: string; count: number}>();
-    state.universeSnapshot.constituents.forEach((c) => {
-      const sector = c.sector ?? 'Unknown';
-      const existing = map.get(sector) ?? {label: sector, count: 0};
-      map.set(sector, {...existing, count: existing.count + 1});
-    });
-    return Array.from(map.values())
-      .sort((a, b) => b.count - a.count);
-  }, [state.universeSnapshot?.constituents]);
+  const enabledIndexCount = state.indexGroups
+    .filter((g) => g.enabled)
+    .reduce((sum, g) => sum + g.count, 0)
 
   return (
     <div className="flex flex-col gap-2">
@@ -96,7 +76,7 @@ const enabledFrankfurtCount = state.frankfurtGroups
         )}
       </div>
       
-      {/* Index Global - Collapsible group filters */}
+      {/* Index Global - membership filters */}
       <PanelShell
         title="Index Global"
         collapsible
@@ -105,27 +85,19 @@ const enabledFrankfurtCount = state.frankfurtGroups
       >
         {showIndexGroups && state.universeSnapshot && (
           <div className="mt-3">
-            <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Index Groups</div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <div>
-                <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Regions</div>
-                {indexGroups.map((g) => (
-                  <div key={g.label} className="flex items-center justify-between text-ui-xs font-mono">
-                    <span>{g.label}</span>
-                    <span className="text-muted">{g.count.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">Sectors</div>
-                {sectorGroups.map((g) => (
-                  <div key={g.label} className="flex items-center justify-between text-ui-xs font-mono">
-                    <span>{g.label}</span>
-                    <span className="text-muted">{g.count.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
+            <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">
+              Index membership · {enabledIndexCount.toLocaleString()} selections
             </div>
+            {state.indexGroups.map((g) => (
+              <GroupCheckbox
+                key={g.groupKey}
+                label={g.label}
+                count={g.count}
+                enabled={g.enabled}
+                onChange={(enabled) => dispatch({ type: 'SET_INDEX_GROUP', groupKey: g.groupKey, enabled })}
+              />
+            ))}
+            <p className="mt-2 text-ui-xs text-muted">A constituent is included when it belongs to at least one selected index. Reload to apply changes.</p>
           </div>
         )}
       </PanelShell>

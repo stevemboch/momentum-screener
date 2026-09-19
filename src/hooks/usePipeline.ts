@@ -1530,7 +1530,19 @@ export function usePipeline() {
       snapshot = cached
     }
 
-    const raw = snapshot.constituents.map(constituentToInstrument)
+    const enabledIndexBenchmarks = new Set(
+      state.indexGroups.filter((group) => group.enabled).map((group) => group.groupKey)
+    )
+    // Before a snapshot has been loaded there are no groups to configure, so
+    // the first load includes every index. Thereafter, a constituent needs one
+    // selected membership; overlapping index constituents are retained once.
+    const selectedConstituents = state.indexGroups.length === 0
+      ? snapshot.constituents
+      : snapshot.constituents.filter((constituent) => {
+        const memberships = constituent.memberships?.length ? constituent.memberships : [constituent.benchmark]
+        return memberships.some((benchmark) => enabledIndexBenchmarks.has(benchmark))
+      })
+    const raw = selectedConstituents.map(constituentToInstrument)
     // Publish the constituent list before the slow enrichment and price calls.
     // Region, listing country and GICS sector originate in the universe
     // snapshot, so they must not be held back until those unrelated calls end.
@@ -1538,7 +1550,7 @@ export function usePipeline() {
     const manual = state.instruments.filter((instrument) => instrument.source === 'manual')
     dispatch({ type: 'SET_INSTRUMENTS', instruments: [...manual, ...raw] })
     dispatch({ type: 'SET_ACTIVE_UNIVERSE', universe: 'index_global', snapshot })
-    dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: `Resolving ${raw.length} index constituents...`, current: 0, total: raw.length } })
+    dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'openfigi', message: `Resolving ${raw.length} selected index constituents...`, current: 0, total: raw.length } })
     try {
       const enriched = await enrichWithOpenFIGI(raw)
       const withYahooTickers = await resolveIndexYahooTickers(enriched)
@@ -1566,7 +1578,7 @@ export function usePipeline() {
     } catch (error: any) {
       dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: error?.message ?? 'Index processing failed', current: 0, total: 0 } })
     }
-  }, [enrichWithOpenFIGI, resolveIndexYahooTickers, mergeResolvedIndexListings, fetchPrices, ensureReferenceReturns, state.instruments, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
+  }, [enrichWithOpenFIGI, resolveIndexYahooTickers, mergeResolvedIndexListings, fetchPrices, ensureReferenceReturns, state.instruments, state.indexGroups, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d])
 
   const fetchSingleInstrumentPrices = useCallback(async (isin: string) => {
     const inst = state.instruments.find(i => i.isin === isin)
