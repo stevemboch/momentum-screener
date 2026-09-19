@@ -478,7 +478,7 @@ export async function getIndexGlobalSnapshot(
   })
   const constituents = [...byIsin.values()]
   return {
-    universeCode: 'index_global' as const, nasdaqVariant, status: 'fresh' as const, asOfDate: new Date().toISOString().slice(0, 10), retrievedAt: new Date().toISOString(),
+    universeCode: 'index_global' as const, nasdaqVariant, selectedSources: sources.map((source) => source.code), status: 'fresh' as const, asOfDate: new Date().toISOString().slice(0, 10), retrievedAt: new Date().toISOString(),
     version: stableHash(constituents.map((item) => `${item.isin}:${item.source}`).sort().join('|')),
     // Preserve all selectable source metadata even when only a subset was
     // imported. This keeps the UI selection controls intact after a partial

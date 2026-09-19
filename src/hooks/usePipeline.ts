@@ -1568,18 +1568,19 @@ export function usePipeline() {
   const activateIndexUniverse = useCallback(async (nasdaqVariant: '100' | 'composite' = '100') => {
     abortRef.current = false
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'parsing', message: 'Loading index universe...', current: 0, total: 0 } })
+    const enabledSourceCodes = state.indexGroups.length === 0 ? undefined : state.indexGroups
+      .filter((group) => group.enabled)
+      .map((group) => group.groupKey === 'NASDAQ_COMPONENT'
+        ? (nasdaqVariant === 'composite' ? 'NASDAQ_COMPOSITE' : 'NASDAQ_100')
+        : group.groupKey)
     let snapshot: UniverseSnapshot
     try {
-      const enabledSourceCodes = state.indexGroups.length === 0 ? undefined : state.indexGroups
-        .filter((group) => group.enabled)
-        .map((group) => group.groupKey === 'NASDAQ_COMPONENT'
-          ? (nasdaqVariant === 'composite' ? 'NASDAQ_COMPOSITE' : 'NASDAQ_100')
-          : group.groupKey)
       snapshot = await apiIndexUniverse(nasdaqVariant, enabledSourceCodes)
       cacheSnapshot(snapshot)
     } catch (error: any) {
       const cached = readCachedSnapshot()
-      if (!cached || (cached.nasdaqVariant ?? '100') !== nasdaqVariant) {
+      const sameSources = !enabledSourceCodes || [...(cached?.selectedSources ?? [])].sort().join(',') === [...enabledSourceCodes].sort().join(',')
+      if (!cached || (cached.nasdaqVariant ?? '100') !== nasdaqVariant || !sameSources) {
         dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'error', message: error?.message ?? 'Index universe unavailable', current: 0, total: 0 } })
         return
       }

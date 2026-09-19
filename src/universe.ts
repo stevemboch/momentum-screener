@@ -25,6 +25,8 @@ export interface UniverseConstituent {
 export interface UniverseSnapshot {
   universeCode: UniverseCode
   nasdaqVariant?: '100' | 'composite'
+  /** Sources actually imported; source metadata may additionally list all selectable groups. */
+  selectedSources?: string[]
   status: UniverseStatus
   asOfDate: string
   retrievedAt: string
