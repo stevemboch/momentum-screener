@@ -104,14 +104,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const data = await fetchOpenFigiBatch(batch, apiKey)
 
-      // For each result, pick the best match
-      for (const result of data) {
+      // For each result, pick the best match. A TICKER request must never be
+      // satisfied by a different ticker merely because it is listed on Xetra
+      // or happens to be first in OpenFIGI's result order.
+      for (let resultIndex = 0; resultIndex < data.length; resultIndex += 1) {
+        const result = data[resultIndex]
         if (!result?.data || !Array.isArray(result.data) || result.data.length === 0) {
           allResults.push(null)
           continue
         }
 
-        const matches: FigiResult[] = result.data
+        const allMatches: FigiResult[] = result.data
+        const job = batch[resultIndex]
+        const requestedTicker = job?.idType === 'TICKER' ? job.idValue.trim().toUpperCase() : null
+        const matches = requestedTicker
+          ? allMatches.filter((match) => match.ticker?.trim().toUpperCase() === requestedTicker)
+          : allMatches
+        if (matches.length === 0) {
+          allResults.push(null)
+          continue
+        }
 
         // Selection priority:
         // 1. ETF/ETC securityType2 matches

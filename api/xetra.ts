@@ -43,8 +43,10 @@ function normalizeIsin(value: unknown): string | null {
 /** Search terms, not identity: omit legal forms and share-class boilerplate. */
 function nameSearchTerms(value: string | undefined): string {
   return (value ?? '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[®™]/g, ' ')
     .replace(/[(),.]/g, ' ')
-    .replace(/\b(incorporated|inc|corp(?:oration)?|ltd|limited|plc|llc|l\.p|s\.a|ag|se|nv|holdings?|group|class|ordinary|shares?|stock|common|preferred|registered|bearer|dl|usd|eur|o\.n\.|vz|st)\b/gi, ' ')
+    .replace(/\b(incorporated|inc|corp(?:oration)?|co(?:mpany)?|ltd|limited|plc|llc|l\.p|s\.a|ag|se|nv|holdings?|group|class|ordinary|shares?|stock|common|preferred|registered|bearer|dl|usd|eur|o\.n\.|vz|st)\b/gi, ' ')
     .replace(/\b[a-z]\s*class\b|\bclass\s*[a-z]\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -136,6 +138,10 @@ function companyNameScore(target: string, candidate: string, isin?: string): num
 
   // Exact full normalized string match bonus
   if (targetNorm === candidateNorm) score += 0.5
+  // A listed name commonly appends a legal form after the issuer name. This
+  // is stronger evidence than a loose token overlap, but remains subject to
+  // the first-token guard above.
+  else if (candidateNorm.startsWith(`${targetNorm} `) || targetNorm.startsWith(`${candidateNorm} `)) score += 0.25
 
   // Penalize ADR / CDR / secondary certificate derivatives if target did not specify ADR/CDR
   const isTargetAdr = /\b(adr|cdr|gdr|nvdr)\b/i.test(target)
@@ -216,7 +222,10 @@ async function resolveDeutscheBoerseSearch(name: string): Promise<string | null>
     else break
   }
   if (!page) return null
-  const pages = await Promise.all([locatedPageNumber - 1, locatedPageNumber, locatedPageNumber + 1]
+  // The public endpoint has no effective text-search parameter. Names with a
+  // share-class or legal-form prefix can sit just across an alphabetic page
+  // boundary, so inspect two neighbours on each side rather than only one.
+  const pages = await Promise.all([locatedPageNumber - 2, locatedPageNumber - 1, locatedPageNumber, locatedPageNumber + 1, locatedPageNumber + 2]
     .filter((number) => number >= 0 && number <= Math.ceil(page.total / DEUTSCHE_BOERSE_PAGE_SIZE) - 1)
     .map((number) => getDeutscheBoerseEquityPage(number)))
   const ranked = pages.flatMap((candidate) => candidate.rows)
