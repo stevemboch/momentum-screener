@@ -139,6 +139,23 @@ function normalizeMnemonicForCache(mnemonic?: string): string | null {
   return normalized.length > 0 ? normalized : null
 }
 
+/**
+ * Accept a third-party ticker mapping only when its issuer name independently
+ * corroborates the listing's Yahoo/source name. This intentionally tolerates
+ * legal-form differences ("Corp." vs "Corporation") but not a different
+ * issuer sharing an ambiguous ticker.
+ */
+function companyIdentityMatches(expected: string | undefined, candidate: string | undefined): boolean {
+  const tokens = (value: string | undefined) => (value ?? '').toUpperCase()
+    .replace(/\b(INCORPORATED|INC|CORPORATION|CORP|LIMITED|LTD|PLC|LLC|HOLDINGS?|GROUP|CLASS|ORDINARY|SHARES?|COMMON|STOCK)\b/g, ' ')
+    .replace(/[^A-Z0-9]+/g, ' ').trim().split(/\s+/).filter((token) => token.length >= 2)
+  const left = tokens(expected)
+  const right = tokens(candidate)
+  if (left.length === 0 || right.length === 0) return false
+  const matches = left.filter((token) => right.some((other) => other === token || other.startsWith(token) || token.startsWith(other))).length
+  return matches / Math.max(left.length, right.length) >= 0.8
+}
+
 /** Derives a US ISIN from a nine-character CUSIP, including the ISO 6166 check digit. */
 function usCusipToIsin(cusip: string | null | undefined): string | null {
   const normalized = (cusip ?? '').trim().toUpperCase()
@@ -511,8 +528,10 @@ async function apiFrankfurt() {
   return text
 }
 
-async function apiIndexUniverse(nasdaqVariant: '100' | 'composite' = '100'): Promise<UniverseSnapshot> {
-  return apiFetchJson<UniverseSnapshot>(`/api/xetra?universe=index_global&nasdaq=${nasdaqVariant}`, { timeoutMs: 60_000 })
+async function apiIndexUniverse(nasdaqVariant: '100' | 'composite' = '100', sourceCodes?: string[]): Promise<UniverseSnapshot> {
+  const params = new URLSearchParams({ universe: 'index_global', nasdaq: nasdaqVariant })
+  if (sourceCodes?.length) params.set('sources', sourceCodes.join(','))
+  return apiFetchJson<UniverseSnapshot>(`/api/xetra?${params}`, { timeoutMs: 60_000 })
 }
 
 async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number, onProgress?: (done: number, total: number) => void): Promise<T[]> {
@@ -1551,7 +1570,12 @@ export function usePipeline() {
     dispatch({ type: 'SET_FETCH_STATUS', status: { phase: 'parsing', message: 'Loading index universe...', current: 0, total: 0 } })
     let snapshot: UniverseSnapshot
     try {
-      snapshot = await apiIndexUniverse(nasdaqVariant)
+      const enabledSourceCodes = state.indexGroups.length === 0 ? undefined : state.indexGroups
+        .filter((group) => group.enabled)
+        .map((group) => group.groupKey === 'NASDAQ_COMPONENT'
+          ? (nasdaqVariant === 'composite' ? 'NASDAQ_COMPOSITE' : 'NASDAQ_100')
+          : group.groupKey)
+      snapshot = await apiIndexUniverse(nasdaqVariant, enabledSourceCodes)
       cacheSnapshot(snapshot)
     } catch (error: any) {
       const cached = readCachedSnapshot()
@@ -2327,10 +2351,10 @@ export function usePipeline() {
         } else if (inst.wkn && inst.wkn.length === 6) {
           job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
         } else {
-          // A ticker alone is not a stable instrument identity. The guarded
-          // server resolver above may still resolve it, but OpenFIGI must not
-          // provide a second unvalidated route to an ISIN here.
-          return []
+          const rawTicker = inst.mnemonic || inst.yahooTicker
+          const ticker = rawTicker ? rawTicker.replace(/\.[A-Z]{1,5}$/, '').trim() : ''
+          if (!ticker) return []
+          job = { idType: 'TICKER', idValue: ticker }
         }
         return [{ instrument: inst, job }]
       })
@@ -2368,7 +2392,13 @@ export function usePipeline() {
       // written back using LISTING:… (not the ticker used for the lookup).
       needsIsinWithMeta.forEach((meta, index) => {
         const resolvedIsin = openfigiResults[index]?.isin
-        if (resolvedIsin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(resolvedIsin)) {
+        const resolvedTicker = openfigiResults[index]?.ticker?.trim().toUpperCase()
+        const requestedTicker = meta.job.idValue.trim().toUpperCase()
+        const resolvedName = openfigiResults[index]?.securityDescription || openfigiResults[index]?.name
+        const expectedName = meta.instrument.yahooLongName || meta.instrument.longName || meta.instrument.displayName
+        const tickerMatch = meta.job.idType !== 'TICKER' || resolvedTicker === requestedTicker
+        const nameMatch = meta.job.idType !== 'TICKER' || companyIdentityMatches(expectedName, resolvedName)
+        if (resolvedIsin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(resolvedIsin) && tickerMatch && nameMatch) {
           addQuery(resolvedIsin, meta.instrument.isin)
         }
       })

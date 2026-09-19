@@ -453,11 +453,23 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
 
 
 /** Import all index proxy holdings, failing closed when a source is incomplete. */
-export async function getIndexGlobalSnapshot(nasdaqVariant: '100' | 'composite' = '100') {
-  const sources = nasdaqVariant === 'composite'
+export async function getIndexGlobalSnapshot(
+  nasdaqVariant: '100' | 'composite' = '100',
+  requestedSourceCodes?: readonly string[],
+) {
+  const availableSources = nasdaqVariant === 'composite'
     ? SOURCES.map((source) => source.code === 'NASDAQ_100' ? NASDAQ_COMPOSITE_SOURCE : source)
     : SOURCES
+  // Import only sources selected by the user. This is more than a speed
+  // optimization: an unavailable unselected provider must not block a
+  // Nasdaq/HDAX/SDAX-only screen.
+  const requested = requestedSourceCodes?.length ? new Set(requestedSourceCodes) : null
+  const sources = requested
+    ? availableSources.filter((source) => requested.has(source.code))
+    : availableSources
+  if (sources.length === 0) throw new Error('No recognised index sources selected')
   const imports = await Promise.all(sources.map(importSource))
+  const importByCode = new Map(sources.map((source, index) => [source.code, imports[index]]))
   const byIsin = new Map<string, Constituent>()
   imports.flatMap((item) => item.constituents).forEach((constituent) => {
     const existing = byIsin.get(constituent.isin)
@@ -468,9 +480,16 @@ export async function getIndexGlobalSnapshot(nasdaqVariant: '100' | 'composite' 
   return {
     universeCode: 'index_global' as const, nasdaqVariant, status: 'fresh' as const, asOfDate: new Date().toISOString().slice(0, 10), retrievedAt: new Date().toISOString(),
     version: stableHash(constituents.map((item) => `${item.isin}:${item.source}`).sort().join('|')),
-    sources: sources.map((source, index) => ({ code: source.code, benchmark: source.benchmark, region: source.region, sourceType: source.sourceType,
-      inputRows: imports[index].inputRows, resolvedRows: imports[index].resolvedRows, unresolvedRows: imports[index].unresolvedRows,
-      isinMatchRate: imports[index].inputRows === 0 ? 0 : imports[index].resolvedRows / imports[index].inputRows, memberCount: imports[index].constituents.length, retrievedAt: imports[index].retrievedAt })),
+    // Preserve all selectable source metadata even when only a subset was
+    // imported. This keeps the UI selection controls intact after a partial
+    // load while the constituents themselves contain only requested sources.
+    sources: availableSources.map((source) => {
+      const imported = importByCode.get(source.code)
+      return { code: source.code, benchmark: source.benchmark, region: source.region, sourceType: source.sourceType,
+        inputRows: imported?.inputRows ?? 0, resolvedRows: imported?.resolvedRows ?? 0, unresolvedRows: imported?.unresolvedRows ?? 0,
+        isinMatchRate: imported && imported.inputRows > 0 ? imported.resolvedRows / imported.inputRows : 0,
+        memberCount: imported?.constituents.length ?? 0, retrievedAt: imported?.retrievedAt ?? new Date().toISOString() }
+    }),
     constituents,
   }
 }

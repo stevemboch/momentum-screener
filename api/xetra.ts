@@ -415,7 +415,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400')
       const nasdaqVariant = req.query.nasdaq === 'composite' ? 'composite' : '100'
-      return res.status(200).json(await getIndexGlobalSnapshot(nasdaqVariant))
+      const selectedSources = typeof req.query.sources === 'string'
+        ? req.query.sources.split(',').map((source) => source.trim()).filter(Boolean).slice(0, 20)
+        : undefined
+      return res.status(200).json(await getIndexGlobalSnapshot(nasdaqVariant, selectedSources))
     } catch (error: any) {
       return res.status(502).json({ error: `Index universe import failed: ${error?.message ?? 'unknown error'}` })
     }
