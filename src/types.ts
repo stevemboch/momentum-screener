@@ -84,6 +84,9 @@ export interface Instrument {
   botsiScore?: number | null
   botsiRank?: number
   botsiQualified?: boolean | null
+  /** MOTSI is the sum of the BOTSI and Combined ranks, among BOTSI-qualified stocks only. */
+  motsiScore?: number | null
+  motsiRank?: number
   botsiAdvisorAction?: 'buy' | 'hold' | 'sell' | 'cash' | null
   botsiTargetWeight?: number | null
   botsiFilterPassed?: boolean | null
@@ -384,7 +387,7 @@ export type SortColumn =
   | 'combinedScore'
   | 'accelerationScore'
   | 'gd200' | 'gd130' | 'mom260' | 'momjt' | 'kaufmanEfficiencyRatio' | 'relative52wHigh' | 'relative52wHigh17dAgo'
-  | 'botsiScore' | 'botsiRank' | 'botsiTargetWeight'
+  | 'botsiScore' | 'botsiRank' | 'botsiTargetWeight' | 'motsiScore' | 'motsiRank'
   | 'gettexSpreadPct'
   | 'breakoutScore'
   | 'sellingThreshold'

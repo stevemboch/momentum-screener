@@ -79,6 +79,7 @@ const COLUMNS: Col[] = [
   { key: 'relative52wHigh17dAgo', label: '52W ATH −17D', title: '52-week-high proximity as of 17 trading days ago; helps separate sustained leaders from short-term reversals' },
   { key: 'botsiScore',    label: 'BOTSI',    title: 'BOTSI: #Rank (1=best) und Summe der GD200/MOM260/MOMJT-Indikator-Ranks unter Aktien. Niedrigere Summe = besser.' },
   { key: 'gettexSpreadPct', label: 'Gettex Spr.', title: 'Gettex ISIN quote spread: (Ask − Bid) / midpoint. Indicative quote; not an executable price.' },
+  { key: 'motsiRank',     label: 'MOTSI',    title: 'MOTSI: Rang der Summe aus BOTSI-Rang und Combined-Rang. Nur für BOTSI-qualifizierte Instrumente; niedriger ist besser.' },
   { key: 'ma',            label: 'MA 10/50/100/200', title: '10/50/100/200 MA flags (green above, red below)', align: 'right' },
   { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'r1w',           label: '1W',       title: '1-week return' },
@@ -115,7 +116,7 @@ const COLUMNS: Col[] = [
 
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore', 'accelerationScore'],
-  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'kaufmanEfficiencyRatio', 'relative52wHigh', 'relative52wHigh17dAgo', 'botsiScore', 'gettexSpreadPct'],
+  botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'kaufmanEfficiencyRatio', 'relative52wHigh', 'relative52wHigh17dAgo', 'botsiScore', 'gettexSpreadPct', 'motsiRank'],
   returns:      ['r1w', 'r1m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
@@ -904,6 +905,8 @@ function CandidateRow({
       {!hiddenKeys.has('relative52wHigh') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('relative52wHigh17dAgo') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('botsiScore') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('gettexSpreadPct') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
+      {!hiddenKeys.has('motsiRank') && <td className="px-2 py-1.5 text-right text-muted">—</td>}
       {!hiddenKeys.has('r1w') && (
         <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r1w)}`}>{fmtPct(candidate.r1w)}</td>
       )}
@@ -2397,7 +2400,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     if (sortColumn === newCol) {
       dispatch({ type: 'SET_TABLE_STATE', updates: { sortDirection: sortDirection === 'desc' ? 'asc' : 'desc' } })
     } else {
-      dispatch({ type: 'SET_TABLE_STATE', updates: { sortColumn: newCol, sortDirection: 'desc' } })
+      dispatch({ type: 'SET_TABLE_STATE', updates: { sortColumn: newCol, sortDirection: newCol === 'motsiRank' ? 'asc' : 'desc' } })
     }
   }
 
@@ -2712,6 +2715,12 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                       {inst.gettexSpreadPct != null
                         ? <span title={inst.gettexBid != null && inst.gettexAsk != null ? `Bid ${inst.gettexBid.toFixed(2)} / Ask ${inst.gettexAsk.toFixed(2)}${inst.gettexQuoteTime ? ` · ${inst.gettexQuoteTime}` : ''}` : undefined}>{inst.gettexSpreadPct.toFixed(2)}%</span>
                         : '—'}
+                    </td>
+                  )}
+
+                  {!hiddenKeys.has('motsiRank') && (
+                    <td className="px-2 py-1.5 text-right">
+                      <BotsiScoreCell score={inst.motsiScore} rank={inst.motsiRank} />
                     </td>
                   )}
 

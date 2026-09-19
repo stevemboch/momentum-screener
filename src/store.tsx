@@ -786,6 +786,9 @@ export function useDisplayedInstruments() {
         if (col === 'botsiRank' && tableState.botsiMode) {
           return (inst as any).botsiRank ?? null
         }
+        if (col === 'motsiRank') {
+          return (inst as any).motsiRank ?? null
+        }
         return (inst as any)[col] ?? null
       }
       const avRaw = getVal(a)

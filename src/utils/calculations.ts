@@ -1579,8 +1579,26 @@ export function recalculateAll(
     return updated
   })
 
+  // MOTSI combines the existing BOTSI and Combined ranks. It intentionally
+  // only compares instruments that passed the BOTSI qualification gates.
+  // Both component ranks and the resulting sum are lower-is-better.
+  const withMotsiScore = withAdvisor.map((inst) => {
+    if (!inst.botsiQualified || inst.botsiRank == null || inst.combinedRank == null) {
+      return { ...inst, motsiScore: null, motsiRank: undefined }
+    }
+    return { ...inst, motsiScore: inst.botsiRank + inst.combinedRank, motsiRank: undefined }
+  })
+  const motsiRankMap = buildRankMapAsc(
+    withMotsiScore.filter((inst) => inst.motsiScore != null),
+    'motsiScore'
+  )
+  const withMotsi = withMotsiScore.map((inst) => ({
+    ...inst,
+    motsiRank: motsiRankMap.get(inst.isin),
+  }))
+
   // Dritter Pass: Pullback-Score benötigt momentumRank aus applyRanks
-  const withPullback = withAdvisor.map((inst) => {
+  const withPullback = withMotsi.map((inst) => {
     if (inst.type !== 'Stock' || !inst.closes || inst.closes.length === 0) return inst
     const updated = { ...inst }
 
