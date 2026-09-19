@@ -29,7 +29,7 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 font-mono text-ui-xs transition-colors duration-150 select-none disabled:opacity-45 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.25 font-mono text-ui-xs transition-colors duration-150 select-none disabled:opacity-45 disabled:cursor-not-allowed;
     transition-timing-function: var(--ui-motion-ease);
   }
 
@@ -75,11 +75,11 @@
   }
 
   .panel-shell {
-    @apply rounded-lg border border-border bg-bg/40 shadow-[0_10px_30px_rgba(0,0,0,0.12)];
+    @apply rounded-md border border-border bg-bg/40;
   }
 
   .panel-header {
-    @apply flex items-center justify-between gap-2 border-b border-border/70 bg-surface2/35 px-3 py-2.5;
+    @apply flex items-center justify-between gap-2 border-b border-border/70 bg-surface2/35 px-3 py-2;
   }
 
   .panel-title {

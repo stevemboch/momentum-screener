@@ -3,7 +3,6 @@ import { Database, Loader, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppState } from '../store'
 import { usePipeline } from '../hooks/usePipeline'
 import { StatusBadge } from './ui/StatusBadge'
-import { PanelShell } from './ui/PanelShell'
 
 export function XetraPanel() {
   const { state, dispatch } = useAppState()
@@ -76,15 +75,19 @@ const enabledFrankfurtCount = state.frankfurtGroups
         )}
       </div>
       
-      {/* Index Global - membership filters */}
-      <PanelShell
-        title="Index Global"
-        collapsible
-        open={showIndexGroups}
-        onToggle={() => setShowIndexGroups(!showIndexGroups)}
-      >
+      <div className="border-b border-border pb-2">
+        <button
+          type="button"
+          onClick={() => setShowIndexGroups(!showIndexGroups)}
+          className="focus-ring flex w-full items-center justify-between py-1 font-mono text-ui-sm text-muted hover:text-gray-300"
+          aria-expanded={showIndexGroups}
+          aria-label={showIndexGroups ? 'Hide index membership filters' : 'Show index membership filters'}
+        >
+          <span>Index membership{state.indexGroups.length > 0 ? ` · ${enabledIndexCount.toLocaleString()} selected` : ''}</span>
+          {showIndexGroups ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
         {showIndexGroups && state.universeSnapshot && (
-          <div className="mt-3">
+          <div className="pt-2">
             <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">
               Index membership · {enabledIndexCount.toLocaleString()} selections
             </div>
@@ -100,7 +103,7 @@ const enabledFrankfurtCount = state.frankfurtGroups
             <p className="mt-2 text-ui-xs text-muted">A constituent is included when it belongs to at least one selected index. Reload to apply changes.</p>
           </div>
         )}
-      </PanelShell>
+      </div>
 
       <div className="border-b border-border pb-2">
         <div className="mb-1 font-mono text-ui-xs uppercase tracking-wider text-muted">Legacy: Xetra listings</div>

@@ -34,13 +34,12 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-bg text-gray-200 font-sans overflow-hidden">
-      <header className="flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 shrink-0">
+      <header className="flex items-center justify-between border-b border-border bg-surface/95 px-4 py-2.5 shrink-0">
         <div className="flex items-center gap-3">
           <div>
             <span className="font-mono text-sm font-semibold tracking-[0.14em] text-gray-100">
             MOMENTUM<span className="text-accent">_</span>SCREENER
             </span>
-            <div className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-muted">Market intelligence workspace</div>
           </div>
           <StatusBadge tone="muted">{badgeLabel}</StatusBadge>
         </div>
@@ -61,11 +60,7 @@ className={sidebarOpen
              ? 'w-64 bg-surface border-r border-border flex flex-col shrink-0 transition-all duration-200 overflow-hidden'
              : 'w-0 overflow-hidden'}
         >
-          <div className={`${sidebarOpen ? 'flex-1' : 'w-0'} flex flex-col gap-4 p-4 overflow-y-auto`}>
-            <div className="px-1">
-              <div className="panel-title">Workspace</div>
-              <div className="text-ui-xs text-muted">Select data sources and manage your watchlist.</div>
-            </div>
+          <div className={`${sidebarOpen ? 'flex-1' : 'w-0'} flex flex-col gap-3 p-3 overflow-y-auto`}>
             <PanelShell title="Data sources">
               <XetraPanel />
             </PanelShell>
@@ -100,7 +95,7 @@ className={sidebarOpen
         </button>
 
         <main className="flex-1 flex flex-col min-w-0 min-h-0">
-          <div className="px-4 py-2 border-b border-border bg-surface shrink-0">
+          <div className="border-b border-border bg-surface px-3 py-2 shrink-0">
             <FilterBar />
           </div>
 
