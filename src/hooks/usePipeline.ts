@@ -1094,7 +1094,10 @@ export function usePipeline() {
           analystCurrency: r.analystCurrency ?? updated[idx].analystCurrency ?? null,
           analystCurrentPrice: r.analystCurrentPrice ?? updated[idx].analystCurrentPrice ?? null,
           analystSource: r.analystSource === 'yahoo' ? 'yahoo' : updated[idx].analystSource,
-          sector: r.sector ?? updated[idx].sector ?? null,
+          // Index snapshots provide the canonical GICS classification used by
+          // the region/country/sector filters. Keep it stable rather than
+          // replacing it with Yahoo's often broader provider category.
+          sector: updated[idx].sector ?? r.sector ?? null,
           industry: r.industry ?? updated[idx].industry ?? null,
           yahooLongName: r.longName ?? updated[idx].yahooLongName,
           longName: nextLongName,
@@ -1605,7 +1608,7 @@ export function usePipeline() {
           pe: r.pe ?? null, pb: r.pb ?? null,
           ebitda: r.ebitda ?? null, enterpriseValue: r.enterpriseValue ?? null,
           returnOnAssets: r.returnOnAssets ?? null,
-          sector: r.sector ?? inst.sector ?? null,
+          sector: inst.sector ?? r.sector ?? null,
           industry: r.industry ?? inst.industry ?? null,
           yahooLongName: r.longName ?? inst.yahooLongName,
           longName: nextLongName,

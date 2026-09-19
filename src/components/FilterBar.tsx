@@ -389,20 +389,19 @@ export function FilterBar() {
         <option value="">All GICS sectors</option>
         {classificationOptions.sectors.map((value) => <option key={value} value={value}>{value}</option>)}
       </select>
-      {botsiMode && (
-        <select
-          value={maxGettexSpreadPct}
-          onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { maxGettexSpreadPct: event.target.value } })}
-          className="filter-select"
-          aria-label="Maximum Gettex spread"
-        >
-          <option value="">Gettex spread: all</option>
-          <option value="0.25">Gettex spread ≤ 0.25%</option>
-          <option value="0.5">Gettex spread ≤ 0.50%</option>
-          <option value="1">Gettex spread ≤ 1.00%</option>
-          <option value="2">Gettex spread ≤ 2.00%</option>
-        </select>
-      )}
+      <select
+        value={maxGettexSpreadPct}
+        onChange={(event) => dispatch({ type: 'SET_TABLE_STATE', updates: { maxGettexSpreadPct: event.target.value } })}
+        className="filter-select"
+        aria-label="Gettex spread filter"
+      >
+        <option value="">Gettex spread: all</option>
+        <option value="valid">Gettex spread: quoted</option>
+        <option value="0.25">Gettex spread ≤ 0.25%</option>
+        <option value="0.5">Gettex spread ≤ 0.50%</option>
+        <option value="1">Gettex spread ≤ 1.00%</option>
+        <option value="2">Gettex spread ≤ 2.00%</option>
+      </select>
       </div>
       )}
 

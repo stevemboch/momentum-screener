@@ -2320,6 +2320,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
     state.tableState.primaryListingCountryFilter,
     state.tableState.excludedPrimaryListingCountryFilters.join(','),
     state.tableState.sectorFilter,
+    state.tableState.maxGettexSpreadPct,
     state.tableState.aiFilterActive ? '1' : '0',
     state.tableState.aiFilterQuery ?? '',
     state.settings.aumFloor.toString(),

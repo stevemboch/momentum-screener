@@ -449,7 +449,7 @@ export interface TableState {
   excludedPrimaryListingCountryFilters: string[]
   /** Canonical GICS sector filter. */
   sectorFilter: string
-  /** Maximum Gettex quote spread in percent; empty means no spread filter. */
+  /** Maximum Gettex quote spread in percent, or `valid` for any numeric quote; empty means no spread filter. */
   maxGettexSpreadPct: string
 }
 

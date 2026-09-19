@@ -671,6 +671,22 @@ export function useDisplayedInstruments() {
       filtered = filtered.filter((i) => i.sector === tableState.sectorFilter)
     }
 
+    // A spread filter is useful independently of the BOTSI view. A quote is
+    // valid only when the API supplied a finite numeric percentage; the table
+    // renders every other value as "-".
+    if (tableState.maxGettexSpreadPct === 'valid') {
+      filtered = filtered.filter((i) => typeof i.gettexSpreadPct === 'number' && Number.isFinite(i.gettexSpreadPct))
+    } else if (tableState.maxGettexSpreadPct !== '') {
+      const maxSpread = Number(tableState.maxGettexSpreadPct)
+      if (Number.isFinite(maxSpread)) {
+        filtered = filtered.filter((i) =>
+          typeof i.gettexSpreadPct === 'number' &&
+          Number.isFinite(i.gettexSpreadPct) &&
+          i.gettexSpreadPct <= maxSpread
+        )
+      }
+    }
+
     // TFA mode — only stocks in the -40%..-80% drawdown window, excluding KO
     if (tableState.tfaMode) {
       filtered = filtered.filter((i) => i.type === 'Stock')
@@ -693,11 +709,6 @@ export function useDisplayedInstruments() {
     if (tableState.botsiMode) {
       filtered = filtered.filter((i) => i.type === 'Stock')
       filtered = filtered.filter((i) => i.botsiQualified === true)
-      const maxSpread = Number(tableState.maxGettexSpreadPct)
-      if (tableState.maxGettexSpreadPct !== '' && Number.isFinite(maxSpread)) {
-        // Missing Gettex quotes are excluded when a limit is explicitly chosen.
-        filtered = filtered.filter((i) => i.gettexSpreadPct != null && i.gettexSpreadPct <= maxSpread)
-      }
     }
 
     // Dedup filter — hides non-winners when enabled
