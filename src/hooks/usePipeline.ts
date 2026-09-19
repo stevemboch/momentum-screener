@@ -98,7 +98,10 @@ const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !=
 let lastCacheRecoveryAttemptTs = 0
 let lastCacheWriteWarnTs = 0
 let openFigiCacheWritesBlockedUntilTs = 0
-let yahooStockBatchSize = 8
+// Ten is already the proven upper bound for this endpoint. Starting there
+// avoids an extra client-to-API round for common 50–100 stock universes while
+// the server-side Yahoo concurrency remains capped independently at eight.
+let yahooStockBatchSize = 10
 let yahooFundBatchSize = 12
 let yahooRequestConcurrencyHint = 5
 let lastYahooAdaptiveTuneTs = 0
