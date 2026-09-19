@@ -235,6 +235,10 @@ async function fetchOneTicker(
       if (result) {
         const metaCurrency = result?.meta?.currency
         if (metaCurrency) base.currency = metaCurrency
+        // Chart metadata comes with the price request, so retain Yahoo's
+        // issuer name without re-enabling the expensive quote-summary call
+        // for every stock in a broad listing universe.
+        base.longName = asStringOrNull(result?.meta?.longName) ?? asStringOrNull(result?.meta?.shortName) ?? base.longName
         const timestamps: number[] = result.timestamp || []
         const quote = result.indicators?.quote?.[0] || {}
         const closesRaw: (number | null)[] = quote.close || []

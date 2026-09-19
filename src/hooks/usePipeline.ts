@@ -634,14 +634,14 @@ export function usePipeline() {
   }, [flushBackgroundUpdates])
 
   const enrichWithOpenFIGI = useCallback(async (instruments: Instrument[]): Promise<Instrument[]> => {
-    // Xetra-Stocks haben ISIN, mnemonic, yahooTicker und displayName bereits
-    // aus dem CSV — OpenFIGI liefert nur einen marginal besseren Namen.
-    // ETFs/ETCs/Unknown brauchen OpenFIGI für Typ-Klärung und ISIN-Bestätigung.
+    // Index sources are authoritative for listing ticker and name. In
+    // particular, Nasdaq Composite rows intentionally have a LISTING: key
+    // rather than an ISIN. Do not let a best-effort third-party ticker match
+    // replace that identity: Yahoo can price the supplied ticker directly.
+    // Xetra-Stocks have ISIN, mnemonic, yahooTicker and displayName already
+    // from the CSV; ETFs/ETCs/Unknown still need OpenFIGI classification.
     const needsEnrichment = (inst: Instrument): boolean => {
-      // A normal index row already carries a source ISIN. An exceptional
-      // LISTING: row, however, must go through OpenFIGI so it becomes usable
-      // for Gettex instead of remaining a permanent synthetic identifier.
-      if (inst.source === 'index') return !/^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin)
+      if (inst.source === 'index') return false
       return inst.source !== 'xetra' || inst.type === 'ETF' || inst.type === 'ETC' || inst.type === 'Unknown'
     }
 
