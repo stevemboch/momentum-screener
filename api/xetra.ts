@@ -12,10 +12,11 @@ const DEUTSCHE_BOERSE_EQUITY_SEARCH_URL = 'https://api.live.deutsche-boerse.com/
 const DEUTSCHE_BOERSE_PAGE_SIZE = 300 // The public endpoint caps larger values at 300.
 const DEUTSCHE_BOERSE_EQUITY_COUNT = 15_230 // Updated from recordsTotal when a page is fetched.
 
-type IsinResolverRequest = { key: string; ticker?: string; name?: string }
-type IsinResolution = { isin: string; source: 'eodhd-us-symbols' | 'eodhd-id-mapping' | 'deutsche-boerse-search' }
+type IsinResolverRequest = { key: string; ticker?: string; name?: string; cusip?: string }
+type IsinResolution = { isin: string; source: 'cusip-derived' | 'eodhd-us-symbols' | 'eodhd-id-mapping' | 'deutsche-boerse-search' }
 
-let eodhdUsSymbolCache: { expiresAt: number; byTicker: Map<string, string> } | null = null
+type EodhdSymbol = { isin: string; name: string | null }
+let eodhdUsSymbolCache: { expiresAt: number; byTicker: Map<string, EodhdSymbol> } | null = null
 const EODHD_SYMBOL_CACHE_MS = 24 * 60 * 60 * 1000
 type DeutscheBoerseEquity = { isin: string; name: string }
 type DeutscheBoersePage = { expiresAt: number; total: number; rows: DeutscheBoerseEquity[] }
@@ -53,35 +54,53 @@ function tickerKey(value: string | undefined): string {
   return (value ?? '').trim().toUpperCase().replace(/\.[A-Z]{1,5}$/, '')
 }
 
-async function getEodhdUsSymbols(apiToken: string): Promise<Map<string, string>> {
+async function getEodhdUsSymbols(apiToken: string): Promise<Map<string, EodhdSymbol>> {
   if (eodhdUsSymbolCache && eodhdUsSymbolCache.expiresAt > Date.now()) return eodhdUsSymbolCache.byTicker
   const params = new URLSearchParams({ api_token: apiToken, fmt: 'json' })
   const response = await fetch(`${EODHD_US_SYMBOLS_URL}?${params}`, { headers: { Accept: 'application/json' } })
   const payload = await response.json().catch(() => null)
   if (!response.ok || !Array.isArray(payload)) throw new Error(`EODHD US symbol list unavailable (HTTP ${response.status})`)
-  const byTicker = new Map<string, string>()
+  const byTicker = new Map<string, EodhdSymbol>()
   for (const row of payload) {
     const ticker = tickerKey(typeof row?.Code === 'string' ? row.Code : row?.code)
     const isin = normalizeIsin(row?.Isin ?? row?.isin)
-    if (ticker && isin) byTicker.set(ticker, isin)
+    const name = typeof row?.Name === 'string' ? row.Name.trim() : typeof row?.name === 'string' ? row.name.trim() : ''
+    if (ticker && isin) byTicker.set(ticker, { isin, name: name || null })
   }
   eodhdUsSymbolCache = { expiresAt: Date.now() + EODHD_SYMBOL_CACHE_MS, byTicker }
   return byTicker
 }
 
-async function resolveEodhdIdentifier(ticker: string, apiToken: string): Promise<string | null> {
+async function resolveEodhdIdentifier(ticker: string, apiToken: string, expectedName?: string): Promise<string | null> {
   const cleanTicker = tickerKey(ticker)
   const symbolsToTry = [`${cleanTicker}.US`, cleanTicker]
   for (const sym of symbolsToTry) {
     const params = new URLSearchParams({ 'filter[symbol]': sym, api_token: apiToken, fmt: 'json' })
     const response = await fetch(`https://eodhd.com/api/id-mapping?${params}`, { headers: { Accept: 'application/json' } })
-    const payload = await response.json().catch(() => null) as { data?: Array<{ isin?: unknown }> } | null
+    const payload = await response.json().catch(() => null) as { data?: Array<{ isin?: unknown; name?: unknown; company_name?: unknown }> } | null
     if (response.ok) {
-      const isin = normalizeIsin(payload?.data?.[0]?.isin)
-      if (isin) return isin
+      const match = payload?.data?.[0]
+      const isin = normalizeIsin(match?.isin)
+      const name = typeof match?.name === 'string' ? match.name : typeof match?.company_name === 'string' ? match.company_name : ''
+      if (isin && isResolverNameMatch(expectedName, name)) return isin
     }
   }
   return null
+}
+
+/** ISO 6166 check digit for an unambiguous US CUSIP. */
+function usCusipToIsin(cusip: string | undefined): string | null {
+  const normalized = (cusip ?? '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{9}$/.test(normalized)) return null
+  const body = `US${normalized}`
+  const expanded = [...body].map((char) => /\d/.test(char) ? char : String(char.charCodeAt(0) - 55)).join('')
+  let sum = 0
+  for (let index = expanded.length - 1, doubleDigit = true; index >= 0; index -= 1, doubleDigit = !doubleDigit) {
+    let digit = Number(expanded[index])
+    if (doubleDigit) digit *= 2
+    sum += digit > 9 ? digit - 9 : digit
+  }
+  return `${body}${(10 - (sum % 10)) % 10}`
 }
 
 function normalizedCompanyName(value: string): string {
@@ -131,6 +150,13 @@ function companyNameScore(target: string, candidate: string, isin?: string): num
   }
 
   return score
+}
+
+/** A ticker lookup is only a candidate; never let it replace a named listing on its own. */
+function isResolverNameMatch(expectedName: string | undefined, candidateName: string | undefined): boolean {
+  if (!expectedName?.trim()) return false
+  if (!candidateName?.trim()) return false
+  return companyNameScore(expectedName, candidateName) >= 0.8
 }
 
 async function getDeutscheBoerseEquityPage(pageNumber: number): Promise<DeutscheBoersePage> {
@@ -196,7 +222,9 @@ async function resolveDeutscheBoerseSearch(name: string): Promise<string | null>
   const ranked = pages.flatMap((candidate) => candidate.rows)
     .map((candidate) => ({ ...candidate, score: companyNameScore(terms, candidate.name, candidate.isin) }))
     .sort((left, right) => right.score - left.score)
-  const minimumScore = 0.5
+  // A resolver result changes the security identity. Accept only a strong
+  // name match; a shared leading word is not enough evidence for an ISIN.
+  const minimumScore = 0.8
   return ranked[0]?.score >= minimumScore ? ranked[0].isin : null
 }
 
@@ -207,7 +235,7 @@ function readIsinResolverRequests(body: unknown): IsinResolverRequest[] {
     if (!entry || typeof entry !== 'object') return []
     const row = entry as Record<string, unknown>
     return typeof row.key === 'string' && row.key.length > 0
-      ? [{ key: row.key, ticker: typeof row.ticker === 'string' ? row.ticker : undefined, name: typeof row.name === 'string' ? row.name : undefined }]
+      ? [{ key: row.key, ticker: typeof row.ticker === 'string' ? row.ticker : undefined, name: typeof row.name === 'string' ? row.name : undefined, cusip: typeof row.cusip === 'string' ? row.cusip : undefined }]
       : []
   }).slice(0, 100)
 }
@@ -217,21 +245,28 @@ async function handleIsinResolver(req: VercelRequest, res: VercelResponse) {
   if (requests.length === 0) return res.status(400).json({ error: 'Provide instruments to resolve' })
   const resolutions: Record<string, IsinResolution> = {}
   const apiToken = process.env.EODHD_API_TOKEN
-  let eodhdSymbols: Map<string, string> | null = null
+  let eodhdSymbols: Map<string, EodhdSymbol> | null = null
   if (apiToken) {
     try { eodhdSymbols = await getEodhdUsSymbols(apiToken) } catch (error) { console.warn('EODHD symbol list failed:', error) }
   }
 
   const resolveOne = async (request: IsinResolverRequest) => {
+    // CUSIP is an issuer-assigned identifier, unlike a ticker/name search. It
+    // is therefore safe to derive the US ISIN locally and takes precedence.
+    const cusipIsin = usCusipToIsin(request.cusip)
+    if (cusipIsin) {
+      resolutions[request.key] = { isin: cusipIsin, source: 'cusip-derived' }
+      return
+    }
     const ticker = tickerKey(request.ticker)
-    const bulkIsin = ticker ? eodhdSymbols?.get(ticker) : null
-    if (bulkIsin) {
-      resolutions[request.key] = { isin: bulkIsin, source: 'eodhd-us-symbols' }
+    const bulkMatch = ticker ? eodhdSymbols?.get(ticker) : null
+    if (bulkMatch && isResolverNameMatch(request.name, bulkMatch.name ?? undefined)) {
+      resolutions[request.key] = { isin: bulkMatch.isin, source: 'eodhd-us-symbols' }
       return
     }
     if (apiToken && ticker) {
       try {
-        const isin = await resolveEodhdIdentifier(ticker, apiToken)
+        const isin = await resolveEodhdIdentifier(ticker, apiToken, request.name)
         if (isin) {
           resolutions[request.key] = { isin, source: 'eodhd-id-mapping' }
           return

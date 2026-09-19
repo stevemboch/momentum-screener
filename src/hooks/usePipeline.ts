@@ -167,7 +167,8 @@ function buildYahooSymbolCacheKey(isin: string): string {
 }
 
 function buildIsinResolutionCacheKey(identity: string): string {
-  return `cache:isin-resolution:v2:${identity.trim().toUpperCase()}`
+  // v3 invalidates unchecked ticker/name resolutions from earlier releases.
+  return `cache:isin-resolution:v3:${identity.trim().toUpperCase()}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -456,6 +457,7 @@ async function resolveUniverseIsins(
           key: instrument.isin,
           ticker: instrument.mnemonic || instrument.yahooTicker,
           name: instrument.longName || instrument.yahooLongName || instrument.displayName,
+          cusip: instrument.cusip,
         })) }),
         timeoutMs: 55_000,
       })
@@ -2289,6 +2291,7 @@ export function usePipeline() {
               key: instrument.isin,
               ticker: instrument.mnemonic || instrument.yahooTicker,
               name: instrument.longName || instrument.yahooLongName || instrument.displayName,
+              cusip: instrument.cusip,
             })) }),
         timeoutMs: 55_000,
       })
@@ -2317,18 +2320,19 @@ export function usePipeline() {
 
       // Prepare OpenFIGI jobs for remaining values. `instrument.isin` remains
       // the reducer key even when it is a LISTING: identity.
-      const needsIsinWithMeta = needsOpenFigi.map(inst => {
+      const needsIsinWithMeta = needsOpenFigi.flatMap(inst => {
         let job: { idType: string; idValue: string }
         if (inst.cusip && /^[A-Z0-9]{9}$/i.test(inst.cusip)) {
           job = { idType: 'ID_CUSIP', idValue: inst.cusip }
         } else if (inst.wkn && inst.wkn.length === 6) {
           job = { idType: 'ID_WERTPAPIER', idValue: inst.wkn }
-          } else {
-            const rawTicker = inst.mnemonic || inst.yahooTicker
-            const ticker = rawTicker ? rawTicker.replace(/\.[A-Z]{1,5}$/, '').trim() : ''
-            job = { idType: 'TICKER', idValue: ticker || inst.displayName }
-          }
-        return { instrument: inst, job }
+        } else {
+          // A ticker alone is not a stable instrument identity. The guarded
+          // server resolver above may still resolve it, but OpenFIGI must not
+          // provide a second unvalidated route to an ISIN here.
+          return []
+        }
+        return [{ instrument: inst, job }]
       })
 
       const openfigiJobs = needsIsinWithMeta.map(item => item.job)
