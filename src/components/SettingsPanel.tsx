@@ -40,7 +40,7 @@ export function SettingsPanel() {
   }
 
   const resetDefaults = () => {
-    dispatch({ type: 'SET_WEIGHTS', weights: { w1w: 0, w1m: 1 / 3, w3m: 1 / 3, w6m: 1 / 3 } })
+    dispatch({ type: 'SET_WEIGHTS', weights: { w1w: 0, w1m: 0, w3m: 0, w6m: 1 } })
     dispatch({ type: 'SET_ATR_MULTIPLIER', multiplier: 4 })
     dispatch({ type: 'SET_AUM_FLOOR', floor: 100_000_000 })
     dispatch({ type: 'SET_RISK_FREE_RATE', rate: 0.035 })

@@ -30,7 +30,7 @@ interface AppState {
   universeSnapshot: UniverseSnapshot | null
 }
 
-const DEFAULT_WEIGHTS: MomentumWeights = { w1w: 0, w1m: 1/3, w3m: 1/3, w6m: 1/3 }
+const DEFAULT_WEIGHTS: MomentumWeights = { w1w: 0, w1m: 0, w3m: 0, w6m: 1 }
 
 const GROUPS_STORAGE_KEY = 'xetra:groups'
 const PORTFOLIO_STORAGE_KEY = 'portfolio:isins'
