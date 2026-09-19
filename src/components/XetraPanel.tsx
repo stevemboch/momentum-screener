@@ -52,7 +52,11 @@ const enabledFrankfurtCount = state.frankfurtGroups
           <div className="text-ui-xs font-mono">Nasdaq component</div>
           <select
             value={nasdaqVariant}
-            onChange={(event) => setNasdaqVariant(event.target.value as '100' | 'composite')}
+            onChange={(event) => {
+              const nextVariant = event.target.value as '100' | 'composite'
+              setNasdaqVariant(nextVariant)
+              void activateIndexUniverse(nextVariant)
+            }}
             disabled={isLoading}
             className="focus-ring mt-1 w-auto rounded border border-border bg-bg px-2 py-1 text-ui-sm text-muted"
           >

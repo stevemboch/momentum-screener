@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 type UniverseSourceCode =
   | 'STOXX_EUROPE_600' | 'SP_500' | 'SP_MIDCAP_400' | 'SP_SMALLCAP_600'
   | 'NASDAQ_100' | 'NASDAQ_COMPOSITE' | 'MSCI_JAPAN' | 'MSCI_PACIFIC_EX_JAPAN' | 'MSCI_EM'
+  | 'SDAX' | 'HDAX'
 
 interface SourceDefinition {
   code: UniverseSourceCode
@@ -15,7 +16,8 @@ interface SourceDefinition {
   maxRows: number
   defaultListingCountry?: string
   sourceType: 'ETF_HOLDINGS_PROXY' | 'TRACKING_FUND_DISCLOSURE' | 'OFFICIAL_LISTING_SCREEN'
-  format?: 'csv' | 'nasdaq_screener_json' | 'blackrock_holdings_json' | 'blackrock_product_data' | 'dws_excel'
+  format?: 'csv' | 'nasdaq_screener_json' | 'blackrock_holdings_json' | 'blackrock_product_data' | 'dws_excel' | 'xetra_index_listing'
+  indexGroups?: string[]
 }
 
 interface Constituent {
@@ -58,6 +60,11 @@ const SOURCES: SourceDefinition[] = [
   { code: 'MSCI_JAPAN', region: 'Japan', benchmark: 'MSCI Japan', urlEnv: 'UNIVERSE_MSCI_JAPAN_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0274209740/', minRows: 100, maxRows: 400, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
   { code: 'MSCI_PACIFIC_EX_JAPAN', region: 'Pacific ex Japan', benchmark: 'MSCI Pacific ex Japan', urlEnv: 'UNIVERSE_MSCI_PACIFIC_EX_JAPAN_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/LU0322252338/', minRows: 70, maxRows: 120, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
   { code: 'MSCI_EM', region: 'Emerging Markets', benchmark: 'MSCI Emerging Markets', urlEnv: 'UNIVERSE_MSCI_EM_CSV_URL', defaultUrl: 'https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/IE000GWA2J58/', minRows: 600, maxRows: 1_800, sourceType: 'ETF_HOLDINGS_PROXY', format: 'dws_excel' },
+  // Deutsche Börse does not provide a stable full-holdings ETF export for
+  // HDAX. The Xetra listing assigns stocks to the underlying DAX families,
+  // which lets us derive the official SDAX and HDAX member sets directly.
+  { code: 'SDAX', region: 'Europe', benchmark: 'SDAX', urlEnv: 'UNIVERSE_SDAX_CSV_URL', defaultUrl: '', minRows: 50, maxRows: 100, defaultListingCountry: 'Germany', sourceType: 'OFFICIAL_LISTING_SCREEN', format: 'xetra_index_listing', indexGroups: ['SDAX'] },
+  { code: 'HDAX', region: 'Europe', benchmark: 'HDAX', urlEnv: 'UNIVERSE_HDAX_CSV_URL', defaultUrl: '', minRows: 80, maxRows: 150, defaultListingCountry: 'Germany', sourceType: 'OFFICIAL_LISTING_SCREEN', format: 'xetra_index_listing', indexGroups: ['DAX', 'MDAX', 'TECDAX'] },
 ]
 
 const NASDAQ_COMPOSITE_SOURCE: SourceDefinition = {
@@ -192,9 +199,45 @@ function stableHash(input: string): string {
 
 interface Candidate { isin: string | null; cusip: string | null; ticker: string | null; name: string; sourceSector: string | null; sourceCountry: string | null; exchange: string | null; weight: number | null }
 
+async function getXetraIndexCandidates(source: SourceDefinition): Promise<Candidate[]> {
+  const listingGroups = new Set(source.indexGroups ?? [])
+  const downloadsPage = await fetch('https://www.cashmarket.deutsche-boerse.com/cash-en/trading/Tradable-Instruments-Xetra/Downloads', {
+    headers: { 'User-Agent': 'MomentumScreener/1.0', Accept: 'text/html,*/*' },
+  })
+  if (!downloadsPage.ok) throw new Error(`${source.code}: Xetra downloads page HTTP ${downloadsPage.status}`)
+  const html = await downloadsPage.text()
+  const href = html.match(/href="([^"]*(?:t7[^"']*xetr|xetra-instruments)[^"]*\.csv[^"]*)"/i)?.[1]
+  if (!href) throw new Error(`${source.code}: current Xetra instrument CSV not found`)
+  const csvUrl = href.startsWith('http') ? href : new URL(href, 'https://www.cashmarket.deutsche-boerse.com').toString()
+  const response = await fetch(process.env[source.urlEnv] || csvUrl, { headers: { 'User-Agent': 'MomentumScreener/1.0', Accept: 'text/csv,text/plain,*/*' } })
+  if (!response.ok) throw new Error(`${source.code}: Xetra CSV HTTP ${response.status}`)
+  const rows = Papa.parse<string[]>(await response.text(), { delimiter: ';', skipEmptyLines: 'greedy' }).data
+  const headerIndex = rows.findIndex((row) => row.includes('ISIN') && row.includes('Instrument Type'))
+  if (headerIndex < 0) throw new Error(`${source.code}: Xetra CSV header not found`)
+  const header = rows[headerIndex]
+  const column = (name: string) => header.findIndex((value) => value === name)
+  const isinCol = column('ISIN')
+  const nameCol = column('Instrument')
+  const tickerCol = column('Mnemonic')
+  const typeCol = column('Instrument Type')
+  const groupCol = column('Product Assignment Group Description')
+  if ([isinCol, nameCol, typeCol, groupCol].some((index) => index < 0)) throw new Error(`${source.code}: Xetra CSV columns missing`)
+  return rows.slice(headerIndex + 1).flatMap((row) => {
+    const group = String(row[groupCol] ?? '').trim().toUpperCase().replace(/[\s-]/g, '')
+    if (String(row[typeCol] ?? '').trim() !== 'CS' || !listingGroups.has(group)) return []
+    return [{
+      isin: normalizeIsin(row[isinCol]), cusip: null,
+      ticker: String(row[tickerCol] ?? '').trim() || null,
+      name: String(row[nameCol] ?? '').trim(), sourceSector: null,
+      sourceCountry: 'Germany', exchange: 'Xetra', weight: null,
+    }]
+  })
+}
+
 async function importSource(source: SourceDefinition): Promise<ImportedSource> {
+  const isXetraIndexListing = source.format === 'xetra_index_listing'
   const isExcel = source.format === 'dws_excel'
-  const response = await fetch(process.env[source.urlEnv] || source.defaultUrl, { 
+  const response = isXetraIndexListing ? null : await fetch(process.env[source.urlEnv] || source.defaultUrl, {
     headers: { 
       Accept: isExcel
         ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*'
@@ -203,11 +246,13 @@ async function importSource(source: SourceDefinition): Promise<ImportedSource> {
       ...(source.format === 'blackrock_product_data' ? { 'x-application-id': 'pp-ui-csr' } : {}),
     } 
   })
-  if (!response.ok) throw new Error(`${source.code}: HTTP ${response.status}`)
+  if (response && !response.ok) throw new Error(`${source.code}: HTTP ${response.status}`)
   
-  const candidates: Candidate[] = []
+  const candidates: Candidate[] = isXetraIndexListing ? await getXetraIndexCandidates(source) : []
   
-  if (source.format === 'blackrock_holdings_json') {
+  if (isXetraIndexListing) {
+    // Candidates have already been parsed from the authoritative listing.
+  } else if (source.format === 'blackrock_holdings_json') {
     const payload = await response.text()
     const parsed = JSON.parse(payload.replace(/^\uFEFF/, '')) as { aaData?: unknown[][] }
     if (!Array.isArray(parsed.aaData)) throw new Error(`${source.code}: holdings JSON has no aaData array`)
