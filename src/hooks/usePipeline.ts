@@ -2304,11 +2304,42 @@ export function usePipeline() {
       console.log('[fetchBotsiGettexSpreads] unresolvedForRemote.length:', unresolvedForRemote.length)
 
       if (unresolvedForRemote.length > 0) {
-        setStatus(`Resolving ${unresolvedForRemote.length} missing ISINs via Deutsche Börse / OpenFIGI...`, 0, unresolvedForRemote.length)
+        setStatus(`Resolving ${unresolvedForRemote.length} missing ISINs via Baader / Deutsche Börse / OpenFIGI...`, 0, unresolvedForRemote.length)
+      }
+
+      // Baader is the preferred resolver for the spread path: it identifies
+      // the German Gettex listing (whose RIC can differ from Nasdaq) and
+      // returns the corresponding ISIN only when that listing actually exists.
+      for (let start = 0; start < unresolvedForRemote.length; start += 100) {
+        const batch = unresolvedForRemote.slice(start, start + 100)
+        try {
+          const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveBaader=1', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instruments: batch.map((instrument) => ({
+              key: instrument.isin,
+              ticker: instrument.mnemonic || instrument.yahooTicker,
+              name: instrument.yahooLongName || instrument.longName || instrument.displayName,
+            })) }),
+            timeoutMs: 55_000,
+          })
+          for (const instrument of batch) {
+            const isin = data.resolutions?.[instrument.isin]?.isin
+            if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
+            resolvedByInstrumentId.set(instrument.isin, isin)
+            cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
+          }
+        } catch (error) {
+          // Baader's public sitemap is a best-effort listing resolver. A
+          // failure must not prevent the independent Deutsche Börse/OpenFIGI
+          // fallbacks below.
+          console.warn('[fetchBotsiGettexSpreads] Baader resolver batch failed:', error)
+        }
       }
 
       for (let start = 0; start < unresolvedForRemote.length; start += 100) {
         const batch = unresolvedForRemote.slice(start, start + 100)
+          .filter((instrument) => !resolvedByInstrumentId.has(instrument.isin))
+        if (batch.length === 0) continue
         try {
           const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveIsins=1', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },

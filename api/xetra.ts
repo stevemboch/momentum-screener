@@ -6,6 +6,8 @@ const GETTEX_WEB_ORIGIN = 'https://www.gettex.de'
 const GETTEX_DATA_ORIGIN = 'https://lseg-widgets.financial.com'
 const GETTEX_SESSION_INSTRUMENT = 'DE0007664005' // Volkswagen; used only to obtain the website session.
 const GETTEX_BATCH_SIZE = 50
+const BAADER_STOCK_SITEMAP_URL = 'https://www.baadertrading.de/aktien/sitemap.xml'
+const BAADER_SITEMAP_CACHE_MS = 24 * 60 * 60 * 1000
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{10}$/
 const EODHD_US_SYMBOLS_URL = 'https://eodhd.com/api/exchange-symbol-list/US'
 const DEUTSCHE_BOERSE_EQUITY_SEARCH_URL = 'https://api.live.deutsche-boerse.com/v1/search/equity_search'
@@ -24,6 +26,9 @@ const deutscheBoersePages = new Map<number, Promise<DeutscheBoersePage>>()
 const DEUTSCHE_BOERSE_PAGE_CACHE_MS = 24 * 60 * 60 * 1000
 
 type GettexQuote = { bid: number; ask: number; spreadPct: number; time: string; currency: string }
+type BaaderListing = { ric: string; name: string }
+type BaaderResolution = { isin: string; ric: string; source: 'baader-sitemap' }
+let baaderStockListingsCache: { expiresAt: number; listings: BaaderListing[] } | null = null
 
 function readRequestedGettexIsins(body: unknown): string[] {
   const candidate = (body as { isins?: unknown })?.isins
@@ -163,6 +168,28 @@ function isResolverNameMatch(expectedName: string | undefined, candidateName: st
   if (!expectedName?.trim()) return false
   if (!candidateName?.trim()) return false
   return companyNameScore(expectedName, candidateName) >= 0.8
+}
+
+function baaderNameFromSlug(slug: string): string {
+  return slug
+    .replace(/-GTX$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/([A-Z])([0-9])/g, '$1 $2')
+}
+
+async function getBaaderStockListings(): Promise<BaaderListing[]> {
+  if (baaderStockListingsCache && baaderStockListingsCache.expiresAt > Date.now()) return baaderStockListingsCache.listings
+  const response = await fetch(BAADER_STOCK_SITEMAP_URL, { headers: { Accept: 'application/xml,text/xml,*/*', 'User-Agent': 'MomentumScreener/1.0' } })
+  const xml = await response.text()
+  if (!response.ok) throw new Error(`Baader stock sitemap unavailable (HTTP ${response.status})`)
+  const listings = [...xml.matchAll(/<loc>https:\/\/www\.baadertrading\.de\/aktien\/([^<]+)<\/loc>/g)].flatMap((match) => {
+    const slug = decodeURIComponent(match[1]).trim()
+    if (!slug || !/-GTX$/i.test(slug)) return []
+    return [{ ric: `${slug.replace(/-GTX$/i, '')}.GTX`, name: baaderNameFromSlug(slug) }]
+  })
+  if (listings.length === 0) throw new Error('Baader stock sitemap contains no GTX listings')
+  baaderStockListingsCache = { expiresAt: Date.now() + BAADER_SITEMAP_CACHE_MS, listings }
+  return listings
 }
 
 async function getDeutscheBoerseEquityPage(pageNumber: number): Promise<DeutscheBoersePage> {
@@ -356,6 +383,75 @@ async function fetchGettexWebQuotes(isins: string[]): Promise<Record<string, Get
   return quotes
 }
 
+/**
+ * Baader's public sitemap exposes the German trading RIC, not necessarily the
+ * issuer's home-market ticker. Querying that RIC is both a listing validation
+ * and an ISIN lookup because Gettex returns the instrument ISIN with its quote.
+ */
+async function resolveBaaderListings(requests: Array<{ key: string; ticker?: string; name?: string }>): Promise<Record<string, BaaderResolution>> {
+  const listings = await getBaaderStockListings()
+  const resolutions: Record<string, BaaderResolution> = {}
+  const candidates = requests.flatMap((request) => {
+    if (!request.name?.trim() && !request.ticker?.trim()) return []
+    const ticker = tickerKey(request.ticker)
+    const ranked = listings
+      .map((listing) => ({
+        listing,
+        score: request.name ? companyNameScore(request.name, listing.name) : 0,
+        tickerMatch: Boolean(ticker) && listing.ric.replace(/\.GTX$/i, '').toUpperCase() === ticker,
+      }))
+      .sort((left, right) => Number(right.tickerMatch) - Number(left.tickerMatch) || right.score - left.score)
+    const best = ranked[0]
+    // Sitemap slugs are abbreviated, so accept only an issuer-name match that
+    // remains strong after legal-form normalization. Ambiguous listings stay
+    // unresolved rather than producing a misleading spread.
+    return best && (best.score >= 0.8 || best.tickerMatch) ? [{ key: request.key, ric: best.listing.ric }] : []
+  })
+  if (candidates.length === 0) return resolutions
+
+  const token = await getGettexWebToken()
+  let next = 0
+  const workers = Array.from({ length: Math.min(8, candidates.length) }, async () => {
+    while (next < candidates.length) {
+      const candidate = candidates[next++]
+    const params = new URLSearchParams({
+        fids: 'x._ISIN', search: candidate.ric, searchFor: 'RIC', exchanges: 'GTX', pageSize: '1', pageNo: '0',
+    })
+    const response = await fetch(`${GETTEX_DATA_ORIGIN}/rest/api/find/securities?${params}`, { headers: { jwt: token } })
+    const payload = await response.json().catch(() => null) as { data?: Array<Record<string, unknown>> } | null
+    if (!response.ok || !Array.isArray(payload?.data)) throw new Error(`Baader RIC quote lookup unavailable (HTTP ${response.status})`)
+      const isin = normalizeIsin(payload.data[0]?.['x._ISIN'])
+      if (isin) resolutions[candidate.key] = { isin, ric: candidate.ric, source: 'baader-sitemap' }
+    }
+  })
+  await Promise.all(workers)
+  return resolutions
+}
+
+function readBaaderResolverRequests(body: unknown): Array<{ key: string; ticker?: string; name?: string }> {
+  const entries = (body as { instruments?: unknown })?.instruments
+  if (!Array.isArray(entries)) return []
+  return entries.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as Record<string, unknown>
+    return typeof row.key === 'string' && row.key.length > 0
+      ? [{ key: row.key, ticker: typeof row.ticker === 'string' ? row.ticker : undefined, name: typeof row.name === 'string' ? row.name : undefined }]
+      : []
+  }).slice(0, 100)
+}
+
+async function handleBaaderResolver(req: VercelRequest, res: VercelResponse) {
+  const requests = readBaaderResolverRequests(req.body)
+  if (requests.length === 0) return res.status(400).json({ error: 'Provide instruments to resolve' })
+  try {
+    const resolutions = await resolveBaaderListings(requests)
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    return res.status(200).json({ resolutions })
+  } catch (error: any) {
+    return res.status(502).json({ error: error?.message ?? 'Baader resolver unavailable' })
+  }
+}
+
 async function handleGettexSpreads(req: VercelRequest, res: VercelResponse) {
    const isins = readRequestedGettexIsins(req.body)
    if (isins.length === 0) return res.status(400).json({ error: 'Provide at least one valid ISIN' })
@@ -415,6 +511,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.query.resolveIsins === '1') {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
     return handleIsinResolver(req, res)
+  }
+  if (req.query.resolveBaader === '1') {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+    return handleBaaderResolver(req, res)
   }
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
