@@ -5,7 +5,7 @@ import type {
 import { ETF_GROUPS, STOCK_GROUPS, FRANKFURT_GROUPS, DEFAULT_ETF_GROUPS, DEFAULT_STOCK_GROUPS, DEFAULT_FRANKFURT_GROUPS } from './types'
 import { recalculateAll } from './utils/calculations'
 import { applyAiFilterPlan } from './utils/aiFilter'
-import { constituentToInstrument, indexFilterGroupKey, readCachedSnapshot, type UniverseCode, type UniverseSnapshot } from './universe'
+import { constituentToInstrument, INDEX_UNIVERSE_GROUPS, indexFilterGroupKey, readCachedSnapshot, type UniverseCode, type UniverseSnapshot } from './universe'
 
 interface AppState {
   instruments: Instrument[]
@@ -191,6 +191,24 @@ const persistedHiddenColumns = loadHiddenColumnGroups()
 // quote/enrichment run has completed.
 const cachedUniverseSnapshot = readCachedSnapshot()
 
+function initialIndexGroups() {
+  if (cachedUniverseSnapshot) {
+    return indexGroupsForSnapshot(cachedUniverseSnapshot, persistedGroups?.index
+      ? new Map(cachedUniverseSnapshot.sources.map((source) => {
+        const groupKey = indexFilterGroupKey(source.code)
+        const legacyNasdaqSelection = groupKey === 'NASDAQ_COMPONENT' &&
+          persistedGroups.index!.some((value) => value === 'Nasdaq 100' || value.startsWith('Nasdaq Composite'))
+        return [groupKey, persistedGroups.index!.includes(groupKey) || persistedGroups.index!.includes(source.benchmark) || legacyNasdaqSelection]
+      }))
+      : undefined)
+  }
+  return INDEX_UNIVERSE_GROUPS.map((group) => ({
+    ...group,
+    count: 0,
+    enabled: persistedGroups?.index ? persistedGroups.index.includes(group.groupKey) : true,
+  }))
+}
+
 function indexGroupsForSnapshot(snapshot: UniverseSnapshot | null, enabledByKey?: ReadonlyMap<string, boolean>): ETFGroup[] {
   if (!snapshot) return []
   const counts = new Map<string, number>()
@@ -260,18 +278,7 @@ const DEFAULT_STATE: AppState = {
     count: 0,
     enabled: persistedGroups ? persistedGroups.frankfurt.includes(g.groupKey) : DEFAULT_FRANKFURT_GROUPS.includes(g.groupKey),
   })),
-  indexGroups: indexGroupsForSnapshot(
-    cachedUniverseSnapshot,
-    persistedGroups?.index
-      ? new Map(cachedUniverseSnapshot?.sources.map((source) => {
-        const groupKey = indexFilterGroupKey(source.code)
-        // Accept preferences written by the prior benchmark-name-based UI.
-        const legacyNasdaqSelection = groupKey === 'NASDAQ_COMPONENT' &&
-          persistedGroups.index!.some((value) => value === 'Nasdaq 100' || value.startsWith('Nasdaq Composite'))
-        return [groupKey, persistedGroups.index!.includes(groupKey) || persistedGroups.index!.includes(source.benchmark) || legacyNasdaqSelection]
-      }))
-      : undefined,
-  ),
+  indexGroups: initialIndexGroups(),
   fetchStatus: { phase: 'idle', message: '', current: 0, total: 0 },
   xetraActive: false,
   frankfurtReady: false,

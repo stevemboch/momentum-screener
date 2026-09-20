@@ -59,6 +59,22 @@ export function indexFilterGroupKey(sourceCode: string): string {
     : sourceCode
 }
 
+// These are source choices, rather than loaded constituent groups. Keeping
+// them client-side lets the membership picker work before the first snapshot
+// has been fetched; counts are filled in once that snapshot is available.
+export const INDEX_UNIVERSE_GROUPS = [
+  { label: 'STOXX Europe 600', groupKey: 'STOXX_EUROPE_600' },
+  { label: 'S&P 500', groupKey: 'SP_500' },
+  { label: 'S&P MidCap 400', groupKey: 'SP_MIDCAP_400' },
+  { label: 'S&P SmallCap 600', groupKey: 'SP_SMALLCAP_600' },
+  { label: 'Nasdaq component', groupKey: 'NASDAQ_COMPONENT' },
+  { label: 'MSCI Japan', groupKey: 'MSCI_JAPAN' },
+  { label: 'MSCI Pacific ex Japan', groupKey: 'MSCI_PACIFIC_EX_JAPAN' },
+  { label: 'MSCI Emerging Markets', groupKey: 'MSCI_EM' },
+  { label: 'SDAX', groupKey: 'SDAX' },
+  { label: 'HDAX', groupKey: 'HDAX' },
+] as const
+
 export function constituentToInstrument(constituent: UniverseConstituent): Instrument {
   return {
     isin: constituent.isin,

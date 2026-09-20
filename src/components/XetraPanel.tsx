@@ -43,6 +43,7 @@ const enabledFrankfurtCount = state.frankfurtGroups
   const enabledIndexCount = state.indexGroups
     .filter((g) => g.enabled)
     .reduce((sum, g) => sum + g.count, 0)
+  const enabledIndexGroupCount = state.indexGroups.filter((g) => g.enabled).length
 
   return (
     <div className="flex flex-col gap-2">
@@ -87,13 +88,13 @@ const enabledFrankfurtCount = state.frankfurtGroups
           aria-expanded={showIndexGroups}
           aria-label={showIndexGroups ? 'Hide index membership filters' : 'Show index membership filters'}
         >
-          <span>Index membership{state.indexGroups.length > 0 ? ` · ${enabledIndexCount.toLocaleString()} selected` : ''}</span>
+          <span>Index membership{state.indexGroups.length > 0 ? ` · ${(state.universeSnapshot ? enabledIndexCount : enabledIndexGroupCount).toLocaleString()} selected` : ''}</span>
           {showIndexGroups ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
-        {showIndexGroups && state.universeSnapshot && (
+        {showIndexGroups && (
           <div className="pt-2">
             <div className="mb-1 text-ui-xs font-mono uppercase tracking-widest text-muted">
-              Index membership · {enabledIndexCount.toLocaleString()} selections
+              Index membership · {(state.universeSnapshot ? enabledIndexCount : enabledIndexGroupCount).toLocaleString()} selections
             </div>
             {state.indexGroups.map((g) => (
               <GroupCheckbox
@@ -104,7 +105,7 @@ const enabledFrankfurtCount = state.frankfurtGroups
                 onChange={(enabled) => dispatch({ type: 'SET_INDEX_GROUP', groupKey: g.groupKey, enabled })}
               />
             ))}
-            <p className="mt-2 text-ui-xs text-muted">A constituent is included when it belongs to at least one selected index. Reload to apply changes.</p>
+            <p className="mt-2 text-ui-xs text-muted">A constituent is included when it belongs to at least one selected index. Load or reload to apply changes.</p>
           </div>
         )}
       </div>
