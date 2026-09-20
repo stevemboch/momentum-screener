@@ -2121,8 +2121,15 @@ function MobileInstrumentCard({
         </div>
         <div>
           <span className="text-muted">Stop:</span>{' '}
-          <span className="text-amber-400" title={`ATR(20): ${inst.atr20?.toFixed(4) ?? '—'}`}>
-            {inst.sellingThreshold != null ? fmtPrice(inst.sellingThreshold) : '—'}
+          <span
+            className="text-amber-400"
+            title={inst.sellingThreshold != null
+              ? `Stop ${fmtPrice(inst.sellingThreshold)} · ATR(20): ${inst.atr20?.toFixed(4) ?? '—'}`
+              : undefined}
+          >
+            {inst.sellingThreshold != null && inst.closes?.length
+              ? fmtPct(inst.sellingThreshold / inst.closes[inst.closes.length - 1] - 1)
+              : '—'}
           </span>
         </div>
       </div>
