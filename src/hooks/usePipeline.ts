@@ -184,9 +184,9 @@ function buildYahooSymbolCacheKey(isin: string): string {
 }
 
 function buildIsinResolutionCacheKey(identity: string): string {
-  // v5 invalidates prior temporary spread mappings. Those mappings were
-  // mistakenly written into the instrument identity after a quote lookup.
-  return `cache:isin-resolution:v5:${identity.trim().toUpperCase()}`
+  // v6 retires the experimental Baader sitemap/RIC resolver. It can expose a
+  // trading mnemonic without proving that it belongs to the source issuer.
+  return `cache:isin-resolution:v6:${identity.trim().toUpperCase()}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -2281,6 +2281,17 @@ export function usePipeline() {
       console.log('[fetchBotsiGettexSpreads] targets.length:', targets.length)
       if (targets.length === 0) return
 
+      // Retire any result created by the experimental Baader sitemap resolver
+      // before constructing the next quote request. Keeping its old quote on
+      // screen would make a later no-result look like a valid spread.
+      const retiredBaader = targets.filter((instrument) => instrument.resolvedGettexSource === 'baader')
+      if (retiredBaader.length > 0) {
+        dispatch({ type: 'UPDATE_INSTRUMENTS', updates: new Map(retiredBaader.map((instrument) => [instrument.isin, {
+          resolvedGettexIsin: null, resolvedGettexSource: null,
+          gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null,
+        }])) })
+      }
+
       // Split into with-ISIN and needs-ISIN instruments.
       const withIsin = targets.filter(inst => /^[A-Z]{2}[A-Z0-9]{10}$/.test(inst.isin))
       const needsIsin = targets.filter(inst => {
@@ -2297,7 +2308,7 @@ export function usePipeline() {
       const unresolvedForRemote: Instrument[] = []
       for (const instrument of needsIsin) {
         const remembered = instrument.resolvedGettexIsin
-        if (typeof remembered === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(remembered)) {
+        if (instrument.resolvedGettexSource !== 'baader' && typeof remembered === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(remembered)) {
           resolvedByInstrumentId.set(instrument.isin, { isin: remembered, source: instrument.resolvedGettexSource ?? 'cache' })
           continue
         }
@@ -2310,41 +2321,11 @@ export function usePipeline() {
       console.log('[fetchBotsiGettexSpreads] unresolvedForRemote.length:', unresolvedForRemote.length)
 
       if (unresolvedForRemote.length > 0) {
-        setStatus(`Resolving ${unresolvedForRemote.length} missing ISINs via Baader / Deutsche Börse / OpenFIGI...`, 0, unresolvedForRemote.length)
-      }
-
-      // Baader is the preferred resolver for the spread path: it identifies
-      // the German Gettex listing (whose RIC can differ from Nasdaq) and
-      // returns the corresponding ISIN only when that listing actually exists.
-      for (let start = 0; start < unresolvedForRemote.length; start += 100) {
-        const batch = unresolvedForRemote.slice(start, start + 100)
-        try {
-          const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveBaader=1', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ instruments: batch.map((instrument) => ({
-              key: instrument.isin,
-              ticker: instrument.mnemonic || instrument.yahooTicker,
-              name: instrument.yahooLongName || instrument.longName || instrument.displayName,
-            })) }),
-            timeoutMs: 55_000,
-          })
-          for (const instrument of batch) {
-            const isin = data.resolutions?.[instrument.isin]?.isin
-            if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
-            resolvedByInstrumentId.set(instrument.isin, { isin, source: 'baader' })
-            cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin, source: 'baader' }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
-          }
-        } catch (error) {
-          // Baader's public sitemap is a best-effort listing resolver. A
-          // failure must not prevent the independent Deutsche Börse/OpenFIGI
-          // fallbacks below.
-          console.warn('[fetchBotsiGettexSpreads] Baader resolver batch failed:', error)
-        }
+        setStatus(`Resolving ${unresolvedForRemote.length} missing ISINs via Deutsche Börse / OpenFIGI...`, 0, unresolvedForRemote.length)
       }
 
       for (let start = 0; start < unresolvedForRemote.length; start += 100) {
         const batch = unresolvedForRemote.slice(start, start + 100)
-          .filter((instrument) => !resolvedByInstrumentId.has(instrument.isin))
         if (batch.length === 0) continue
         try {
           const data = await apiFetchJson<{ resolutions?: Record<string, { isin?: unknown }> }>('/api/xetra?resolveIsins=1', {
