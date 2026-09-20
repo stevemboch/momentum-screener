@@ -2159,7 +2159,7 @@ interface VirtualizationResult<T> {
   endIndex: number
   topPadding: number
   bottomPadding: number
-  getRowRef: (isin: string) => (element: HTMLTableRowElement | null) => void
+  getRowRef: (isin: string) => (element: HTMLElement | null) => void
 }
 
 function useMediaQuery(query: string) {
@@ -2204,8 +2204,8 @@ function useTableVirtualization<T extends { isin: string }>(
   const [rowHeights, setRowHeights] = useState<Map<string, number>>(() => new Map())
   const rafRef = useRef<number | null>(null)
   const rowObserversRef = useRef(new Map<string, ResizeObserver>())
-  const measureRowRef = useRef<(isin: string, element: HTMLTableRowElement | null) => void>(() => {})
-  const rowRefCallbacks = useRef(new Map<string, (element: HTMLTableRowElement | null) => void>())
+  const measureRowRef = useRef<(isin: string, element: HTMLElement | null) => void>(() => {})
+  const rowRefCallbacks = useRef(new Map<string, (element: HTMLElement | null) => void>())
 
   const updateMetrics = useCallback(() => {
     if (containerEl && enabled) {
@@ -2239,7 +2239,7 @@ function useTableVirtualization<T extends { isin: string }>(
     rowRefCallbacks.current.clear()
   }, [])
 
-  const measureRow = useCallback((isin: string, element: HTMLTableRowElement | null) => {
+  const measureRow = useCallback((isin: string, element: HTMLElement | null) => {
     rowObserversRef.current.get(isin)?.disconnect()
     rowObserversRef.current.delete(isin)
     if (!element || !enabled) return
@@ -2365,11 +2365,21 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 
   const visibleInstruments = isPriceUpdating ? renderSnapshot : instruments
   const isDesktop = useMediaQuery('(min-width: 1024px)')
-  // Detail panels may add multiple rows, so render the complete desktop table while one is open.
-  const virtualizeTable = isDesktop && expandedISIN === null
+  // The mobile view is card-based and can contain the whole universe. Keep it
+  // virtualized as well; otherwise unrelated UI interactions (such as opening
+  // the sidebar's membership filters) re-render every card and feel stuck.
+  // Desktop detail panels may add multiple rows, so that view stays complete
+  // while one is open.
+  const virtualizeTable = !isDesktop || expandedISIN === null
 
   const { visibleItems: renderedInstruments, startIndex, topPadding, bottomPadding, getRowRef } =
-    useTableVirtualization(visibleInstruments, tableContainerEl, tableWrapperEl, virtualizeTable)
+    useTableVirtualization(
+      visibleInstruments,
+      tableContainerEl,
+      tableWrapperEl,
+      virtualizeTable,
+      isDesktop ? VIRTUAL_ESTIMATED_ROW_HEIGHT : 190,
+    )
 
   const refreshContextPreview = () => {
     setContextPreviewTick((prev) => prev + 1)
@@ -2470,7 +2480,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
         gettexSpreadsError={gettexSpreadsError}
       />
 
-      <div className="lg:hidden space-y-2 p-3">
+      <div className="lg:hidden p-3">
         {isMomentumMode && (
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
             {([
@@ -2528,17 +2538,24 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           </div>
         )}
 
-        {!isDesktop && visibleInstruments.map((inst) => (
-          <MobileInstrumentCard
-            key={inst.isin}
-            inst={inst}
-            expanded={expandedISIN === inst.isin}
-            onToggleExpanded={() => setExpandedISIN(expandedISIN === inst.isin ? null : inst.isin)}
-            onTogglePortfolio={() => dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin })}
-            onRemove={() => dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin })}
-            botsiMode={isBotsiMode}
-          />
-        ))}
+        {!isDesktop && (
+          <div ref={setTableWrapperEl}>
+            {topPadding > 0 && <div aria-hidden style={{ height: topPadding }} />}
+            {renderedInstruments.map((inst) => (
+              <div key={inst.isin} ref={getRowRef(inst.isin)} className="pb-2">
+                <MobileInstrumentCard
+                  inst={inst}
+                  expanded={expandedISIN === inst.isin}
+                  onToggleExpanded={() => setExpandedISIN(expandedISIN === inst.isin ? null : inst.isin)}
+                  onTogglePortfolio={() => dispatch({ type: 'TOGGLE_PORTFOLIO', isin: inst.isin })}
+                  onRemove={() => dispatch({ type: 'REMOVE_INSTRUMENT', isin: inst.isin })}
+                  botsiMode={isBotsiMode}
+                />
+              </div>
+            ))}
+            {bottomPadding > 0 && <div aria-hidden style={{ height: bottomPadding }} />}
+          </div>
+        )}
       </div>
 
       <div ref={setTableWrapperEl} className="hidden lg:block">
