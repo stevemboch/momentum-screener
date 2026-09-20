@@ -2293,13 +2293,18 @@ export function usePipeline() {
 
       // Resolve only the qualified remainder, never the entire index universe.
       // Browser caching makes successful ticker/name lookups a one-time cost.
-      const resolvedByInstrumentId = new Map<string, string>()
+      const resolvedByInstrumentId = new Map<string, { isin: string; source: NonNullable<Instrument['resolvedGettexSource']> }>()
       const unresolvedForRemote: Instrument[] = []
       for (const instrument of needsIsin) {
-        const cached = cacheGet<{ isin?: unknown }>(buildIsinResolutionCacheKey(instrument.isin), ISIN_RESOLUTION_TTL_MS)
+        const remembered = instrument.resolvedGettexIsin
+        if (typeof remembered === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(remembered)) {
+          resolvedByInstrumentId.set(instrument.isin, { isin: remembered, source: instrument.resolvedGettexSource ?? 'cache' })
+          continue
+        }
+        const cached = cacheGet<{ isin?: unknown; source?: unknown }>(buildIsinResolutionCacheKey(instrument.isin), ISIN_RESOLUTION_TTL_MS)
         const isin = typeof cached?.isin === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(cached.isin)
           ? cached.isin : null
-        if (isin) resolvedByInstrumentId.set(instrument.isin, isin)
+        if (isin) resolvedByInstrumentId.set(instrument.isin, { isin, source: typeof cached?.source === 'string' ? cached.source as NonNullable<Instrument['resolvedGettexSource']> : 'cache' })
         else unresolvedForRemote.push(instrument)
       }
       console.log('[fetchBotsiGettexSpreads] unresolvedForRemote.length:', unresolvedForRemote.length)
@@ -2326,8 +2331,8 @@ export function usePipeline() {
           for (const instrument of batch) {
             const isin = data.resolutions?.[instrument.isin]?.isin
             if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
-            resolvedByInstrumentId.set(instrument.isin, isin)
-            cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
+            resolvedByInstrumentId.set(instrument.isin, { isin, source: 'baader' })
+            cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin, source: 'baader' }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
           }
         } catch (error) {
           // Baader's public sitemap is a best-effort listing resolver. A
@@ -2356,8 +2361,8 @@ export function usePipeline() {
           for (const instrument of batch) {
             const isin = data.resolutions?.[instrument.isin]?.isin
             if (typeof isin !== 'string' || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin)) continue
-            resolvedByInstrumentId.set(instrument.isin, isin)
-            cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
+            resolvedByInstrumentId.set(instrument.isin, { isin, source: 'deutsche-boerse' })
+            cacheSet(buildIsinResolutionCacheKey(instrument.isin), { isin, source: 'deutsche-boerse' }, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
           }
         } catch (error) {
           // A resolver outage must never hide a qualified candidate or prevent
@@ -2371,7 +2376,7 @@ export function usePipeline() {
       const cusipResolved = needsIsin
         .map((instrument) => ({ instrument, resolvedIsin: usCusipToIsin(instrument.cusip) }))
         .filter((item): item is { instrument: Instrument; resolvedIsin: string } => item.resolvedIsin != null)
-      cusipResolved.forEach(({ instrument, resolvedIsin }) => resolvedByInstrumentId.set(instrument.isin, resolvedIsin))
+      cusipResolved.forEach(({ instrument, resolvedIsin }) => resolvedByInstrumentId.set(instrument.isin, { isin: resolvedIsin, source: 'cusip' }))
       const needsOpenFigi = needsIsin.filter((instrument) => !resolvedByInstrumentId.has(instrument.isin))
       console.log('[fetchBotsiGettexSpreads] needsOpenFigi.length (after cusip):', needsOpenFigi.length)
 
@@ -2419,7 +2424,7 @@ export function usePipeline() {
         addQuery(isin, isin)
       })
 
-      resolvedByInstrumentId.forEach((resolvedIsin, instrumentId) => addQuery(resolvedIsin, instrumentId))
+      resolvedByInstrumentId.forEach(({ isin }, instrumentId) => addQuery(isin, instrumentId))
 
       // Add LISTING identities that OpenFIGI resolved. Crucially, updates are
       // written back using LISTING:… (not the ticker used for the lookup).
@@ -2432,6 +2437,7 @@ export function usePipeline() {
         const tickerMatch = meta.job.idType !== 'TICKER' || resolvedTicker === requestedTicker
         const nameMatch = meta.job.idType !== 'TICKER' || companyIdentityMatches(expectedName, resolvedName)
         if (resolvedIsin && /^[A-Z]{2}[A-Z0-9]{10}$/.test(resolvedIsin) && tickerMatch && nameMatch) {
+          resolvedByInstrumentId.set(meta.instrument.isin, { isin: resolvedIsin, source: 'openfigi' })
           addQuery(resolvedIsin, meta.instrument.isin)
         }
       })
@@ -2466,7 +2472,18 @@ export function usePipeline() {
         }
         for (const instrumentIsin of instrumentIsins) {
           if (quote) {
+            const resolution = resolvedByInstrumentId.get(instrumentIsin)
+            if (resolution) {
+              // A returned Gettex quote confirms that the resolved identifier
+              // is at least an active Gettex instrument. Persist it separately
+              // from the source identity for the next screen run.
+              cacheSet(buildIsinResolutionCacheKey(instrumentIsin), resolution, ISIN_RESOLUTION_TTL_MS, { allowRecovery: true })
+            }
             updates.set(instrumentIsin, {
+              ...(resolution ? {
+                resolvedGettexIsin: queryIsin,
+                resolvedGettexSource: resolution.source,
+              } : {}),
               gettexBid: quote.bid, gettexAsk: quote.ask,
               gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time,
             })

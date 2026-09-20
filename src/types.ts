@@ -92,6 +92,9 @@ export interface Instrument {
   botsiFilterPassed?: boolean | null
   botsiTop10?: boolean | null
   /** Gettex ISIN quote, loaded for the qualified BOTSI selection only. */
+  /** Confirmed Gettex lookup identity; never replaces the immutable source `isin`. */
+  resolvedGettexIsin?: string | null
+  resolvedGettexSource?: 'cache' | 'cusip' | 'baader' | 'deutsche-boerse' | 'openfigi' | null
   gettexBid?: number | null
   gettexAsk?: number | null
   gettexSpreadPct?: number | null
