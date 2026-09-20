@@ -393,19 +393,17 @@ async function resolveBaaderListings(requests: Array<{ key: string; ticker?: str
   const resolutions: Record<string, BaaderResolution> = {}
   const candidates = requests.flatMap((request) => {
     if (!request.name?.trim() && !request.ticker?.trim()) return []
-    const ticker = tickerKey(request.ticker)
     const ranked = listings
       .map((listing) => ({
         listing,
         score: request.name ? companyNameScore(request.name, listing.name) : 0,
-        tickerMatch: Boolean(ticker) && listing.ric.replace(/\.GTX$/i, '').toUpperCase() === ticker,
       }))
-      .sort((left, right) => Number(right.tickerMatch) - Number(left.tickerMatch) || right.score - left.score)
+      .sort((left, right) => right.score - left.score)
     const best = ranked[0]
     // Sitemap slugs are abbreviated, so accept only an issuer-name match that
     // remains strong after legal-form normalization. Ambiguous listings stay
     // unresolved rather than producing a misleading spread.
-    return best && (best.score >= 0.8 || best.tickerMatch) ? [{ key: request.key, ric: best.listing.ric }] : []
+    return best && best.score >= 0.8 ? [{ key: request.key, ric: best.listing.ric }] : []
   })
   if (candidates.length === 0) return resolutions
 

@@ -184,8 +184,9 @@ function buildYahooSymbolCacheKey(isin: string): string {
 }
 
 function buildIsinResolutionCacheKey(identity: string): string {
-  // v3 invalidates unchecked ticker/name resolutions from earlier releases.
-  return `cache:isin-resolution:v3:${identity.trim().toUpperCase()}`
+  // v4 invalidates a short-lived Baader resolver version that accepted an
+  // exact-looking German RIC mnemonic without independent name confirmation.
+  return `cache:isin-resolution:v4:${identity.trim().toUpperCase()}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
