@@ -2106,6 +2106,25 @@ function MobileInstrumentCard({
           <span className="text-muted">RSI:</span>{' '}
           <span className={rsiColor(inst.rsi14)}>{inst.rsi14 != null ? inst.rsi14.toFixed(1) : '—'}</span>
         </div>
+        <div>
+          <span className="text-muted">Spread:</span>{' '}
+          {inst.gettexSpreadPct != null ? (
+            <span
+              className={inst.gettexSpreadPct > 1 ? 'text-amber-400' : 'text-gray-300'}
+              title={inst.gettexBid != null && inst.gettexAsk != null
+                ? `Bid ${inst.gettexBid.toFixed(2)} / Ask ${inst.gettexAsk.toFixed(2)}${inst.gettexQuoteTime ? ` · ${inst.gettexQuoteTime}` : ''}`
+                : undefined}
+            >
+              {inst.gettexSpreadPct.toFixed(2)}%
+            </span>
+          ) : <span className="text-muted">—</span>}
+        </div>
+        <div>
+          <span className="text-muted">Stop:</span>{' '}
+          <span className="text-amber-400" title={`ATR(20): ${inst.atr20?.toFixed(4) ?? '—'}`}>
+            {inst.sellingThreshold != null ? fmtPrice(inst.sellingThreshold) : '—'}
+          </span>
+        </div>
       </div>
 
       {expanded && (
@@ -2476,6 +2495,7 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
             {([
               { key: 'botsiScore', label: 'BOTSI' },
+              { key: 'motsiRank', label: 'MOTSI' },
               { key: 'gd200', label: 'GD200' },
               { key: 'mom260', label: 'MOM260' },
               { key: 'kaufmanEfficiencyRatio', label: 'Kaufman ER' },
