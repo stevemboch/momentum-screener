@@ -184,9 +184,9 @@ function buildYahooSymbolCacheKey(isin: string): string {
 }
 
 function buildIsinResolutionCacheKey(identity: string): string {
-  // v4 invalidates a short-lived Baader resolver version that accepted an
-  // exact-looking German RIC mnemonic without independent name confirmation.
-  return `cache:isin-resolution:v4:${identity.trim().toUpperCase()}`
+  // v5 invalidates prior temporary spread mappings. Those mappings were
+  // mistakenly written into the instrument identity after a quote lookup.
+  return `cache:isin-resolution:v5:${identity.trim().toUpperCase()}`
 }
 
 function buildLegacyYahooCacheKey(ticker: string): string {
@@ -2465,16 +2465,13 @@ export function usePipeline() {
           continue
         }
         for (const instrumentIsin of instrumentIsins) {
-          const isinToSet = /^[A-Z]{2}[A-Z0-9]{10}$/.test(queryIsin) ? queryIsin : instrumentIsin
           if (quote) {
             updates.set(instrumentIsin, {
-              isin: isinToSet,
               gettexBid: quote.bid, gettexAsk: quote.ask,
               gettexSpreadPct: quote.spreadPct, gettexQuoteTime: quote.time,
             })
           } else {
             updates.set(instrumentIsin, {
-              isin: isinToSet,
               gettexBid: null, gettexAsk: null, gettexSpreadPct: null, gettexQuoteTime: null,
             })
           }
