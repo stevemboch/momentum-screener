@@ -2270,6 +2270,36 @@ export function usePipeline() {
     dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
   }, [state.instruments, fetchPrices])
 
+  // Index providers deliberately use a stable `LISTING:` key for constituents
+  // for which they cannot supply an ISIN.  Such a key is not valid manual
+  // input, so restore it directly from the retained universe snapshot instead
+  // of sending it through the ISIN/WKN parser.
+  const restorePortfolioInstruments = useCallback(async (identifiers: string[]) => {
+    const snapshot = state.universeSnapshot
+    if (!snapshot || identifiers.length === 0) return
+    const wanted = new Set(identifiers)
+    const restored = snapshot.constituents
+      .filter((constituent) => wanted.has(constituent.isin))
+      .map(constituentToInstrument)
+    if (restored.length === 0) return
+
+    setStatus('Restoring portfolio instruments...', 0, restored.length)
+    const withPrices = await fetchPrices(restored)
+    const refs = await ensureReferenceReturns()
+    dispatch({
+      type: 'ADD_INSTRUMENTS',
+      instruments: recalculateAll(
+        withPrices,
+        state.settings.weights,
+        state.settings.atrMultiplier,
+        refs.r3m ?? state.referenceR3m,
+        refs.r5d ?? state.referenceR5d,
+        state.settings.accelKVol,
+        state.settings.botsiSafetyMargin,
+      ),
+    })
+  }, [state.universeSnapshot, state.settings.weights, state.settings.atrMultiplier, state.settings.accelKVol, state.settings.botsiSafetyMargin, state.referenceR3m, state.referenceR5d, fetchPrices, ensureReferenceReturns, setStatus, dispatch])
+
   const loadedGettexSpreadSetRef = useRef<string | null>(null)
    const fetchBotsiGettexSpreads = useCallback(async (force = false) => {
       // Fetch all stock instruments so that missing ISINs are resolved and
@@ -2507,6 +2537,7 @@ export function usePipeline() {
     fetchSingleInstrumentAnalyst,
     fetchSingleInstrumentTfaCatalyst,
     fetchPortfolioPrices,
+    restorePortfolioInstruments,
     fetchBotsiGettexSpreads,
   }
 }

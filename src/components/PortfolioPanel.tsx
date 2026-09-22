@@ -7,7 +7,7 @@ import { StatusBadge } from './ui/StatusBadge'
 
 export function PortfolioPanel() {
   const { state, dispatch } = useAppState()
-  const { fetchPortfolioPrices, processManualInput } = usePipeline()
+  const { fetchPortfolioPrices, processManualInput, restorePortfolioInstruments } = usePipeline()
   const {
     structureStatus, structureResult, structureError,
     briefingStatus,  briefingResult,  briefingError, briefingIsStale,
@@ -21,6 +21,8 @@ export function PortfolioPanel() {
 
   const portfolio = state.instruments.filter((i) => i.inPortfolio)
   const missingIsins = state.portfolioIsins.filter((isin) => !portfolio.find((i) => i.isin === isin))
+  const missingListingIds = missingIsins.filter((identifier) => identifier.startsWith('LISTING:'))
+  const missingStandardIds = missingIsins.filter((identifier) => !identifier.startsWith('LISTING:'))
   const needsPriceLoad = portfolio.some((i) => !i.priceFetched || !i.closes || i.closes.length === 0)
 
   if (portfolio.length === 0 && missingIsins.length === 0) {
@@ -46,7 +48,10 @@ export function PortfolioPanel() {
         {missingIsins.length > 0 && (
           <button
             type="button"
-            onClick={() => processManualInput(missingIsins.join('\n'), false)}
+            onClick={() => {
+              if (missingListingIds.length > 0) void restorePortfolioInstruments(missingListingIds)
+              if (missingStandardIds.length > 0) void processManualInput(missingStandardIds.join('\n'), false)
+            }}
             className="btn btn-sm btn-secondary focus-ring"
           >
             Load instruments

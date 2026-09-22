@@ -236,7 +236,16 @@ const DEFAULT_SETTINGS: AppSettings = {
 }
 
 const DEFAULT_STATE: AppState = {
-  instruments: cachedUniverseSnapshot ? cachedUniverseSnapshot.constituents.map(constituentToInstrument) : [],
+  // Restore the portfolio marker here as well as in the reducer.  A cached
+  // index snapshot is mounted before any SET_INSTRUMENTS action is dispatched;
+  // without this, LISTING: identities (which intentionally have no ISIN) were
+  // present in storage but invisible to the portfolio after a page reload.
+  instruments: cachedUniverseSnapshot
+    ? cachedUniverseSnapshot.constituents.map((constituent) => {
+        const instrument = constituentToInstrument(constituent)
+        return { ...instrument, inPortfolio: persistedPortfolio.includes(instrument.isin) }
+      })
+    : [],
   xetraReady: false,
   xetraLoading: false,
   settings: { ...DEFAULT_SETTINGS, ...persistedSettings },
