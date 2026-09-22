@@ -2022,7 +2022,7 @@ function TableToolbar({
   )
 }
 
-function MobileInstrumentCard({
+const MobileInstrumentCard = React.memo(function MobileInstrumentCard({
   inst,
   expanded,
   onToggleExpanded,
@@ -2038,7 +2038,7 @@ function MobileInstrumentCard({
   botsiMode: boolean
 }) {
   return (
-    <article className="rounded border border-border bg-surface px-3 py-2">
+    <article className="mobile-instrument-card rounded border border-border bg-surface px-3 py-2">
       <div className="flex items-start justify-between gap-2">
         <button
           type="button"
@@ -2149,7 +2149,14 @@ function MobileInstrumentCard({
       )}
     </article>
   )
-}
+}, (previous, next) => (
+  // The callbacks are recreated by the list, but only capture this card's
+  // unchanged ISIN and the stable reducer dispatch. Ignore them so a sidebar
+  // interaction or fetch-status update does not re-render every mobile card.
+  previous.inst === next.inst &&
+  previous.expanded === next.expanded &&
+  previous.botsiMode === next.botsiMode
+))
 
 // ─── Virtualization Hook ──────────────────────────────────────────────────────
 
