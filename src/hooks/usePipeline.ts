@@ -2262,13 +2262,56 @@ export function usePipeline() {
   }, [state.instruments])
 
   const fetchPortfolioPrices = useCallback(async (isins: string[]) => {
-    const targets = state.instruments.filter((i) => isins.includes(i.isin) && i.yahooTicker)
+    const selected = state.instruments.filter((i) => isins.includes(i.isin))
+    // A Gettex result is only retained after the quote endpoint accepted the
+    // ISIN for this exact source identity.  It is therefore safe to use as a
+    // Yahoo-symbol lookup key when an index LISTING: row has no provider
+    // ticker.  Keep `isin` unchanged: it remains the reducer/portfolio key.
+    const needsTicker = selected.filter((instrument) =>
+      !instrument.yahooTicker &&
+      typeof instrument.resolvedGettexIsin === 'string' &&
+      /^[A-Z]{2}[A-Z0-9]{10}$/.test(instrument.resolvedGettexIsin)
+    )
+    const tickerByGettexIsin = new Map<string, string>()
+    const unresolvedGettexIsins = [...new Set(needsTicker.map((instrument) => instrument.resolvedGettexIsin!))]
+    for (const resolvedIsin of unresolvedGettexIsins) {
+      const cached = cacheGet<YahooSymbolResolution>(buildYahooSymbolCacheKey(resolvedIsin), YAHOO_SYMBOL_TTL_MS)
+      if (cached?.isin === resolvedIsin && cached.ticker) tickerByGettexIsin.set(resolvedIsin, cached.ticker)
+    }
+    const toResolve = unresolvedGettexIsins.filter((isin) => !tickerByGettexIsin.has(isin))
+    if (toResolve.length > 0) {
+      try {
+        const resolutions = (await Promise.all(
+          Array.from({ length: Math.ceil(toResolve.length / YAHOO_SYMBOL_RESOLVE_BATCH) }, (_, index) =>
+            apiYahooResolveIsins(toResolve.slice(index * YAHOO_SYMBOL_RESOLVE_BATCH, (index + 1) * YAHOO_SYMBOL_RESOLVE_BATCH))
+          )
+        )).flat()
+        for (const resolution of resolutions) {
+          const ticker = resolution.ticker?.trim()
+          if (!ticker || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(resolution.isin)) continue
+          tickerByGettexIsin.set(resolution.isin, ticker)
+          cacheSet(buildYahooSymbolCacheKey(resolution.isin), { isin: resolution.isin, ticker }, YAHOO_SYMBOL_TTL_MS)
+        }
+      } catch (error) {
+        // Price loading for the normal ticker-backed portfolio positions must
+        // still continue if Yahoo's symbol resolver is temporarily unavailable.
+        console.warn('[portfolio-prices] Gettex ISIN Yahoo resolution failed:', error)
+      }
+    }
+    const targets = selected
+      .map((instrument) => {
+        const yahooTicker = instrument.yahooTicker || (instrument.resolvedGettexIsin
+          ? tickerByGettexIsin.get(instrument.resolvedGettexIsin)
+          : undefined)
+        return yahooTicker ? { ...instrument, yahooTicker } : null
+      })
+      .filter((instrument): instrument is Instrument => instrument != null)
     if (targets.length === 0) return
     setStatus('Fetching portfolio prices...', 0, targets.length)
     const updated = await fetchPrices(targets)
     const updates = new Map(updated.map((i) => [i.isin, { ...i }]))
     dispatch({ type: 'UPDATE_INSTRUMENTS', updates })
-  }, [state.instruments, fetchPrices])
+  }, [state.instruments, fetchPrices, dispatch, setStatus])
 
   // Index providers deliberately use a stable `LISTING:` key for constituents
   // for which they cannot supply an ISIN.  Such a key is not valid manual
