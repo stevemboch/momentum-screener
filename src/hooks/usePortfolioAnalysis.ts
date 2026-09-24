@@ -205,6 +205,7 @@ export function usePortfolioAnalysis() {
         longName:         i.longName     ?? null,
         currency:         i.currency     ?? null,
         r1m:              i.r1m          ?? null,
+        r2m:              i.r2m          ?? null,
         r3m:              i.r3m          ?? null,
         r6m:              i.r6m          ?? null,
         vola:             i.vola         ?? null,

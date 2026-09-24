@@ -1,7 +1,7 @@
 import type { Instrument, MomentumWeights } from '../types'
 import { calculateBreakout } from './breakoutUtils'
 
-const TRADING_DAYS = { r1w: 5, r1m: 21, r3m: 63, r6m: 126 }
+const TRADING_DAYS = { r1w: 5, r1m: 21, r2m: 42, r3m: 63, r6m: 126 }
 export const BOTSI_TOP_N = 10
 export const BOTSI_FILTER_N = 250
 
@@ -9,7 +9,7 @@ export const BOTSI_FILTER_N = 250
 
 export function calculateReturns(closes: number[]) {
   const n = closes.length
-  const result = { r1w: null as number | null, r1m: null as number | null, r3m: null as number | null, r6m: null as number | null }
+  const result = { r1w: null as number | null, r1m: null as number | null, r2m: null as number | null, r3m: null as number | null, r6m: null as number | null }
   if (n < 2) return result
   const last = closes[n - 1]
   const calc = (days: number) => {
@@ -21,6 +21,7 @@ export function calculateReturns(closes: number[]) {
   }
   result.r1w = calc(TRADING_DAYS.r1w)
   result.r1m = calc(TRADING_DAYS.r1m)
+  result.r2m = calc(TRADING_DAYS.r2m)
   result.r3m = calc(TRADING_DAYS.r3m)
   result.r6m = calc(TRADING_DAYS.r6m)
   return result
@@ -832,12 +833,13 @@ export function calculateSellingThreshold(
 // ─── Momentum Score ───────────────────────────────────────────────────────────
 
 export function calculateMomentumScore(
-  r1w: number | null, r1m: number | null, r3m: number | null, r6m: number | null,
+  r1w: number | null, r1m: number | null, r2m: number | null, r3m: number | null, r6m: number | null,
   weights: MomentumWeights
 ): number | null {
   const available: { val: number; w: number }[] = []
   if (r1w !== null) available.push({ val: r1w, w: weights.w1w })
   if (r1m !== null) available.push({ val: r1m, w: weights.w1m })
+  if (r2m !== null) available.push({ val: r2m, w: weights.w2m })
   if (r3m !== null) available.push({ val: r3m, w: weights.w3m })
   if (r6m !== null) available.push({ val: r6m, w: weights.w6m })
   if (available.length === 0) return null
@@ -1247,13 +1249,14 @@ export function recalculateAll(
   const withScores = instruments.map((inst) => {
     const updated = { ...inst }
     if (inst.closes && inst.closes.length > 0) {
-      const { r1w, r1m, r3m, r6m } = calculateReturns(inst.closes)
+      const { r1w, r1m, r2m, r3m, r6m } = calculateReturns(inst.closes)
       updated.r1w = r1w
       updated.r1m = r1m
+      updated.r2m = r2m
       updated.r3m = r3m
       updated.r6m = r6m
       updated.vola = calculateVola(inst.closes)
-      updated.momentumScore = calculateMomentumScore(r1w, r1m, r3m, r6m, weights)
+      updated.momentumScore = calculateMomentumScore(r1w, r1m, r2m, r3m, r6m, weights)
       updated.riskAdjustedScore = calculateRiskAdjustedScore(updated.momentumScore, updated.vola)
       const accel = calculateAccelerationDetails(
         inst.closes,

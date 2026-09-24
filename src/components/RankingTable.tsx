@@ -84,6 +84,7 @@ const COLUMNS: Col[] = [
   { key: 'sellingThreshold', label: 'Stop',  title: 'Selling Threshold = Last Price − a × ATR(20)' },
   { key: 'r1w',           label: '1W',       title: '1-week return' },
   { key: 'r1m',           label: '1M',       title: '1-month return' },
+  { key: 'r2m',           label: '2M',       title: '2-month return' },
   { key: 'r3m',           label: '3M',       title: '3-month return' },
   { key: 'r6m',           label: '6M',       title: '6-month return' },
   { key: 'vola',          label: 'Vola',     title: 'Annualised 6M volatility' },
@@ -117,7 +118,7 @@ const COLUMNS: Col[] = [
 const COLUMN_GROUPS: Record<ColumnGroup, string[]> = {
   scores:       ['riskAdjustedScore', 'momentumScore', 'combinedScore', 'accelerationScore'],
   botsi:        ['gd200', 'gd130', 'mom260', 'momjt', 'kaufmanEfficiencyRatio', 'relative52wHigh', 'relative52wHigh17dAgo', 'botsiScore', 'gettexSpreadPct', 'motsiRank'],
-  returns:      ['r1w', 'r1m', 'r3m', 'r6m', 'vola'],
+  returns:      ['r1w', 'r1m', 'r2m', 'r3m', 'r6m', 'vola'],
   technical:    ['ma', 'sellingThreshold'],
   fundamentals: ['aum', 'ter', 'pe', 'pb', 'earningsYield', 'returnOnAssets'],
   tfa:          [
@@ -912,6 +913,9 @@ function CandidateRow({
       )}
       {!hiddenKeys.has('r1m') && (
         <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r1m)}`}>{fmtPct(candidate.r1m)}</td>
+      )}
+      {!hiddenKeys.has('r2m') && (
+        <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r2m)}`}>{fmtPct(candidate.r2m)}</td>
       )}
       {!hiddenKeys.has('r3m') && (
         <td className={`px-2 py-1.5 text-right ${returnColor(candidate.r3m)}`}>{fmtPct(candidate.r3m)}</td>
@@ -2091,13 +2095,17 @@ const MobileInstrumentCard = React.memo(function MobileInstrumentCard({
           <span className={returnColor(inst.r1w)}>{fmtPct(inst.r1w)}</span>
         </div>
         <div>
-          <span className="text-muted">1M:</span>{' '}
-          <span className={returnColor(inst.r1m)}>{fmtPct(inst.r1m)}</span>
-        </div>
-        <div>
-          <span className="text-muted">3M:</span>{' '}
-          <span className={returnColor(inst.r3m)}>{fmtPct(inst.r3m)}</span>
-        </div>
+           <span className="text-muted">1M:</span>{' '}
+           <span className={returnColor(inst.r1m)}>{fmtPct(inst.r1m)}</span>
+         </div>
+         <div>
+           <span className="text-muted">2M:</span>{' '}
+           <span className={returnColor(inst.r2m)}>{fmtPct(inst.r2m)}</span>
+         </div>
+         <div>
+           <span className="text-muted">3M:</span>{' '}
+           <span className={returnColor(inst.r3m)}>{fmtPct(inst.r3m)}</span>
+         </div>
         <div>
           <span className="text-muted">6M:</span>{' '}
           <span className={returnColor(inst.r6m)}>{fmtPct(inst.r6m)}</span>
@@ -2780,12 +2788,15 @@ export function RankingTable({ onOpenSidebar }: { onOpenSidebar: () => void }) {
                   {!hiddenKeys.has('r1w') && (
                     <td className={`px-2 py-1.5 text-right ${returnColor(inst.r1w)}`}>{fmtPct(inst.r1w)}</td>
                   )}
-                  {!hiddenKeys.has('r1m') && (
-                    <td className={`px-2 py-1.5 text-right ${returnColor(inst.r1m)}`}>{fmtPct(inst.r1m)}</td>
-                  )}
-                  {!hiddenKeys.has('r3m') && (
-                    <td className={`px-2 py-1.5 text-right ${returnColor(inst.r3m)}`}>{fmtPct(inst.r3m)}</td>
-                  )}
+                   {!hiddenKeys.has('r1m') && (
+                     <td className={`px-2 py-1.5 text-right ${returnColor(inst.r1m)}`}>{fmtPct(inst.r1m)}</td>
+                   )}
+                   {!hiddenKeys.has('r2m') && (
+                     <td className={`px-2 py-1.5 text-right ${returnColor(inst.r2m)}`}>{fmtPct(inst.r2m)}</td>
+                   )}
+                   {!hiddenKeys.has('r3m') && (
+                     <td className={`px-2 py-1.5 text-right ${returnColor(inst.r3m)}`}>{fmtPct(inst.r3m)}</td>
+                   )}
                   {!hiddenKeys.has('r6m') && (
                     <td className={`px-2 py-1.5 text-right ${returnColor(inst.r6m)}`}>{fmtPct(inst.r6m)}</td>
                   )}

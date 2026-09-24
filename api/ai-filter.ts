@@ -28,7 +28,7 @@ const ALLOWED_FIELDS = new Set([
   'sector', 'sektor', 'industry',
   'aum', 'ter',
   'upside', 'downside', 'upsidePct', 'downsidePct',
-  'r1m', 'r3m', 'r6m', 'vola', 'rsi14', 'levyRS',
+   'r1m', 'r2m', 'r3m', 'r6m', 'vola', 'rsi14', 'levyRS',
   'ma50', 'ma100', 'ma200', 'aboveMa10', 'aboveMa50', 'aboveMa100', 'aboveMa200',
   'momentumRank', 'riskAdjustedRank', 'combinedRank',
   'momentumScore', 'riskAdjustedScore', 'combinedScore', 'pullbackScore', 'breakoutScore',

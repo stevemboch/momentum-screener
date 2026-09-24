@@ -175,6 +175,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     momentumRank: typeof inst?.momentumRank === 'number' ? inst.momentumRank : null,
     r3m: typeof inst?.r3m === 'number' ? inst.r3m : null,
     r6m: typeof inst?.r6m === 'number' ? inst.r6m : null,
+    r2m: typeof inst?.r2m === 'number' ? inst.r2m : null,
   }))
   const instrumentsJson = JSON.stringify(compactInstruments)
 

@@ -30,7 +30,7 @@ interface AppState {
   universeSnapshot: UniverseSnapshot | null
 }
 
-const DEFAULT_WEIGHTS: MomentumWeights = { w1w: 0, w1m: 0, w3m: 0, w6m: 1 }
+const DEFAULT_WEIGHTS: MomentumWeights = { w1w: 0, w1m: 0, w2m: 0, w3m: 0, w6m: 1 }
 
 const GROUPS_STORAGE_KEY = 'xetra:groups'
 const PORTFOLIO_STORAGE_KEY = 'portfolio:isins'
@@ -126,19 +126,22 @@ function loadSettings(): Partial<AppSettings> | null {
     if (rawWeights && typeof rawWeights === 'object') {
       const w1w = Number((rawWeights as any).w1w)
       const w1m = Number((rawWeights as any).w1m)
+      const w2m = Number((rawWeights as any).w2m)
       const w3m = Number((rawWeights as any).w3m)
       const w6m = Number((rawWeights as any).w6m)
       const normalized: MomentumWeights = {
         w1w: Number.isFinite(w1w) ? w1w : 0,
         w1m: Number.isFinite(w1m) ? w1m : 0,
+        w2m: Number.isFinite(w2m) ? w2m : 0,
         w3m: Number.isFinite(w3m) ? w3m : 0,
         w6m: Number.isFinite(w6m) ? w6m : 0,
       }
-      const total = normalized.w1w + normalized.w1m + normalized.w3m + normalized.w6m
+      const total = normalized.w1w + normalized.w1m + normalized.w2m + normalized.w3m + normalized.w6m
       candidate.weights = total > 0
         ? {
           w1w: normalized.w1w / total,
           w1m: normalized.w1m / total,
+          w2m: normalized.w2m / total,
           w3m: normalized.w3m / total,
           w6m: normalized.w6m / total,
         }
